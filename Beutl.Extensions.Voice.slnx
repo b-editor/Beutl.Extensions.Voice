@@ -1,0 +1,11 @@
+﻿<Solution>
+  <Folder Name="/External/">
+    <Project Path="external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" Type="Classic C#" />
+  </Folder>
+  <Folder Name="/Root/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Build.targets" />
+  </Folder>
+  <Project Path="src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj" Type="Classic C#" />
+  <Project Path="XamlPreview\XamlPreview.csproj" Type="Classic C#" />
+</Solution>

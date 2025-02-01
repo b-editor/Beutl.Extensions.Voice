@@ -1,0 +1,3 @@
+[submodule "external/VoicevoxCoreSharp"]
+	path = external/VoicevoxCoreSharp
+	url = git@github.com:yamachu/VoicevoxCoreSharp.git

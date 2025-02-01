@@ -1,0 +1,45 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <PackageId>Beutl.Extensions.Voice</PackageId>
+        <Title>Text to Speech</Title>
+        <Description>テキストを読み上げます</Description>
+        <PackageTags>audio,speech,voice,tts</PackageTags>
+        <Version>1.0.0</Version>
+        <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        <Authors>Yuto Terada</Authors>
+    </PropertyGroup>
+
+    <!-- ビルドしたときに、サイドロード拡張機能として認識されるようにする。 -->
+    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+        <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+        <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+        <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+<!--        <EnableDynamicLoading>true</EnableDynamicLoading>-->
+        <OutputPath>$([System.Environment]::GetFolderPath(SpecialFolder.UserProfile))\.beutl\sideloads\$(AssemblyName)</OutputPath>
+    </PropertyGroup>
+
+    <Choose>
+        <When Condition="'$(Configuration)'=='Debug'">
+            <ItemGroup>
+                <PackageReference Include="Beutl.Extensibility" Version="1.0.0" PrivateAssets="all" />
+                <PackageReference Include="Beutl.ProjectSystem" Version="1.0.0" PrivateAssets="all" />
+            </ItemGroup>
+        </When>
+        <Otherwise>
+            <ItemGroup>
+                <PackageReference Include="Beutl.Extensibility" Version="1.0.0" />
+                <PackageReference Include="Beutl.ProjectSystem" Version="1.0.0" />
+            </ItemGroup>
+        </Otherwise>
+    </Choose>
+
+    <ItemGroup>
+        <ProjectReference
+            Include="..\..\external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" ReferenceOutputAssembly="true" />
+    </ItemGroup>
+
+</Project>
