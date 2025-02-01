@@ -2,9 +2,17 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Beutl.Extensions.Voice", "src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj", "{AB835C65-8A8C-74FF-1ADF-E1371D475964}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VoicevoxCoreSharp.Core", "external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj", "{A95E05C0-AE4D-E72D-6072-075D034EBBFE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "XamlPreview", "src\XamlPreview\XamlPreview.csproj", "{1CF4DC29-6651-F556-2899-B0A28EB6A207}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "External", "External", "{A288BEE0-695A-BEEA-455C-649571D89326}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VoicevoxCoreSharp.Core", "external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj", "{A95E05C0-AE4D-E72D-6072-075D034EBBFE}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Root", "Root", "{15F6FC59-AAC4-54A0-792B-7B93FC8C81FD}"
+	ProjectSection(SolutionItems) = preProject
+		Directory.Build.props = Directory.Build.props
+		Directory.Build.targets = Directory.Build.targets
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -16,6 +24,10 @@ Global
 		{AB835C65-8A8C-74FF-1ADF-E1371D475964}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{AB835C65-8A8C-74FF-1ADF-E1371D475964}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{AB835C65-8A8C-74FF-1ADF-E1371D475964}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1CF4DC29-6651-F556-2899-B0A28EB6A207}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1CF4DC29-6651-F556-2899-B0A28EB6A207}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1CF4DC29-6651-F556-2899-B0A28EB6A207}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1CF4DC29-6651-F556-2899-B0A28EB6A207}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A95E05C0-AE4D-E72D-6072-075D034EBBFE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A95E05C0-AE4D-E72D-6072-075D034EBBFE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A95E05C0-AE4D-E72D-6072-075D034EBBFE}.Release|Any CPU.ActiveCfg = Release|Any CPU

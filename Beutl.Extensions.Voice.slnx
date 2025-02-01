@@ -7,5 +7,5 @@
     <File Path="Directory.Build.targets" />
   </Folder>
   <Project Path="src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj" Type="Classic C#" />
-  <Project Path="XamlPreview\XamlPreview.csproj" Type="Classic C#" />
+  <Project Path="src\XamlPreview\XamlPreview.csproj" Type="Classic C#" />
 </Solution>
