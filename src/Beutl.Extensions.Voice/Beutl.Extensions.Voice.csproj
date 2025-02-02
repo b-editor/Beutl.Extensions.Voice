@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
@@ -27,19 +27,27 @@
             <ItemGroup>
                 <PackageReference Include="Beutl.Extensibility" Version="1.0.0" PrivateAssets="all" />
                 <PackageReference Include="Beutl.ProjectSystem" Version="1.0.0" PrivateAssets="all" />
+                <PackageReference Include="Beutl.Operators" Version="1.0.0" PrivateAssets="all" />
             </ItemGroup>
         </When>
         <Otherwise>
             <ItemGroup>
                 <PackageReference Include="Beutl.Extensibility" Version="1.0.0" />
                 <PackageReference Include="Beutl.ProjectSystem" Version="1.0.0" />
+                <PackageReference Include="Beutl.Operators" Version="1.0.0" />
             </ItemGroup>
         </Otherwise>
     </Choose>
 
     <ItemGroup>
-        <ProjectReference
-            Include="..\..\external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" ReferenceOutputAssembly="true" />
+        <ProjectReference Include="..\..\external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" ReferenceOutputAssembly="true" />
+        <ProjectReference Include="..\..\ref\Beutl\Beutl.csproj" >
+            <Private>false</Private>
+        </ProjectReference>
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="Avalonia.Diagnostics" Version="11.1.4" />
     </ItemGroup>
 
 </Project>

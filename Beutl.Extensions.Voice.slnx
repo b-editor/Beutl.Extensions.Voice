@@ -1,6 +1,10 @@
 ﻿<Solution>
   <Folder Name="/External/">
+    <Project Path="external\VoicevoxCoreSharp\examples\cli\cli.csproj" Type="Classic C#" />
     <Project Path="external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" Type="Classic C#" />
+  </Folder>
+  <Folder Name="/Ref/">
+    <Project Path="ref\Beutl\Beutl.csproj" Type="Classic C#" />
   </Folder>
   <Folder Name="/Root/">
     <File Path="Directory.Build.props" />
