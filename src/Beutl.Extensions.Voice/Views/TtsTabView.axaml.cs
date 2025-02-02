@@ -13,13 +13,11 @@ public partial class TtsTabView : UserControl
 
     private async void DownloadVoiceVox(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not TtsTabViewModel viewModel) return;
         var dialogViewModel = new VoiceVoxInstallDialogViewModel();
         var dialog = new VoiceVoxInstallDialog
         {
             DataContext = dialogViewModel
         };
         await dialog.ShowAsync();
-        viewModel.OnLoaded();
     }
 }

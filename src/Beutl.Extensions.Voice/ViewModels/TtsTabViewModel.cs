@@ -26,7 +26,7 @@ public class TtsTabViewModel : IToolContext
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private IReactiveProperty<TimeSpan> _currentTime;
     private CommandRecorder _commandRecorder;
-    private Task _initTask;
+    private TaskCompletionSource _initTcs = new();
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
@@ -35,9 +35,10 @@ public class TtsTabViewModel : IToolContext
         _scene = editorContext.GetRequiredService<Scene>();
         _commandRecorder = editorContext.GetRequiredService<CommandRecorder>();
         Extension = extension;
-        _initTask = TtsLoader.VoiceVoxLoader.InitializationTcs.Task.ContinueWith(_ =>
+        TtsLoader.VoiceVoxLoader.Subscribe(l =>
         {
-            OnLoaded();
+            if (l == null) return;
+            l.InitializationTcs.Task.ContinueWith(_ => OnLoaded());
         });
     }
 
@@ -64,24 +65,27 @@ public class TtsTabViewModel : IToolContext
     public ReactiveProperty<bool> IsGenerating { get; } = new();
 
     public ReactiveProperty<bool> IsEnabled { get; } = new();
-    
+
     public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new();
 
     public void OnLoaded()
     {
-        IsVoiceVoxInstalled.Value = TtsLoader.VoiceVoxLoader.IsInstalled;
-        if (TtsLoader.VoiceVoxLoader.IsLoaded)
-        {
-            IsEnabled.Value = true;
-            var a = TtsLoader.VoiceVoxLoader.VoiceSets
-                .SelectMany(x => x.Metadata.Select(y => new VoiceFlattenSet(x.Model, y)));
+        var loader = TtsLoader.VoiceVoxLoader.Value;
+        if (loader == null) return;
 
-            var b = a.SelectMany(x => x.Metadata.Styles.Select(y => (x.Metadata, Style: y)));
+        IsVoiceVoxInstalled.Value = loader.IsInstalled;
+        if (!loader.IsLoaded) return;
 
-            Voice.Value = b.GroupBy(x => x.Metadata.Name, x => x.Style,
-                    (x, y) => new VoiceMetadata { Name = x, Styles = y.ToArray() })
-                .ToArray();   
-        }
+        IsEnabled.Value = true;
+        var a = loader.VoiceSets
+            .SelectMany(x => x.Metadata.Select(y => new VoiceFlattenSet(x.Model, y)));
+
+        var b = a.SelectMany(x => x.Metadata.Styles.Select(y => (x.Metadata, Style: y)));
+
+        Voice.Value = b.GroupBy(x => x.Metadata.Name, x => x.Style,
+                (x, y) => new VoiceMetadata { Name = x, Styles = y.ToArray() })
+            .ToArray();
+        _initTcs.SetResult();
     }
 
     public Task Generate()
@@ -178,7 +182,7 @@ public class TtsTabViewModel : IToolContext
         {
             try
             {
-                var synthesizer = TtsLoader.VoiceVoxLoader.Synthesizer;
+                var synthesizer = TtsLoader.VoiceVoxLoader.Value?.Synthesizer;
                 var voice = SelectedVoice.Value;
                 var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
                 if (synthesizer == null)
@@ -226,7 +230,7 @@ public class TtsTabViewModel : IToolContext
     public async void ReadFromJson(JsonObject json)
     {
         Text.Value = (string?)json[nameof(Text)] ?? "";
-        await _initTask;
+        await _initTcs.Task;
         var selectedVoice = (string?)json[nameof(SelectedVoice)] ?? "";
         var selectedStyle = (string?)json[nameof(SelectedStyle)] ?? "";
         Dispatcher.UIThread.Post(() =>
