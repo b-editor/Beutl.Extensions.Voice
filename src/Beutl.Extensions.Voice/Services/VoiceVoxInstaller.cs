@@ -40,7 +40,9 @@ public class VoiceVoxInstaller
                 await InstallVoiceVoxCore(voicevoxCorePath, ct);
                 await InstallDictionary(voicevoxCorePath, ct);
                 Status.Value = "ロード中 (5/5)";
+                IsIndeterminate.Value = true;
                 await TtsLoader.StaticLoad();
+                IsIndeterminate.Value = false;
                 Status.Value = "完了";
             }
             catch (Exception ex)
