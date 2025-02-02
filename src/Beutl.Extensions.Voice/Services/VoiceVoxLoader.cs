@@ -74,6 +74,7 @@ public class VoiceVoxLoader(string voicevoxCorePath)
             if (result != ResultCode.RESULT_OK)
             {
                 _logger.LogError("Failed to initialize OpenJtalk: {Result}", result.ToMessage());
+                InitializationTcs.TrySetResult(false);
                 return;
             }
 
@@ -82,6 +83,7 @@ public class VoiceVoxLoader(string voicevoxCorePath)
             if (result != ResultCode.RESULT_OK)
             {
                 _logger.LogError("Failed to initialize Synthesizer: {Result}", result.ToMessage());
+                InitializationTcs.TrySetResult(false);
                 return;
             }
 
@@ -95,21 +97,21 @@ public class VoiceVoxLoader(string voicevoxCorePath)
                 if (result != ResultCode.RESULT_OK)
                 {
                     _logger.LogError("Failed to create VoiceModel: {Result}", result.ToMessage());
-                    return;
+                    continue;
                 }
 
                 result = Synthesizer.LoadVoiceModel(voiceModel);
                 if (result != ResultCode.RESULT_OK)
                 {
                     _logger.LogError("Failed to load VoiceModel: {Result}", result.ToMessage());
-                    return;
+                    continue;
                 }
 
                 var metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
                 if (metadatas == null)
                 {
                     _logger.LogError("Failed to deserialize VoiceMetadata: {Path}", path);
-                    return;
+                    continue;
                 }
 
                 VoiceSets.Add(new VoiceSet(voiceModel, metadatas));
