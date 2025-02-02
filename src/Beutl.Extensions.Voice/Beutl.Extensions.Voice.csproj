@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <TargetFramework>net9.0</TargetFramework>
@@ -14,7 +14,7 @@
     </PropertyGroup>
 
     <!-- ビルドしたときに、サイドロード拡張機能として認識されるようにする。 -->
-    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <PropertyGroup Condition="'$(DebugApplication)'=='True'">
         <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
         <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
         <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
@@ -23,7 +23,7 @@
     </PropertyGroup>
 
     <Choose>
-        <When Condition="'$(Configuration)'=='Debug'">
+        <When Condition="'$(DebugApplication)'=='True'">
             <ItemGroup>
                 <PackageReference Include="Beutl.Extensibility" Version="1.0.0" PrivateAssets="all" />
                 <PackageReference Include="Beutl.ProjectSystem" Version="1.0.0" PrivateAssets="all" />
