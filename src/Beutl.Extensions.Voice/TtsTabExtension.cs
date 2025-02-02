@@ -15,7 +15,7 @@ public class TtsTabExtension : ToolTabExtension
     public override string Name => "Text-to-Speech";
 
     public override string DisplayName => "テキスト読み上げ";
-    
+
     public override string Header => "テキスト読み上げ";
 
     public override bool CanMultiple => true;
@@ -36,8 +36,7 @@ public class TtsTabExtension : ToolTabExtension
 
     public override bool TryCreateContext(IEditorContext editorContext, [NotNullWhen(true)] out IToolContext? context)
     {
-        context = new TtsTabViewModel(this);
+        context = new TtsTabViewModel(this, editorContext);
         return true;
     }
-
 }

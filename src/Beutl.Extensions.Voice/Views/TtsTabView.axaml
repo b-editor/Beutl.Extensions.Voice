@@ -3,8 +3,82 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:models="using:Beutl.Extensions.Voice.Models"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
              d:DesignHeight="450"
              d:DesignWidth="800"
+             x:CompileBindings="True"
+             x:DataType="viewModels:TtsTabViewModel"
              mc:Ignorable="d">
-    Welcome to Avalonia!
+    <Grid RowDefinitions="40,*">
+        <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+            <TextBlock Margin="10,0,0,0"
+                       VerticalAlignment="Center"
+                       Text="テキスト読み上げ" />
+        </Border>
+        <ScrollViewer Grid.Row="1">
+            <StackPanel Margin="10">
+                <ui:InfoBar Title="警告"
+                            Margin="0,0,0,8"
+                            IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
+                            IsVisible="{Binding !IsVoiceVoxInstalled.Value}"
+                            Message="VOICEVOXがインストールされていません。"
+                            Severity="Warning">
+                    <ui:InfoBar.ActionButton>
+                        <Button Click="DownloadVoiceVox">インストール</Button>
+                    </ui:InfoBar.ActionButton>
+                </ui:InfoBar>
+                <StackPanel IsEnabled="{Binding IsEnabled.Value}">
+
+                    <TextBlock Text="テキスト" />
+                    <TextBox MinHeight="200"
+                             Margin="0,4,0,0"
+                             VerticalContentAlignment="Top"
+                             AcceptsReturn="True"
+                             Text="{Binding Text.Value, Mode=TwoWay}"
+                             TextWrapping="Wrap" />
+                    <TextBlock Margin="0,16,0,0" Text="話者" />
+                    <ComboBox Margin="0,4,0,0"
+                              HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding Voice.Value}"
+                              SelectedItem="{Binding SelectedVoice.Value, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:VoiceMetadata">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <TextBlock Margin="0,16,0,0" Text="スタイル" />
+                    <ComboBox Margin="0,4,0,0"
+                              HorizontalAlignment="Stretch"
+                              ItemsSource="{Binding SelectedVoice.Value.Styles}"
+                              SelectedItem="{Binding SelectedStyle.Value, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:VoiceStyle">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+
+                    <WrapPanel Margin="0,24,0,0" Orientation="Horizontal">
+                        <Button Classes="accent"
+                                Command="{Binding Generate}"
+                                IsEnabled="{Binding !IsGenerating.Value}">
+                            <TextBlock Text="追加" />
+                        </Button>
+                        <Button Margin="4,0,0,0"
+                                Command="{Binding Play}"
+                                IsEnabled="{Binding !IsGenerating.Value}">
+                            <TextBlock Text="読み上げ" />
+                        </Button>
+                    </WrapPanel>
+                    <ProgressBar Margin="0,4,0,0"
+                                 IsIndeterminate="{Binding IsGenerating.Value}"
+                                 IsVisible="{Binding IsGenerating.Value}" />
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
 </UserControl>
