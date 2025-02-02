@@ -46,7 +46,7 @@
         </ProjectReference>
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(Configuration)'=='Debug'">
       <PackageReference Include="Avalonia.Diagnostics" Version="11.1.4" />
     </ItemGroup>
 

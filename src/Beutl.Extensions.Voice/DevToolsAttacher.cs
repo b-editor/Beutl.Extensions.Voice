@@ -1,3 +1,5 @@
+#if DEBUG
+
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
@@ -24,3 +26,4 @@ public class DevToolsAttacher : Extension
 
     public override string DisplayName => Name;
 }
+#endif
