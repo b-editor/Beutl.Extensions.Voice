@@ -66,7 +66,7 @@ public class TtsTabViewModel : IToolContext
 
     public ReactiveProperty<bool> IsEnabled { get; } = new();
 
-    public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new();
+    public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new(true);
 
     public void OnLoaded()
     {
@@ -125,9 +125,12 @@ public class TtsTabViewModel : IToolContext
                     Name = Text.Value.ReplaceLineEndings().Replace("\n", " "),
                     AccentColor = ColorGenerator.GenerateColor(typeof(TtsController).FullName!)
                 };
-                var op = new SourceSoundOperator();
-                element.Operation.AddChild(op).Do();
-                op.Value.Source = source;
+                var op1 = new SourceSoundOperator();
+                var op2 = new TtsController();
+                element.Operation.AddChild(op1).Do();
+                element.Operation.AddChild(op2).Do();
+                op1.Value.Source = source;
+                op2.Text = Text.Value;
                 element.Save(element.FileName);
                 await Dispatcher.UIThread.InvokeAsync(() =>
                     _scene.AddChild(element, ElementOverlapHandling.ZIndex).DoAndRecord(_commandRecorder));
