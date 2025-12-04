@@ -6,6 +6,7 @@
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:ui="using:FluentAvalonia.UI.Controls"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
              d:DesignHeight="450"
              d:DesignWidth="800"
              x:CompileBindings="True"
@@ -196,40 +197,15 @@
                                                               IsChecked="{Binding IsInterrogative.Value, Mode=TwoWay}" />
                                                 </StackPanel>
                                                 
-                                                <!-- Mora pitch editor -->
-                                                <TextBlock Margin="0,8,0,4" Text="モーラごとのピッチ:" />
-                                                <ItemsControl ItemsSource="{Binding Moras}">
-                                                    <ItemsControl.ItemsPanel>
-                                                        <ItemsPanelTemplate>
-                                                            <WrapPanel />
-                                                        </ItemsPanelTemplate>
-                                                    </ItemsControl.ItemsPanel>
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate x:DataType="viewModels:MoraViewModel">
-                                                            <Border Margin="0,0,4,4"
-                                                                    Padding="4"
-                                                                    Background="{DynamicResource ControlFillColorDefaultBrush}"
-                                                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                                                                    BorderThickness="1"
-                                                                    CornerRadius="2">
-                                                                <StackPanel>
-                                                                    <TextBlock HorizontalAlignment="Center"
-                                                                               Text="{Binding Text.Value}" />
-                                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
-                                                                        <TextBlock Text="P:" FontSize="10" />
-                                                                        <NumericUpDown Width="60"
-                                                                                       FontSize="10"
-                                                                                       Minimum="0"
-                                                                                       Maximum="200"
-                                                                                       Increment="1"
-                                                                                       Value="{Binding Pitch.Value, Mode=TwoWay}"
-                                                                                       FormatString="F0" />
-                                                                    </StackPanel>
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
+                                                <!-- Pitch curve editor with drag support -->
+                                                <TextBlock Margin="0,16,0,4" 
+                                                           Text="ピッチカーブ（ドラッグで編集）:" 
+                                                           FontWeight="SemiBold" />
+                                                <views:PitchCurveEditor Height="150"
+                                                                        Margin="0,4,0,0"
+                                                                        Moras="{Binding Moras}"
+                                                                        MinPitch="0"
+                                                                        MaxPitch="200" />
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>
