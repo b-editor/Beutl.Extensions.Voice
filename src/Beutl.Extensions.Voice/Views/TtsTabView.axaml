@@ -62,6 +62,182 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
+                    <!-- AudioQuery generation button -->
+                    <Button Margin="0,24,0,0"
+                            Command="{Binding GenerateAudioQuery}"
+                            IsEnabled="{Binding !IsGenerating.Value}">
+                        <TextBlock Text="AudioQuery生成" />
+                    </Button>
+
+                    <!-- AudioQuery editor section -->
+                    <Border Margin="0,16,0,0"
+                            Padding="12"
+                            Background="{DynamicResource ControlFillColorDefaultBrush}"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            IsVisible="{Binding IsAudioQueryGenerated.Value}">
+                        <StackPanel>
+                            <TextBlock FontWeight="Bold"
+                                       Margin="0,0,0,8"
+                                       Text="音声パラメータ" />
+                            
+                            <!-- Global parameters -->
+                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+                                <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,8">
+                                    <TextBlock Text="話速" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="0.5"
+                                                Maximum="2.0"
+                                                TickFrequency="0.1"
+                                                Value="{Binding CurrentAudioQuery.Value.SpeedScale, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.SpeedScale, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,8">
+                                    <TextBlock Text="音高" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="-0.15"
+                                                Maximum="0.15"
+                                                TickFrequency="0.01"
+                                                Value="{Binding CurrentAudioQuery.Value.PitchScale, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.PitchScale, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,8">
+                                    <TextBlock Text="抑揚" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="0.0"
+                                                Maximum="2.0"
+                                                TickFrequency="0.1"
+                                                Value="{Binding CurrentAudioQuery.Value.IntonationScale, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.IntonationScale, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="1" Grid.Column="1" Margin="8,0,0,8">
+                                    <TextBlock Text="音量" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="0.0"
+                                                Maximum="2.0"
+                                                TickFrequency="0.1"
+                                                Value="{Binding CurrentAudioQuery.Value.VolumeScale, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.VolumeScale, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="2" Grid.Column="0" Margin="0,0,8,8">
+                                    <TextBlock Text="前の無音（秒）" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="0.0"
+                                                Maximum="1.5"
+                                                TickFrequency="0.01"
+                                                Value="{Binding CurrentAudioQuery.Value.PrePhonemeLength, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.PrePhonemeLength, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,0,0,8">
+                                    <TextBlock Text="後の無音（秒）" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <Slider Width="150"
+                                                Minimum="0.0"
+                                                Maximum="1.5"
+                                                TickFrequency="0.01"
+                                                Value="{Binding CurrentAudioQuery.Value.PostPhonemeLength, Mode=TwoWay}" />
+                                        <TextBlock Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding CurrentAudioQuery.Value.PostPhonemeLength, StringFormat='{}{0:F2}'}" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Accent phrases editor -->
+                            <TextBlock FontWeight="Bold"
+                                       Margin="0,16,0,8"
+                                       Text="アクセント句" />
+                            <ItemsControl ItemsSource="{Binding AccentPhrases}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="viewModels:AccentPhraseViewModel">
+                                        <Border Margin="0,0,0,8"
+                                                Padding="8"
+                                                Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                                BorderBrush="{DynamicResource ControlStrokeColorSecondaryBrush}"
+                                                BorderThickness="1"
+                                                CornerRadius="4">
+                                            <StackPanel>
+                                                <TextBlock FontWeight="SemiBold"
+                                                           Text="{Binding DisplayText}" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                    <TextBlock Text="アクセント位置: " />
+                                                    <NumericUpDown Width="80"
+                                                                   Minimum="0"
+                                                                   Maximum="{Binding Moras.Count}"
+                                                                   Value="{Binding Accent.Value, Mode=TwoWay}" />
+                                                    <CheckBox Margin="16,0,0,0"
+                                                              Content="疑問文"
+                                                              IsChecked="{Binding IsInterrogative.Value, Mode=TwoWay}" />
+                                                </StackPanel>
+                                                
+                                                <!-- Mora pitch editor -->
+                                                <TextBlock Margin="0,8,0,4" Text="モーラごとのピッチ:" />
+                                                <ItemsControl ItemsSource="{Binding Moras}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate x:DataType="viewModels:MoraViewModel">
+                                                            <Border Margin="0,0,4,4"
+                                                                    Padding="4"
+                                                                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                                                    BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                                                                    BorderThickness="1"
+                                                                    CornerRadius="2">
+                                                                <StackPanel>
+                                                                    <TextBlock HorizontalAlignment="Center"
+                                                                               Text="{Binding Text.Value}" />
+                                                                    <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                                        <TextBlock Text="P:" FontSize="10" />
+                                                                        <NumericUpDown Width="60"
+                                                                                       FontSize="10"
+                                                                                       Minimum="0"
+                                                                                       Maximum="200"
+                                                                                       Increment="1"
+                                                                                       Value="{Binding Pitch.Value, Mode=TwoWay}"
+                                                                                       FormatString="F0" />
+                                                                    </StackPanel>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
                     <WrapPanel Margin="0,24,0,0" Orientation="Horizontal">
                         <Button Classes="accent"
                                 Command="{Binding Generate}"

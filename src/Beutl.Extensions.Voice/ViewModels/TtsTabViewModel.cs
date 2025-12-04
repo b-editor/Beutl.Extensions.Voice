@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
 using Beutl.Extensibility;
@@ -68,6 +70,12 @@ public class TtsTabViewModel : IToolContext
 
     public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new(true);
 
+    public ReactiveProperty<AudioQuery?> CurrentAudioQuery { get; } = new();
+
+    public ReactiveProperty<bool> IsAudioQueryGenerated { get; } = new();
+
+    public ObservableCollection<AccentPhraseViewModel> AccentPhrases { get; } = new();
+
     public void OnLoaded()
     {
         var loader = TtsLoader.VoiceVoxLoader.Value;
@@ -86,6 +94,75 @@ public class TtsTabViewModel : IToolContext
                 (x, y) => new VoiceMetadata { Name = x, Styles = y.ToArray() })
             .ToArray();
         _initTcs.SetResult();
+    }
+
+    public Task GenerateAudioQuery()
+    {
+        return Task.Run(() =>
+        {
+            try
+            {
+                IsGenerating.Value = true;
+                var synthesizer = TtsLoader.VoiceVoxLoader.Value?.Synthesizer;
+                var voice = SelectedVoice.Value;
+                var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
+                
+                if (synthesizer == null)
+                {
+                    _logger.LogError("Synthesizer is not initialized");
+                    return;
+                }
+
+                if (style == null)
+                {
+                    _logger.LogError("Style is not selected");
+                    return;
+                }
+
+                if (string.IsNullOrWhiteSpace(Text.Value))
+                {
+                    _logger.LogError("Text is empty");
+                    return;
+                }
+
+                _logger.LogInformation("Generating AudioQuery...");
+                var result = synthesizer.CreateAudioQuery(
+                    Text.Value, style.Id, AudioQueryOptions.Default(),
+                    out var audioQueryJson);
+                
+                if (result != ResultCode.RESULT_OK)
+                {
+                    _logger.LogError("Failed to generate AudioQuery: {Result}", result.ToMessage());
+                    return;
+                }
+
+                _logger.LogInformation("AudioQuery generated successfully");
+                var audioQuery = JsonSerializer.Deserialize<AudioQuery>(audioQueryJson!);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    CurrentAudioQuery.Value = audioQuery;
+                    IsAudioQueryGenerated.Value = true;
+                    
+                    // Populate AccentPhrases collection
+                    AccentPhrases.Clear();
+                    if (audioQuery?.AccentPhrases != null)
+                    {
+                        for (int i = 0; i < audioQuery.AccentPhrases.Length; i++)
+                        {
+                            AccentPhrases.Add(new AccentPhraseViewModel(audioQuery.AccentPhrases[i], i));
+                        }
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate AudioQuery");
+            }
+            finally
+            {
+                IsGenerating.Value = false;
+            }
+        });
     }
 
     public Task Generate()
@@ -200,16 +277,35 @@ public class TtsTabViewModel : IToolContext
                     return null;
                 }
 
-                var result = synthesizer.Tts(
-                    Text.Value, style.Id, TtsOptions.Default(),
-                    out var outputWavSize, out var outputWav);
-                if (result != ResultCode.RESULT_OK)
+                // Use AudioQuery if available, otherwise use direct TTS
+                if (CurrentAudioQuery.Value != null)
                 {
-                    _logger.LogError("Failed to generate TTS: {Result}", result.ToMessage());
-                    return null;
+                    _logger.LogInformation("Synthesizing from AudioQuery...");
+                    var audioQueryJson = JsonSerializer.Serialize(CurrentAudioQuery.Value);
+                    var result = synthesizer.Synthesis(
+                        audioQueryJson, style.Id, SynthesisOptions.Default(),
+                        out var outputWavSize, out var outputWav);
+                    if (result != ResultCode.RESULT_OK)
+                    {
+                        _logger.LogError("Failed to synthesize: {Result}", result.ToMessage());
+                        return null;
+                    }
+                    return outputWav;
                 }
+                else
+                {
+                    _logger.LogInformation("Generating TTS directly...");
+                    var result = synthesizer.Tts(
+                        Text.Value, style.Id, TtsOptions.Default(),
+                        out var outputWavSize, out var outputWav);
+                    if (result != ResultCode.RESULT_OK)
+                    {
+                        _logger.LogError("Failed to generate TTS: {Result}", result.ToMessage());
+                        return null;
+                    }
 
-                return outputWav;
+                    return outputWav;
+                }
             }
             catch (Exception ex)
             {
