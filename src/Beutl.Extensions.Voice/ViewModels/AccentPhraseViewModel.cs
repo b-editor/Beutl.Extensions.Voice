@@ -31,6 +31,8 @@ public class AccentPhraseViewModel : IDisposable
 
     public string DisplayText => string.Join("", Moras.Select(m => m.Text.Value));
     
+    public int MaxAccentPosition => Math.Max(1, Moras.Count);
+    
     public void Dispose()
     {
         foreach (var disposable in _disposables)

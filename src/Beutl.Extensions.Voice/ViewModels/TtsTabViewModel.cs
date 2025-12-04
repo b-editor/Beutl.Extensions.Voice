@@ -146,12 +146,7 @@ public class TtsTabViewModel : IToolContext
                 
                 Dispatcher.UIThread.Post(() =>
                 {
-                    // Dispose old accent phrases before clearing
-                    foreach (var phrase in AccentPhrases)
-                    {
-                        phrase.Dispose();
-                    }
-                    AccentPhrases.Clear();
+                    ClearAccentPhrases();
                     
                     CurrentAudioQuery.Value = audioQuery;
                     IsAudioQueryGenerated.Value = true;
@@ -175,6 +170,15 @@ public class TtsTabViewModel : IToolContext
                 IsGenerating.Value = false;
             }
         });
+    }
+
+    private void ClearAccentPhrases()
+    {
+        foreach (var phrase in AccentPhrases)
+        {
+            phrase.Dispose();
+        }
+        AccentPhrases.Clear();
     }
 
     public Task Generate()
@@ -329,12 +333,7 @@ public class TtsTabViewModel : IToolContext
 
     public void Dispose()
     {
-        // Dispose all accent phrase view models
-        foreach (var phrase in AccentPhrases)
-        {
-            phrase.Dispose();
-        }
-        AccentPhrases.Clear();
+        ClearAccentPhrases();
     }
 
     public void WriteToJson(JsonObject json)

@@ -189,7 +189,7 @@
                                                     <TextBlock Text="アクセント位置: " />
                                                     <NumericUpDown Width="80"
                                                                    Minimum="0"
-                                                                   Maximum="{Binding Moras.Count}"
+                                                                   Maximum="{Binding MaxAccentPosition}"
                                                                    Value="{Binding Accent.Value, Mode=TwoWay}" />
                                                     <CheckBox Margin="16,0,0,0"
                                                               Content="疑問文"
