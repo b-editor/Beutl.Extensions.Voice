@@ -130,22 +130,34 @@ public class TtsTabViewModel : IToolContext
                     Text.Value, style.Id, AudioQueryOptions.Default(),
                     out var audioQueryJson);
                 
-                if (result != ResultCode.RESULT_OK)
+                if (result != ResultCode.RESULT_OK || string.IsNullOrEmpty(audioQueryJson))
                 {
                     _logger.LogError("Failed to generate AudioQuery: {Result}", result.ToMessage());
                     return;
                 }
 
                 _logger.LogInformation("AudioQuery generated successfully");
-                var audioQuery = JsonSerializer.Deserialize<AudioQuery>(audioQueryJson!);
+                var audioQuery = JsonSerializer.Deserialize<AudioQuery>(audioQueryJson);
+                if (audioQuery == null)
+                {
+                    _logger.LogError("Failed to deserialize AudioQuery");
+                    return;
+                }
+                
                 Dispatcher.UIThread.Post(() =>
                 {
+                    // Dispose old accent phrases before clearing
+                    foreach (var phrase in AccentPhrases)
+                    {
+                        phrase.Dispose();
+                    }
+                    AccentPhrases.Clear();
+                    
                     CurrentAudioQuery.Value = audioQuery;
                     IsAudioQueryGenerated.Value = true;
                     
                     // Populate AccentPhrases collection
-                    AccentPhrases.Clear();
-                    if (audioQuery?.AccentPhrases != null)
+                    if (audioQuery.AccentPhrases != null)
                     {
                         for (int i = 0; i < audioQuery.AccentPhrases.Length; i++)
                         {
@@ -317,6 +329,12 @@ public class TtsTabViewModel : IToolContext
 
     public void Dispose()
     {
+        // Dispose all accent phrase view models
+        foreach (var phrase in AccentPhrases)
+        {
+            phrase.Dispose();
+        }
+        AccentPhrases.Clear();
     }
 
     public void WriteToJson(JsonObject json)
