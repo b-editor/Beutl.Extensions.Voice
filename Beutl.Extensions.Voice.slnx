@@ -1,15 +1,13 @@
 ﻿<Solution>
-  <Folder Name="/External/">
-    <Project Path="external\VoicevoxCoreSharp\examples\cli\cli.csproj" Type="Classic C#" />
-    <Project Path="external\VoicevoxCoreSharp\src\VoicevoxCoreSharp.Core\VoicevoxCoreSharp.Core.csproj" Type="Classic C#" />
-  </Folder>
   <Folder Name="/Ref/">
-    <Project Path="ref\Beutl\Beutl.csproj" Type="Classic C#" />
+    <Project Path="ref/Beutl.Editor/Beutl.Editor.csproj" />
+    <Project Path="ref\Beutl\Beutl.csproj" Type="C#" />
   </Folder>
   <Folder Name="/Root/">
     <File Path="Directory.Build.props" />
     <File Path="Directory.Build.targets" />
+    <File Path="nuget.config" />
   </Folder>
-  <Project Path="src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj" Type="Classic C#" />
-  <Project Path="src\XamlPreview\XamlPreview.csproj" Type="Classic C#" />
+  <Project Path="src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj" Type="C#" />
+  <Project Path="src\XamlPreview\XamlPreview.csproj" Type="C#" />
 </Solution>
