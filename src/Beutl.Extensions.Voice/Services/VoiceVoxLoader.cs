@@ -1,7 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using Beutl.Extensions.Voice.Models;
+using Beutl.Language;
 using Beutl.Logging;
+using Beutl.Services;
 using Microsoft.Extensions.FileSystemGlobbing;
 using Microsoft.Extensions.Logging;
 using VoicevoxCoreSharp.Core;
@@ -10,12 +12,14 @@ using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.Services;
 
-public class VoiceVoxLoader(string voicevoxCorePath)
+public class VoiceVoxLoader(string voicevoxHomePath)
 {
     private readonly ILogger _logger = Log.CreateLogger<VoiceVoxLoader>();
     private static bool _setResolver;
 
     public OpenJtalk? OpenJtalk { get; private set; }
+
+    public Onnxruntime? Onnxruntime { get; private set; }
 
     public Synthesizer? Synthesizer { get; private set; }
 
@@ -31,9 +35,9 @@ public class VoiceVoxLoader(string voicevoxCorePath)
     {
         try
         {
-            if (!Directory.Exists(voicevoxCorePath))
+            if (!Directory.Exists(voicevoxHomePath))
             {
-                _logger.LogError("voicevox_core directory not found");
+                _logger.LogError("voicevox directory not found");
                 IsInstalled = false;
                 InitializationTcs.TrySetResult(false);
                 return;
@@ -43,14 +47,14 @@ public class VoiceVoxLoader(string voicevoxCorePath)
                 IsInstalled = true;
             }
 
-            var openJTalkDictPath = Path.Combine(voicevoxCorePath, "open_jtalk_dic_utf_8-1.11");
             if (!_setResolver)
             {
                 NativeLibrary.SetDllImportResolver(typeof(OpenJtalk).Assembly, (name, _, _) =>
                 {
+                    _logger.LogInformation("Resolving native library: {Name}", name);
                     if (name == "voicevox_core")
                     {
-                        var path = Path.Combine(voicevoxCorePath,
+                        var path = Path.Combine(voicevoxHomePath, "core", "lib",
                             OperatingSystem.IsWindows() ? "libvoicevox_core.dll"
                             : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
                             : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
@@ -68,7 +72,7 @@ public class VoiceVoxLoader(string voicevoxCorePath)
 
             _logger.LogInformation("Initializing core...");
 
-            var initializeOptions = InitializeOptions.Default();
+            var openJTalkDictPath = Path.Combine(voicevoxHomePath, "open_jtalk");
             var result = OpenJtalk.New(openJTalkDictPath, out var openJtalk);
             OpenJtalk = openJtalk;
             if (result != ResultCode.RESULT_OK)
@@ -78,11 +82,29 @@ public class VoiceVoxLoader(string voicevoxCorePath)
                 return;
             }
 
-            result = Synthesizer.New(OpenJtalk, initializeOptions, out var synthesizer);
+            var onnxRuntimePath = Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
+                OperatingSystem.IsWindows() ? "libvoicevox_onnxruntime.dll"
+                : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
+                : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
+                : throw new PlatformNotSupportedException("Unsupported OS"));
+            var loadOnnxruntimeOptions = new LoadOnnxruntimeOptions(onnxRuntimePath);
+            result = Onnxruntime.LoadOnce(loadOnnxruntimeOptions, out var onnxruntime);
+            Onnxruntime = onnxruntime;
+            if (result != ResultCode.RESULT_OK)
+            {
+                _logger.LogError("Failed to load ONNX Runtime: {Result}", result.ToMessage());
+                NotificationService.ShowError(Strings.Error, result.ToMessage());
+                InitializationTcs.TrySetResult(false);
+                return;
+            }
+
+            var initializeOptions = InitializeOptions.Default();
+            result = Synthesizer.New(Onnxruntime, OpenJtalk, initializeOptions, out var synthesizer);
             Synthesizer = synthesizer;
             if (result != ResultCode.RESULT_OK)
             {
                 _logger.LogError("Failed to initialize Synthesizer: {Result}", result.ToMessage());
+                NotificationService.ShowError(Strings.Error, result.ToMessage());
                 InitializationTcs.TrySetResult(false);
                 return;
             }
@@ -90,10 +112,10 @@ public class VoiceVoxLoader(string voicevoxCorePath)
             var matcher = new Matcher();
             matcher.AddIncludePatterns(["*.vvm"]);
 
-            foreach (var path in matcher.GetResultsInFullPath(Path.Combine(voicevoxCorePath, "model")))
+            foreach (var path in matcher.GetResultsInFullPath(Path.Combine(voicevoxHomePath, "models")))
             {
                 _logger.LogInformation("Loading VoiceModel: {Path}", path);
-                result = VoiceModel.New(path, out var voiceModel);
+                result = VoiceModelFile.Open(path, out var voiceModel);
                 if (result != ResultCode.RESULT_OK)
                 {
                     _logger.LogError("Failed to create VoiceModel: {Result}", result.ToMessage());
@@ -126,6 +148,7 @@ public class VoiceVoxLoader(string voicevoxCorePath)
         {
             InitializationTcs.TrySetResult(false);
             _logger.LogError(ex, "Failed to load TTS models");
+            NotificationService.ShowError("VoiceVoxLoader", ex.Message);
             try
             {
                 Unload();

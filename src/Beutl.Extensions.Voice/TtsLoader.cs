@@ -45,8 +45,8 @@ public class TtsLoader : Extension
     public static Task StaticLoad()
     {
         var home = BeutlEnvironment.GetHomeDirectoryPath();
-        var voicevoxCorePath = Path.Combine(home, "voicevox_core");
-        VoiceVoxLoader.Value = new VoiceVoxLoader(voicevoxCorePath);
+        var voicevoxHomePath = Path.Combine(home, "voicevox");
+        VoiceVoxLoader.Value = new VoiceVoxLoader(voicevoxHomePath);
         return Task.Run(() => VoiceVoxLoader.Value.Load());
     }
 }

@@ -4,7 +4,7 @@ using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
-using Beutl.Operation;
+using Beutl.PropertyAdapters;
 
 namespace Beutl.Extensions.Voice;
 
@@ -14,7 +14,7 @@ public class CustomPropertyEditorExtension : PropertyEditorExtension
     public override IEnumerable<IPropertyAdapter> MatchProperty(IReadOnlyList<IPropertyAdapter> properties)
     {
         return properties.Where(i =>
-            i is CorePropertyAdapter<string> c && c.Property.Id == TtsController.TextProperty.Id);
+            i is EnginePropertyAdapter<string> { Object: TtsController, Property.Name: nameof(TtsController.Text) });
     }
 
     public override bool TryCreateContext(

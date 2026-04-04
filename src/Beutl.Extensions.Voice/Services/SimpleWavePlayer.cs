@@ -6,7 +6,8 @@ using Beutl.Services;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using OpenTK.Audio.OpenAL;
+using Silk.NET.OpenAL;
+using AudioContext = Beutl.Audio.Platforms.OpenAL.AudioContext;
 
 namespace Beutl.Extensions.Voice.Services;
 
@@ -102,8 +103,8 @@ public class SimpleWavePlayer : IDisposable
         }
         catch (Exception ex)
         {
-            NotificationService.ShowError(Message.AnUnexpectedErrorHasOccurred,
-                Message.An_exception_occurred_during_audio_playback);
+            NotificationService.ShowError(MessageStrings.UnexpectedError,
+                MessageStrings.AudioPlaybackException);
             _logger.LogError(ex, "An exception occurred during audio playback.");
         }
         finally
@@ -116,72 +117,54 @@ public class SimpleWavePlayer : IDisposable
 
     private async Task PlayWithOpenAL(CancellationToken ct)
     {
-        static void CheckError()
-        {
-            ALError error = AL.GetError();
-
-            if (error is not ALError.NoError)
-            {
-                throw new Exception(AL.GetErrorString(error));
-            }
-        }
-
         using var audioContext = new AudioContext();
-        int[] buffers = [];
-        int source = 0;
+        uint[] buffers = [];
+        uint source = 0;
 
         try
         {
             audioContext.MakeCurrent();
 
             long cur = 0;
-            buffers = AL.GenBuffers(2);
-            CheckError();
-            source = AL.GenSource();
-            CheckError();
+            buffers = audioContext.GenBuffers(2);
+            source = audioContext.GenSource();
 
-            foreach (int buffer in buffers)
+            foreach (uint buffer in buffers)
             {
                 var buf = new float[Reader.WaveFormat.SampleRate * 2];
                 _ = Resampler.Read(buf, 0, buf.Length);
                 cur += Reader.WaveFormat.SampleRate;
                 var converted = buf.Select(i => (short)(i * short.MaxValue)).ToArray();
 
-                AL.BufferData<short>(buffer, ALFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
-                CheckError();
+                audioContext.BufferData(buffer, BufferFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
 
-                AL.SourceQueueBuffer(source, buffer);
-                CheckError();
+                audioContext.SourceQueueBuffer(source, buffer);
             }
 
-            AL.SourcePlay(source);
-            CheckError();
+            audioContext.SourcePlay(source);
 
             while (!ct.IsCancellationRequested && cur < Reader.SampleCount)
             {
-                AL.GetSource(source, ALGetSourcei.BuffersProcessed, out int processed);
-                CheckError();
+                audioContext.GetSource(source, GetSourceInteger.BuffersProcessed, out int processed);
+
                 while (processed > 0)
                 {
-                    var buffer = AL.SourceUnqueueBuffer(source);
-                    CheckError();
+                    uint buffer = audioContext.SourceUnqueueBuffer(source);
                     var buf = new float[Reader.WaveFormat.SampleRate * 2];
                     _ = Resampler.Read(buf, 0, buf.Length);
                     cur += Reader.WaveFormat.SampleRate;
                     var converted = buf.Select(i => (short)(i * short.MaxValue)).ToArray();
 
-                    AL.BufferData<short>(buffer, ALFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
-                    CheckError();
+                    audioContext.BufferData(buffer, BufferFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
 
-                    AL.SourceQueueBuffer(source, buffer);
-                    CheckError();
+                    audioContext.SourceQueueBuffer(source, buffer);
                     processed--;
                 }
 
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
 
-            while (AL.GetSourceState(source) == ALSourceState.Playing && !ct.IsCancellationRequested)
+            while (audioContext.GetSourceState(source) == SourceState.Playing && !ct.IsCancellationRequested)
             {
                 await Task.Delay(100, ct).ConfigureAwait(false);
             }
@@ -191,17 +174,17 @@ public class SimpleWavePlayer : IDisposable
         }
         catch (Exception ex)
         {
-            NotificationService.ShowError(Message.AnUnexpectedErrorHasOccurred,
-                Message.An_exception_occurred_during_audio_playback);
+            NotificationService.ShowError(MessageStrings.UnexpectedError,
+                MessageStrings.AudioPlaybackException);
             _logger.LogError(ex, "An exception occurred during audio playback.");
         }
         finally
         {
-            AL.SourceStop(source);
+            audioContext.SourceStop(source);
             // https://hamken100.blogspot.com/2014/04/aldeletebuffersalinvalidoperation.html
-            AL.Source(source, ALSourcei.Buffer, 0);
-            AL.DeleteBuffers(buffers);
-            AL.DeleteSource(source);
+            audioContext.Source(source, SourceInteger.Buffer, 0);
+            audioContext.DeleteBuffers(buffers);
+            audioContext.DeleteSource(source);
         }
     }
 

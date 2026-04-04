@@ -1,16 +1,18 @@
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
+using Beutl.Audio;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
-using Beutl.Helpers;
 using Beutl.Logging;
 using Beutl.Media.Source;
-using Beutl.Operators.Source;
 using Beutl.ProjectSystem;
 using Beutl.Utilities;
 using Beutl.ViewModels;
+using Beutl.Editor;
+using Beutl.Extensions.Voice.Internals;
+using Beutl.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
@@ -25,7 +27,7 @@ public class TtsTabViewModel : IToolContext
     private readonly Scene _scene;
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private IReactiveProperty<TimeSpan> _currentTime;
-    private CommandRecorder _commandRecorder;
+    private HistoryManager _historyManager;
     private TaskCompletionSource _initTcs = new();
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
@@ -33,7 +35,7 @@ public class TtsTabViewModel : IToolContext
         _editorContext = editorContext;
         _currentTime = ((EditViewModel)editorContext).CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
-        _commandRecorder = editorContext.GetRequiredService<CommandRecorder>();
+        _historyManager = editorContext.GetRequiredService<HistoryManager>();
         Extension = extension;
         TtsLoader.VoiceVoxLoader.Subscribe(l =>
         {
@@ -103,7 +105,10 @@ public class TtsTabViewModel : IToolContext
 
                 _logger.LogInformation("Writing output wav file...");
 
-                var dir = Path.Combine(Path.GetDirectoryName(_scene.FileName)!, ".beutl", "tts");
+                var projectDir = _scene.FindHierarchicalParent<Project>() is { Uri: { } projUri }
+                    ? Path.GetDirectoryName(projUri.LocalPath)
+                    : Path.GetDirectoryName(_scene.Uri!.LocalPath)!;
+                var dir = Path.Combine(projectDir!, "resources", "tts");
                 Directory.CreateDirectory(dir);
                 var id = Guid.NewGuid().ToString();
                 var path = Path.Combine(dir, $"{id}.wav");
@@ -119,21 +124,27 @@ public class TtsTabViewModel : IToolContext
                 var element = new Element
                 {
                     Start = _currentTime.Value,
-                    Length = source.Duration,
                     ZIndex = 1,
-                    FileName = RandomFileNameGenerator.Generate(Path.GetDirectoryName(_scene.FileName)!, "belm"),
+                    Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
                     Name = Text.Value.ReplaceLineEndings().Replace("\n", " "),
-                    AccentColor = ColorGenerator.GenerateColor(typeof(TtsController).FullName!)
+                    AccentColor = ColorGenerator.GenerateColor(null, typeof(TtsController).FullName!)
                 };
-                var op1 = new SourceSoundOperator();
-                var op2 = new TtsController();
-                element.Operation.AddChild(op1).Do();
-                element.Operation.AddChild(op2).Do();
-                op1.Value.Source = source;
-                op2.Text = Text.Value;
-                element.Save(element.FileName);
+                var obj1 = new SourceSound();
+                var obj2 = new TtsController();
+                element.AddObject(obj1);
+                element.AddObject(obj2);
+                obj1.Source.CurrentValue = source;
+                obj2.Text.CurrentValue = Text.Value;
+                if (element.TryGetOriginalDuration(out var duration))
+                {
+                    element.Length = duration;
+                }
+                CoreSerializer.StoreToUri(element, element.Uri);
                 await Dispatcher.UIThread.InvokeAsync(() =>
-                    _scene.AddChild(element, ElementOverlapHandling.ZIndex).DoAndRecord(_commandRecorder));
+                {
+                    _scene.AddChild(element, ElementOverlapHandling.ZIndex);
+                    _historyManager.Commit();
+                });
             }
             catch (Exception ex)
             {

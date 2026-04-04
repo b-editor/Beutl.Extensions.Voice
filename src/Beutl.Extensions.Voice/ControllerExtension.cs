@@ -15,6 +15,6 @@ public class ControllerExtension : Extension
     {
         base.Load();
         LibraryService.Current.RegisterGroup("テキスト読み上げ", g => g
-            .AddSourceOperator<TtsController>("コントローラー"));
+            .AddEngineObject<TtsController>("コントローラー"));
     }
 }

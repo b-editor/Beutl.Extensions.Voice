@@ -12,7 +12,7 @@
              mc:Ignorable="d">
     <Carousel Name="Root">
         <StackPanel Spacing="4">
-            <TextBlock Text="インストールの前に利用するVOICEVOX公式サイトから利用規約をご確認ください。" />
+            <TextBlock Text="インストールの前に利用するVOICEVOX公式サイトから利用規約をご確認ください。" TextWrapping="WrapWithOverflow" />
             <HyperlinkButton Content="VOICEVOX公式サイト" NavigateUri="https://voicevox.hiroshiba.jp" />
         </StackPanel>
         <StackPanel Spacing="4">

@@ -1,28 +1,15 @@
 using System.ComponentModel.DataAnnotations;
-using Beutl.Graphics.Shapes;
-using Beutl.Operation;
+using Beutl.Engine;
 
 namespace Beutl.Extensions.Voice.Operators;
 
-public class TtsController : SourceOperator
+public partial class TtsController : EngineObject
 {
-    public static readonly CoreProperty<string> TextProperty;
-
-    static TtsController()
-    {
-        TextProperty = ConfigureProperty<string, TtsController>(nameof(Text))
-            .Register();
-    }
-
     public TtsController()
     {
-        Properties.Add(new CorePropertyAdapter<string>(TextProperty, this));
+        ScanProperties<TtsController>();
     }
 
     [DataType(DataType.MultilineText)]
-    public string Text
-    {
-        get => GetValue(TextProperty);
-        set => SetValue(TextProperty, value);
-    }
+    public IProperty<string> Text { get; } = Property.Create<string>("");
 }
