@@ -55,7 +55,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     if (name == "voicevox_core")
                     {
                         var path = Path.Combine(voicevoxHomePath, "core", "lib",
-                            OperatingSystem.IsWindows() ? "libvoicevox_core.dll"
+                            OperatingSystem.IsWindows() ? "voicevox_core.dll"
                             : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
                             : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
                             : throw new PlatformNotSupportedException());
@@ -83,7 +83,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             }
 
             var onnxRuntimePath = Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
-                OperatingSystem.IsWindows() ? "libvoicevox_onnxruntime.dll"
+                OperatingSystem.IsWindows() ? "voicevox_onnxruntime.dll"
                 : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
                 : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
                 : throw new PlatformNotSupportedException("Unsupported OS"));
