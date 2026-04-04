@@ -114,6 +114,10 @@ public class VoiceVoxLoader(string voicevoxHomePath)
 
             foreach (var path in matcher.GetResultsInFullPath(Path.Combine(voicevoxHomePath, "models")))
             {
+                var fileName = Path.GetFileName(path);
+                // ソング用のモデルは読み込まない
+                if (fileName.StartsWith('s')) continue;
+
                 _logger.LogInformation("Loading VoiceModel: {Path}", path);
                 result = VoiceModelFile.Open(path, out var voiceModel);
                 if (result != ResultCode.RESULT_OK)
