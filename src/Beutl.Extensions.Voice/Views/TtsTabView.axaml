@@ -5,9 +5,10 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:ui="using:FluentAvalonia.UI.Controls"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
-             d:DesignHeight="450"
-             d:DesignWidth="800"
+             d:DesignHeight="700"
+             d:DesignWidth="400"
              x:CompileBindings="True"
              x:DataType="viewModels:TtsTabViewModel"
              mc:Ignorable="d">
@@ -32,12 +33,13 @@
                 <StackPanel IsEnabled="{Binding IsEnabled.Value}">
 
                     <TextBlock Text="テキスト" />
-                    <TextBox MinHeight="200"
+                    <TextBox MinHeight="100"
                              Margin="0,4,0,0"
                              VerticalContentAlignment="Top"
                              AcceptsReturn="True"
                              Text="{Binding Text.Value, Mode=TwoWay}"
                              TextWrapping="Wrap" />
+
                     <TextBlock Margin="0,16,0,0" Text="話者" />
                     <ComboBox Margin="0,4,0,0"
                               HorizontalAlignment="Stretch"
@@ -62,6 +64,128 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
 
+                    <!-- AudioQuery生成ボタン -->
+                    <Button Margin="0,16,0,0"
+                            HorizontalAlignment="Stretch"
+                            Command="{Binding CreateQuery}"
+                            IsEnabled="{Binding !IsGenerating.Value}">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Play" FontSize="14" />
+                            <TextBlock Margin="6,0,0,0" Text="解析" />
+                        </StackPanel>
+                    </Button>
+
+                    <!-- アクセント句編集パネル -->
+                    <Border Margin="0,16,0,0"
+                            IsVisible="{Binding HasAudioQuery.Value}"
+                            CornerRadius="4"
+                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            Padding="4">
+                        <StackPanel>
+                            <TextBlock Margin="4,0,0,4"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="アクセント / ピッチ（ドラッグで調整・バーをクリックでアクセント位置変更）" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                          VerticalScrollBarVisibility="Disabled">
+                                <views:AccentPhrasePanel x:Name="AccentPanel"
+                                                         MinHeight="220"
+                                                         AccentPhrases="{Binding AudioQuery.Value.AccentPhrases}"
+                                                         AccentPhrasesChanged="OnAccentPhrasesChanged" />
+                            </ScrollViewer>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- グローバルパラメータ -->
+                    <Expander Margin="0,16,0,0"
+                              HorizontalAlignment="Stretch"
+                              IsVisible="{Binding HasAudioQuery.Value}"
+                              Header="詳細パラメータ"
+                              IsExpanded="False">
+                        <StackPanel Margin="0,8,0,0">
+                            <!-- 話速 -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="話速" />
+                                <Slider Grid.Column="1"
+                                        Minimum="0.5" Maximum="2.0"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding SpeedScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding SpeedScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <!-- ピッチ -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="ピッチ" />
+                                <Slider Grid.Column="1"
+                                        Minimum="-0.15" Maximum="0.15"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding PitchScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding PitchScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <!-- 抑揚 -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="抑揚" />
+                                <Slider Grid.Column="1"
+                                        Minimum="0.0" Maximum="2.0"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding IntonationScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding IntonationScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <!-- 音量 -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="音量" />
+                                <Slider Grid.Column="1"
+                                        Minimum="0.0" Maximum="2.0"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding VolumeScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding VolumeScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <!-- 開始無音 -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="開始無音" />
+                                <Slider Grid.Column="1"
+                                        Minimum="0.0" Maximum="1.5"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding PrePhonemeLength.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding PrePhonemeLength.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <!-- 終了無音 -->
+                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
+                                <TextBlock VerticalAlignment="Center" Text="終了無音" />
+                                <Slider Grid.Column="1"
+                                        Minimum="0.0" Maximum="1.5"
+                                        TickFrequency="0.01"
+                                        IsSnapToTickEnabled="True"
+                                        Value="{Binding PostPhonemeLength.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2"
+                                           VerticalAlignment="Center"
+                                           HorizontalAlignment="Right"
+                                           Text="{Binding PostPhonemeLength.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                        </StackPanel>
+                    </Expander>
+
+                    <!-- 生成・再生ボタン -->
                     <WrapPanel Margin="0,24,0,0" Orientation="Horizontal">
                         <Button Classes="accent"
                                 Command="{Binding Generate}"

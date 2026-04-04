@@ -20,4 +20,12 @@ public partial class TtsTabView : UserControl
         };
         await dialog.ShowAsync();
     }
+
+    private void OnAccentPhrasesChanged(object? sender, EventArgs e)
+    {
+        if (DataContext is TtsTabViewModel vm)
+        {
+            vm.OnAccentPhrasesUpdated();
+        }
+    }
 }
