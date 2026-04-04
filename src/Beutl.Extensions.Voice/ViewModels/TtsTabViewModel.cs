@@ -121,12 +121,19 @@ public class TtsTabViewModel : IToolContext
             try
             {
                 IsGenerating.Value = true;
-                var synthesizer = TtsLoader.VoiceVoxLoader.Value?.Synthesizer;
+                var loader = TtsLoader.VoiceVoxLoader.Value;
+                var synthesizer = loader?.Synthesizer;
                 var voice = SelectedVoice.Value;
                 var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
-                if (synthesizer == null || style == null || string.IsNullOrWhiteSpace(Text.Value))
+                if (loader == null || synthesizer == null || style == null || string.IsNullOrWhiteSpace(Text.Value))
                 {
                     _logger.LogError("Synthesizer/style/text is not ready");
+                    return;
+                }
+
+                if (!loader.EnsureVoiceModelLoaded(style.Id))
+                {
+                    _logger.LogError("Failed to load voice model for style {StyleId}", style.Id);
                     return;
                 }
 
@@ -296,12 +303,19 @@ public class TtsTabViewModel : IToolContext
     {
         try
         {
-            var synthesizer = TtsLoader.VoiceVoxLoader.Value?.Synthesizer;
+            var loader = TtsLoader.VoiceVoxLoader.Value;
+            var synthesizer = loader?.Synthesizer;
             var voice = SelectedVoice.Value;
             var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
-            if (synthesizer == null || style == null)
+            if (loader == null || synthesizer == null || style == null)
             {
                 _logger.LogError("Synthesizer or style is not initialized");
+                return null;
+            }
+
+            if (!loader.EnsureVoiceModelLoaded(style.Id))
+            {
+                _logger.LogError("Failed to load voice model for style {StyleId}", style.Id);
                 return null;
             }
 

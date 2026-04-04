@@ -16,6 +16,8 @@ public class VoiceVoxLoader(string voicevoxHomePath)
 {
     private readonly ILogger _logger = Log.CreateLogger<VoiceVoxLoader>();
     private static bool _setResolver;
+    private readonly object _loadLock = new();
+    private readonly HashSet<VoiceSet> _loadedVoiceModels = [];
 
     public OpenJtalk? OpenJtalk { get; private set; }
 
@@ -118,7 +120,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 // ソング用のモデルは読み込まない
                 if (fileName.StartsWith('s')) continue;
 
-                _logger.LogInformation("Loading VoiceModel: {Path}", path);
+                _logger.LogInformation("Opening VoiceModel: {Path}", path);
                 result = VoiceModelFile.Open(path, out var voiceModel);
                 if (result != ResultCode.RESULT_OK)
                 {
@@ -126,22 +128,17 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
-                result = Synthesizer.LoadVoiceModel(voiceModel);
-                if (result != ResultCode.RESULT_OK)
-                {
-                    _logger.LogError("Failed to load VoiceModel: {Result}", result.ToMessage());
-                    continue;
-                }
-
                 var metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
                 if (metadatas == null)
                 {
                     _logger.LogError("Failed to deserialize VoiceMetadata: {Path}", path);
+                    voiceModel.Dispose();
                     continue;
                 }
 
+                // 実際の音声モデルはSynthesizerに読み込まず、利用時まで遅延させる
                 VoiceSets.Add(new VoiceSet(voiceModel, metadatas));
-                _logger.LogInformation("Loaded VoiceModel: {Path}", path);
+                _logger.LogInformation("Opened VoiceModel metadata: {Path}", path);
             }
 
             _logger.LogInformation("Core initialized");
@@ -166,8 +163,50 @@ public class VoiceVoxLoader(string voicevoxHomePath)
         }
     }
 
+    public bool EnsureVoiceModelLoaded(uint styleId)
+    {
+        if (Synthesizer == null)
+        {
+            _logger.LogError("Synthesizer is not initialized");
+            return false;
+        }
+
+        lock (_loadLock)
+        {
+            var voiceSet = VoiceSets.FirstOrDefault(
+                vs => vs.Metadata.Any(m => m.Styles.Any(s => s.Id == styleId)));
+            if (voiceSet == null)
+            {
+                _logger.LogError("VoiceSet not found for styleId: {StyleId}", styleId);
+                return false;
+            }
+
+            if (_loadedVoiceModels.Contains(voiceSet))
+            {
+                return true;
+            }
+
+            _logger.LogInformation("Loading VoiceModel for styleId {StyleId}", styleId);
+            var result = Synthesizer.LoadVoiceModel(voiceSet.Model);
+            if (result != ResultCode.RESULT_OK)
+            {
+                _logger.LogError("Failed to load VoiceModel: {Result}", result.ToMessage());
+                return false;
+            }
+
+            _loadedVoiceModels.Add(voiceSet);
+            _logger.LogInformation("Loaded VoiceModel for styleId {StyleId}", styleId);
+            return true;
+        }
+    }
+
     public void Unload()
     {
+        lock (_loadLock)
+        {
+            _loadedVoiceModels.Clear();
+        }
+
         foreach (var voiceModel in VoiceSets)
         {
             voiceModel.Model.Dispose();
