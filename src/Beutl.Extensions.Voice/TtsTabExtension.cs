@@ -20,14 +20,6 @@ public class TtsTabExtension : ToolTabExtension
 
     public override bool CanMultiple => true;
 
-    public override IconSource GetIcon()
-    {
-        return new SymbolIconSource
-        {
-            Symbol = Symbol.Speaker2
-        };
-    }
-
     public override bool TryCreateContent(IEditorContext editorContext, [NotNullWhen(true)] out Control? control)
     {
         control = new TtsTabView();

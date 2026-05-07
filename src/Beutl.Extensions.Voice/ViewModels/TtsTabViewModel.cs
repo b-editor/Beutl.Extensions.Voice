@@ -10,8 +10,8 @@ using Beutl.Logging;
 using Beutl.Media.Source;
 using Beutl.ProjectSystem;
 using Beutl.Utilities;
-using Beutl.ViewModels;
 using Beutl.Editor;
+using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Internals;
 using Beutl.Serialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,7 +39,7 @@ public class TtsTabViewModel : IToolContext
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
         _editorContext = editorContext;
-        _currentTime = ((EditViewModel)editorContext).CurrentTime;
+        _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
         Extension = extension;
@@ -53,12 +53,6 @@ public class TtsTabViewModel : IToolContext
     public ToolTabExtension Extension { get; }
 
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
-
-    public IReactiveProperty<ToolTabExtension.TabPlacement> Placement { get; } =
-        new ReactiveProperty<ToolTabExtension.TabPlacement>(ToolTabExtension.TabPlacement.RightLowerTop);
-
-    public IReactiveProperty<ToolTabExtension.TabDisplayMode> DisplayMode { get; }
-        = new ReactiveProperty<ToolTabExtension.TabDisplayMode>(ToolTabExtension.TabDisplayMode.Docked);
 
     public string Header { get; } = "テキスト読み上げ";
 
