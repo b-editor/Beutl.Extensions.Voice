@@ -1,8 +1,4 @@
 ﻿<Solution>
-  <Folder Name="/Ref/">
-    <Project Path="ref/Beutl.Editor/Beutl.Editor.csproj" />
-    <Project Path="ref\Beutl\Beutl.csproj" Type="C#" />
-  </Folder>
   <Folder Name="/Root/">
     <File Path="Directory.Build.props" />
     <File Path="Directory.Build.targets" />

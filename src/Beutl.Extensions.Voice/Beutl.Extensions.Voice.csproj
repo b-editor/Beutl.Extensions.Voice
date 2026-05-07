@@ -12,20 +12,6 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- https://github.com/b-editor/beutl/issues/1648 -->
-        <PackageReference
-            Include="Beutl.Engine.SourceGenerators"
-            OutputItemType="Analyzer"
-            ReferenceOutputAssembly="false"
-            Version="2.0.0-preview.1"
-            PrivateAssets="all" />
-
-        <ProjectReference Include="..\..\ref\Beutl\Beutl.csproj">
-            <Private>false</Private>
-        </ProjectReference>
-        <ProjectReference Include="..\..\ref\Beutl.Editor\Beutl.Editor.csproj">
-            <Private>false</Private>
-        </ProjectReference>
         <PackageReference Include="VoicevoxCoreSharp.Core" Version="0.16.3" />
     </ItemGroup>
 
