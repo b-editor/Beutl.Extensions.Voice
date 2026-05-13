@@ -144,9 +144,9 @@ public class VoiceVoxInstaller
                 var name = Path.GetFileName(entry);
                 var dest = Path.Combine(dstDir, name);
                 if (Directory.Exists(entry))
-                    Directory.Move(entry, dest);
+                    MoveDirectoryCrossDevice(entry, dest);
                 else
-                    File.Move(entry, dest);
+                    MoveFileCrossDevice(entry, dest);
             }
         }
         finally
@@ -343,6 +343,45 @@ public class VoiceVoxInstaller
         }
 
         _logger.LogInformation("Installed {Count} VVM files to {Dir}", vvmAssets.Count, vvmDir);
+    }
+
+    private static void MoveDirectoryCrossDevice(string source, string dest)
+    {
+        try
+        {
+            Directory.Move(source, dest);
+        }
+        catch (IOException)
+        {
+            CopyDirectory(source, dest);
+            Directory.Delete(source, true);
+        }
+    }
+
+    private static void MoveFileCrossDevice(string source, string dest)
+    {
+        try
+        {
+            File.Move(source, dest);
+        }
+        catch (IOException)
+        {
+            File.Copy(source, dest, true);
+            File.Delete(source);
+        }
+    }
+
+    private static void CopyDirectory(string source, string dest)
+    {
+        Directory.CreateDirectory(dest);
+        foreach (var file in Directory.GetFiles(source))
+        {
+            File.Copy(file, Path.Combine(dest, Path.GetFileName(file)), true);
+        }
+        foreach (var dir in Directory.GetDirectories(source))
+        {
+            CopyDirectory(dir, Path.Combine(dest, Path.GetFileName(dir)));
+        }
     }
 
     private static string DetermineUrl()
