@@ -32,6 +32,7 @@ public class VoiceVoxInstaller
         {
             string? voicevoxHomePath = null;
             string? tempVoicevoxHomePath = null;
+            string? backupVoicevoxHomePath = null;
             try
             {
                 var home = BeutlEnvironment.GetHomeDirectoryPath();
@@ -51,13 +52,40 @@ public class VoiceVoxInstaller
                     throw new InvalidOperationException("VOICEVOXのインストール検証に失敗しました。");
                 }
 
+                backupVoicevoxHomePath = Path.Combine(home, $".voicevox-backup-{Guid.NewGuid():N}.tmp");
+                DeleteDirectoryIfExists(backupVoicevoxHomePath);
+
                 if (Directory.Exists(voicevoxHomePath))
                 {
-                    Directory.Delete(voicevoxHomePath, true);
+                    Directory.Move(voicevoxHomePath, backupVoicevoxHomePath);
                 }
 
-                MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
-                tempVoicevoxHomePath = null;
+                try
+                {
+                    MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
+                    tempVoicevoxHomePath = null;
+                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
+                    backupVoicevoxHomePath = null;
+                }
+                catch
+                {
+                    if (Directory.Exists(backupVoicevoxHomePath))
+                    {
+                        if (Directory.Exists(voicevoxHomePath)
+                            && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
+                        {
+                            DeleteDirectoryIfExists(voicevoxHomePath);
+                        }
+
+                        if (!Directory.Exists(voicevoxHomePath))
+                        {
+                            MoveDirectoryCrossDevice(backupVoicevoxHomePath, voicevoxHomePath);
+                            backupVoicevoxHomePath = null;
+                        }
+                    }
+
+                    throw;
+                }
 
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
@@ -77,6 +105,15 @@ public class VoiceVoxInstaller
                     && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
                 {
                     DeleteDirectoryIfExists(voicevoxHomePath);
+                }
+
+                if (backupVoicevoxHomePath != null
+                    && Directory.Exists(backupVoicevoxHomePath)
+                    && voicevoxHomePath != null
+                    && Directory.Exists(voicevoxHomePath)
+                    && VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
+                {
+                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
                 }
 
                 Error.Value = ex.Message;

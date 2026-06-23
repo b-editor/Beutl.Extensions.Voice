@@ -92,41 +92,50 @@ public class TtsTabViewModel : IToolContext
 
     public void OnLoaded()
     {
-        var loader = TtsLoader.VoiceVoxLoader.Value;
-        if (loader == null)
+        try
         {
-            _initTcs.TrySetResult();
-            return;
-        }
+            var loader = TtsLoader.VoiceVoxLoader.Value;
+            if (loader == null)
+            {
+                return;
+            }
 
-        IsVoiceVoxInstalled.Value = loader.IsInstalled;
-        if (!loader.IsLoaded)
-        {
-            _initTcs.TrySetResult();
-            return;
-        }
+            IsVoiceVoxInstalled.Value = loader.IsInstalled;
+            if (!loader.IsLoaded)
+            {
+                return;
+            }
 
-        IsEnabled.Value = true;
-        var a = loader.VoiceSets
-            .SelectMany(x => x.Metadata.Select(y => new VoiceFlattenSet(x.Model, y)));
+            IsEnabled.Value = true;
+            var a = loader.VoiceSets
+                .SelectMany(x => x.Metadata.Select(y => new VoiceFlattenSet(x.Model, y)));
 
-        var b = a.SelectMany(x => x.Metadata.Styles.Select(y => (x.Metadata, Style: y)));
+            var b = a.SelectMany(x => x.Metadata.Styles.Select(y => (x.Metadata, Style: y)));
 
-        Voice.Value = b.GroupBy(x => x.Metadata.Name, x => x,
-                (x, y) =>
-                {
-                    var items = y.ToArray();
-                    var metadata = items[0].Metadata;
-                    return new VoiceMetadata
+            Voice.Value = b.GroupBy(x => x.Metadata.Name, x => x,
+                    (x, y) =>
                     {
-                        Name = x,
-                        Version = metadata.Version,
-                        SpeakerUuid = metadata.SpeakerUuid,
-                        Styles = items.Select(z => z.Style).ToArray()
-                    };
-                })
-            .ToArray();
-        _initTcs.TrySetResult();
+                        var items = y.ToArray();
+                        var metadata = items[0].Metadata;
+                        return new VoiceMetadata
+                        {
+                            Name = x,
+                            Version = metadata.Version,
+                            SpeakerUuid = metadata.SpeakerUuid,
+                            Styles = items.Select(z => z.Style).ToArray()
+                        };
+                    })
+                .ToArray();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to initialize VOICEVOX");
+            ShowError("VOICEVOXの初期化に失敗しました。", ex.Message);
+        }
+        finally
+        {
+            _initTcs.TrySetResult();
+        }
     }
 
     public Task CreateQuery()

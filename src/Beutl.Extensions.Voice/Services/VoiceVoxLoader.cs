@@ -39,7 +39,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
         {
             return Directory.Exists(voicevoxHomePath)
                 && File.Exists(GetVoiceVoxCoreLibraryPath(voicevoxHomePath))
-                && HasDirectoryEntries(Path.Combine(voicevoxHomePath, "open_jtalk"))
+                && HasOpenJtalkDictionary(voicevoxHomePath)
                 && File.Exists(GetOnnxRuntimeLibraryPath(voicevoxHomePath))
                 && Directory.EnumerateFiles(Path.Combine(voicevoxHomePath, "models"), "*.vvm").Any();
         }
@@ -49,9 +49,13 @@ public class VoiceVoxLoader(string voicevoxHomePath)
         }
     }
 
-    private static bool HasDirectoryEntries(string path)
+    private static bool HasOpenJtalkDictionary(string voicevoxHomePath)
     {
-        return Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any();
+        var openJtalkPath = Path.Combine(voicevoxHomePath, "open_jtalk");
+        return File.Exists(Path.Combine(openJtalkPath, "sys.dic"))
+            && File.Exists(Path.Combine(openJtalkPath, "char.bin"))
+            && File.Exists(Path.Combine(openJtalkPath, "matrix.bin"))
+            && File.Exists(Path.Combine(openJtalkPath, "unk.dic"));
     }
 
     private static string GetVoiceVoxCoreLibraryPath(string voicevoxHomePath)
