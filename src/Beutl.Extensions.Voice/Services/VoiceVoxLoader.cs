@@ -33,13 +33,52 @@ public class VoiceVoxLoader(string voicevoxHomePath)
 
     public bool IsInstalled { get; private set; }
 
+    internal static bool IsValidInstallation(string voicevoxHomePath)
+    {
+        try
+        {
+            return Directory.Exists(voicevoxHomePath)
+                && File.Exists(GetVoiceVoxCoreLibraryPath(voicevoxHomePath))
+                && HasDirectoryEntries(Path.Combine(voicevoxHomePath, "open_jtalk"))
+                && File.Exists(GetOnnxRuntimeLibraryPath(voicevoxHomePath))
+                && Directory.EnumerateFiles(Path.Combine(voicevoxHomePath, "models"), "*.vvm").Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasDirectoryEntries(string path)
+    {
+        return Directory.Exists(path) && Directory.EnumerateFileSystemEntries(path).Any();
+    }
+
+    private static string GetVoiceVoxCoreLibraryPath(string voicevoxHomePath)
+    {
+        return Path.Combine(voicevoxHomePath, "core", "lib",
+            OperatingSystem.IsWindows() ? "voicevox_core.dll"
+            : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
+            : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
+            : throw new PlatformNotSupportedException());
+    }
+
+    private static string GetOnnxRuntimeLibraryPath(string voicevoxHomePath)
+    {
+        return Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
+            OperatingSystem.IsWindows() ? "voicevox_onnxruntime.dll"
+            : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
+            : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
+            : throw new PlatformNotSupportedException("Unsupported OS"));
+    }
+
     public void Load()
     {
         try
         {
-            if (!Directory.Exists(voicevoxHomePath))
+            if (!IsValidInstallation(voicevoxHomePath))
             {
-                _logger.LogError("voicevox directory not found");
+                _logger.LogError("voicevox installation is missing or incomplete");
                 IsInstalled = false;
                 InitializationTcs.TrySetResult(false);
                 return;
@@ -56,11 +95,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     _logger.LogInformation("Resolving native library: {Name}", name);
                     if (name == "voicevox_core")
                     {
-                        var path = Path.Combine(voicevoxHomePath, "core", "lib",
-                            OperatingSystem.IsWindows() ? "voicevox_core.dll"
-                            : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
-                            : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
-                            : throw new PlatformNotSupportedException());
+                        var path = GetVoiceVoxCoreLibraryPath(voicevoxHomePath);
                         if (NativeLibrary.TryLoad(path, out var lib))
                         {
                             return lib;
@@ -84,11 +119,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 return;
             }
 
-            var onnxRuntimePath = Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
-                OperatingSystem.IsWindows() ? "voicevox_onnxruntime.dll"
-                : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
-                : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
-                : throw new PlatformNotSupportedException("Unsupported OS"));
+            var onnxRuntimePath = GetOnnxRuntimeLibraryPath(voicevoxHomePath);
             var loadOnnxruntimeOptions = new LoadOnnxruntimeOptions(onnxRuntimePath);
             result = Onnxruntime.LoadOnce(loadOnnxruntimeOptions, out var onnxruntime);
             Onnxruntime = onnxruntime;
@@ -128,7 +159,18 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
-                var metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
+                VoiceMetadata[]? metadatas;
+                try
+                {
+                    metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "Failed to deserialize VoiceMetadata: {Path}", path);
+                    voiceModel.Dispose();
+                    continue;
+                }
+
                 if (metadatas == null)
                 {
                     _logger.LogError("Failed to deserialize VoiceMetadata: {Path}", path);

@@ -4,6 +4,7 @@ using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
 using Beutl.Logging;
 using Beutl.Services;
+using Avalonia.Threading;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
 
@@ -22,17 +23,23 @@ public class TtsLoader : Extension
     public override void Load()
     {
         base.Load();
-        StaticLoad().ContinueWith(t =>
+        _ = StaticLoad().ContinueWith(t =>
         {
-            if (VoiceVoxLoader.Value?.IsInstalled != true)
+            if (t.IsFaulted)
             {
-                NotificationService.ShowWarning(
-                    title: "警告",
-                    message:"VOICEVOXがインストールされていません。",
-                    actionButtonText:   "インストール",
-                    onActionButtonClick: ShowInstallDialog);
+                _logger.LogError(t.Exception, "Failed to load TTS");
             }
-        });
+
+            if (!t.IsFaulted && VoiceVoxLoader.Value?.IsInstalled != true)
+            {
+                Dispatcher.UIThread.Post(() =>
+                    NotificationService.ShowWarning(
+                        title: "警告",
+                        message: "VOICEVOXがインストールされていません。",
+                        actionButtonText: "インストール",
+                        onActionButtonClick: ShowInstallDialog));
+            }
+        }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
     private async void ShowInstallDialog()

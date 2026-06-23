@@ -31,6 +31,11 @@ public class SimpleWavePlayer : IDisposable
 
     public WdlResamplingSampleProvider Resampler { get; }
 
+    private static short[] ToPcm16(float[] buf)
+    {
+        return buf.Select(i => (short)(Math.Clamp(i, -1f, 1f) * short.MaxValue)).ToArray();
+    }
+
     public async Task Play(CancellationToken ct)
     {
         await Task.Run(async () =>
@@ -134,7 +139,7 @@ public class SimpleWavePlayer : IDisposable
                 var buf = new float[Reader.WaveFormat.SampleRate * 2];
                 _ = Resampler.Read(buf, 0, buf.Length);
                 cur += Reader.WaveFormat.SampleRate;
-                var converted = buf.Select(i => (short)(i * short.MaxValue)).ToArray();
+                var converted = ToPcm16(buf);
 
                 audioContext.BufferData(buffer, BufferFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
 
@@ -153,7 +158,7 @@ public class SimpleWavePlayer : IDisposable
                     var buf = new float[Reader.WaveFormat.SampleRate * 2];
                     _ = Resampler.Read(buf, 0, buf.Length);
                     cur += Reader.WaveFormat.SampleRate;
-                    var converted = buf.Select(i => (short)(i * short.MaxValue)).ToArray();
+                    var converted = ToPcm16(buf);
 
                     audioContext.BufferData(buffer, BufferFormat.Stereo16, converted.AsSpan(), Reader.WaveFormat.SampleRate);
 

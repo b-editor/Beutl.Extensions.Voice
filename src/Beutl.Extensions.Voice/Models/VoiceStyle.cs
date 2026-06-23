@@ -8,5 +8,5 @@ public class VoiceStyle
     public uint Id { get; init; }
 
     [JsonPropertyName("name")]
-    public string Name { get; init; }
+    public required string Name { get; init; }
 }
