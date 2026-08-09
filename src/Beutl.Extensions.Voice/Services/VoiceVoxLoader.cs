@@ -33,13 +33,56 @@ public class VoiceVoxLoader(string voicevoxHomePath)
 
     public bool IsInstalled { get; private set; }
 
+    internal static bool IsValidInstallation(string voicevoxHomePath)
+    {
+        try
+        {
+            return Directory.Exists(voicevoxHomePath)
+                && File.Exists(GetVoiceVoxCoreLibraryPath(voicevoxHomePath))
+                && HasOpenJtalkDictionary(voicevoxHomePath)
+                && File.Exists(GetOnnxRuntimeLibraryPath(voicevoxHomePath))
+                && Directory.EnumerateFiles(Path.Combine(voicevoxHomePath, "models"), "*.vvm").Any();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool HasOpenJtalkDictionary(string voicevoxHomePath)
+    {
+        var openJtalkPath = Path.Combine(voicevoxHomePath, "open_jtalk");
+        return File.Exists(Path.Combine(openJtalkPath, "sys.dic"))
+            && File.Exists(Path.Combine(openJtalkPath, "char.bin"))
+            && File.Exists(Path.Combine(openJtalkPath, "matrix.bin"))
+            && File.Exists(Path.Combine(openJtalkPath, "unk.dic"));
+    }
+
+    private static string GetVoiceVoxCoreLibraryPath(string voicevoxHomePath)
+    {
+        return Path.Combine(voicevoxHomePath, "core", "lib",
+            OperatingSystem.IsWindows() ? "voicevox_core.dll"
+            : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
+            : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
+            : throw new PlatformNotSupportedException());
+    }
+
+    private static string GetOnnxRuntimeLibraryPath(string voicevoxHomePath)
+    {
+        return Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
+            OperatingSystem.IsWindows() ? "voicevox_onnxruntime.dll"
+            : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
+            : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
+            : throw new PlatformNotSupportedException("Unsupported OS"));
+    }
+
     public void Load()
     {
         try
         {
-            if (!Directory.Exists(voicevoxHomePath))
+            if (!IsValidInstallation(voicevoxHomePath))
             {
-                _logger.LogError("voicevox directory not found");
+                _logger.LogError("voicevox installation is missing or incomplete");
                 IsInstalled = false;
                 InitializationTcs.TrySetResult(false);
                 return;
@@ -56,11 +99,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     _logger.LogInformation("Resolving native library: {Name}", name);
                     if (name == "voicevox_core")
                     {
-                        var path = Path.Combine(voicevoxHomePath, "core", "lib",
-                            OperatingSystem.IsWindows() ? "voicevox_core.dll"
-                            : OperatingSystem.IsLinux() ? "libvoicevox_core.so"
-                            : OperatingSystem.IsMacOS() ? "libvoicevox_core.dylib"
-                            : throw new PlatformNotSupportedException());
+                        var path = GetVoiceVoxCoreLibraryPath(voicevoxHomePath);
                         if (NativeLibrary.TryLoad(path, out var lib))
                         {
                             return lib;
@@ -84,11 +123,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 return;
             }
 
-            var onnxRuntimePath = Path.Combine(voicevoxHomePath, "onnxruntime", "lib",
-                OperatingSystem.IsWindows() ? "voicevox_onnxruntime.dll"
-                : OperatingSystem.IsLinux() ? "libvoicevox_onnxruntime.so"
-                : OperatingSystem.IsMacOS() ? "libvoicevox_onnxruntime.dylib"
-                : throw new PlatformNotSupportedException("Unsupported OS"));
+            var onnxRuntimePath = GetOnnxRuntimeLibraryPath(voicevoxHomePath);
             var loadOnnxruntimeOptions = new LoadOnnxruntimeOptions(onnxRuntimePath);
             result = Onnxruntime.LoadOnce(loadOnnxruntimeOptions, out var onnxruntime);
             Onnxruntime = onnxruntime;
@@ -128,7 +163,18 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
-                var metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
+                VoiceMetadata[]? metadatas;
+                try
+                {
+                    metadatas = JsonSerializer.Deserialize<VoiceMetadata[]>(voiceModel.MetasJson);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogError(ex, "Failed to deserialize VoiceMetadata: {Path}", path);
+                    voiceModel.Dispose();
+                    continue;
+                }
+
                 if (metadatas == null)
                 {
                     _logger.LogError("Failed to deserialize VoiceMetadata: {Path}", path);
@@ -136,9 +182,39 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
+                // requiredはプロパティの存在しか強制しないため、値のnullはここで弾く
+                var usableMetadatas = metadatas
+                    .Where(m => m is { Name: not null, Styles: not null })
+                    .Select(m => new VoiceMetadata
+                    {
+                        Name = m.Name,
+                        Version = m.Version,
+                        SpeakerUuid = m.SpeakerUuid,
+                        Styles = m.Styles.Where(s => s is { Name: not null }).ToArray()
+                    })
+                    .Where(m => m.Styles.Length > 0)
+                    .ToArray();
+
+                if (usableMetadatas.Length == 0)
+                {
+                    _logger.LogError("VoiceModel has no usable style: {Path}", path);
+                    voiceModel.Dispose();
+                    continue;
+                }
+
                 // 実際の音声モデルはSynthesizerに読み込まず、利用時まで遅延させる
-                VoiceSets.Add(new VoiceSet(voiceModel, metadatas));
+                VoiceSets.Add(new VoiceSet(voiceModel, usableMetadatas));
                 _logger.LogInformation("Opened VoiceModel metadata: {Path}", path);
+            }
+
+            if (VoiceSets.Count == 0)
+            {
+                _logger.LogError("No usable voice model was found in {Path}",
+                    Path.Combine(voicevoxHomePath, "models"));
+                NotificationService.ShowError("VoiceVoxLoader", "利用可能な音声モデルが見つかりませんでした。");
+                Unload();
+                InitializationTcs.TrySetResult(false);
+                return;
             }
 
             _logger.LogInformation("Core initialized");

@@ -11,6 +11,8 @@ namespace Beutl.Extensions.Voice.Services;
 public class VoiceVoxInstaller
 {
     private readonly ILogger _logger = Log.CreateLogger<VoiceVoxInstaller>();
+    private static readonly TimeSpan s_httpHeaderTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan s_downloadIdleTimeout = TimeSpan.FromMinutes(2);
     
     public ReactiveProperty<double> Progress { get; } = new(0);
 
@@ -28,33 +30,104 @@ public class VoiceVoxInstaller
     {
         return Task.Run(async () =>
         {
+            string? voicevoxHomePath = null;
+            string? tempVoicevoxHomePath = null;
+            string? backupVoicevoxHomePath = null;
+            var swapStarted = false;
+            FileStream? tempLock = null;
+            FileStream? backupLock = null;
             try
             {
                 var home = BeutlEnvironment.GetHomeDirectoryPath();
-                var voicevoxHomePath = Path.Combine(home, "voicevox");
-                if (Directory.Exists(voicevoxHomePath))
+                voicevoxHomePath = Path.Combine(home, "voicevox");
+
+                tempVoicevoxHomePath = Path.Combine(home, $".voicevox-{Guid.NewGuid():N}.tmp");
+                tempLock = CreateOwnershipLock(tempVoicevoxHomePath);
+                Directory.CreateDirectory(tempVoicevoxHomePath);
+
+                await InstallVoiceVoxCore(tempVoicevoxHomePath, ct);
+                await InstallDictionary(tempVoicevoxHomePath, ct);
+                await InstallOnnxRuntime(tempVoicevoxHomePath, ct);
+                await InstallVoiceModels(tempVoicevoxHomePath, ct);
+
+                if (!VoiceVoxLoader.IsValidInstallation(tempVoicevoxHomePath))
                 {
-                    Directory.Delete(voicevoxHomePath, true);
+                    throw new InvalidOperationException("VOICEVOXのインストール検証に失敗しました。");
                 }
 
-                Directory.CreateDirectory(voicevoxHomePath);
-                await InstallVoiceVoxCore(voicevoxHomePath, ct);
-                await InstallDictionary(voicevoxHomePath, ct);
-                await InstallOnnxRuntime(voicevoxHomePath, ct);
-                await InstallVoiceModels(voicevoxHomePath, ct);
+                if (Directory.Exists(voicevoxHomePath))
+                {
+                    backupVoicevoxHomePath = Path.Combine(home, $".voicevox-backup-{Guid.NewGuid():N}.tmp");
+                    backupLock = CreateOwnershipLock(backupVoicevoxHomePath);
+                    Directory.Move(voicevoxHomePath, backupVoicevoxHomePath);
+                }
+
+                swapStarted = true;
+                MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
+                tempVoicevoxHomePath = null;
+                tempLock?.Dispose();
+                tempLock = null;
+
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
                 await TtsLoader.StaticLoad();
+                if (TtsLoader.VoiceVoxLoader.Value?.IsLoaded != true)
+                {
+                    throw new InvalidOperationException("VOICEVOXの読み込みに失敗しました。");
+                }
+
                 IsIndeterminate.Value = false;
                 Status.Value = "完了";
+
+                if (backupVoicevoxHomePath != null)
+                {
+                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
+                    backupVoicevoxHomePath = null;
+                    backupLock?.Dispose();
+                    backupLock = null;
+                }
+
+                // 動作する環境が所定の位置にある状態でのみ、過去の残留物を回収する
+                DeleteLeftoverDirectories(home);
             }
             catch (Exception ex)
             {
-                Error.Value = ex.Message;
+                if (tempVoicevoxHomePath != null)
+                {
+                    DeleteDirectoryIfExists(tempVoicevoxHomePath);
+                }
+
+                var restored = false;
+                var removed = false;
+                if (backupVoicevoxHomePath != null && Directory.Exists(backupVoicevoxHomePath))
+                {
+                    restored = RestorePreviousInstallation(voicevoxHomePath!, backupVoicevoxHomePath);
+                }
+                else if (voicevoxHomePath != null
+                         && Directory.Exists(voicevoxHomePath)
+                         && (swapStarted || !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath)))
+                {
+                    DeleteDirectoryIfExists(voicevoxHomePath);
+                    removed = swapStarted && !Directory.Exists(voicevoxHomePath);
+                }
+
+                var message = ex.Message;
+                if (restored)
+                {
+                    message += "\n以前のインストールに復元しました。Beutlを再起動してください。";
+                }
+                else if (removed)
+                {
+                    message += "\nインストールしたファイルを削除しました。もう一度お試しください。";
+                }
+
+                Error.Value = message;
                 _logger.LogError(ex, "Failed to install voicevox_core");
             }
             finally
             {
+                tempLock?.Dispose();
+                backupLock?.Dispose();
                 IsCompleted.Value = true;
             }
         }, ct);
@@ -63,7 +136,7 @@ public class VoiceVoxInstaller
     private async Task DownloadFile(string url, string path, CancellationToken ct)
     {
         _logger.LogInformation("Downloading {Url} to {Path}", url, path);
-        using var client = new HttpClient();
+        using var client = new HttpClient { Timeout = s_httpHeaderTimeout };
         using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
 
@@ -75,40 +148,98 @@ public class VoiceVoxInstaller
         if (!contentLength.HasValue)
         {
             IsIndeterminate.Value = true;
-            await download.CopyToAsync(fs, ct).ConfigureAwait(false);
+            await CopyDownloadedStream(download, fs, ct).ConfigureAwait(false);
         }
         else
         {
-            var bufferSize = 81920;
-            var buffer = new byte[bufferSize];
             long totalBytesRead = 0;
-            int bytesRead;
             ProgressMax.Value = 1;
-            while ((bytesRead = await download.ReadAsync(buffer, ct).ConfigureAwait(false)) != 0)
+            await CopyDownloadedStream(download, fs, ct, bytesRead =>
             {
-                await fs.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
                 totalBytesRead += bytesRead;
-
                 Progress.Value = totalBytesRead / (double)contentLength.Value;
-            }
+            }).ConfigureAwait(false);
         }
         
         _logger.LogInformation("Downloaded {Url} to {Path}", url, path);
+    }
+
+    private static async Task CopyDownloadedStream(
+        Stream source,
+        Stream destination,
+        CancellationToken ct,
+        Action<int>? onBytesRead = null)
+    {
+        var buffer = new byte[81920];
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        while (true)
+        {
+            timeoutCts.CancelAfter(s_downloadIdleTimeout);
+            int bytesRead;
+            try
+            {
+                bytesRead = await source.ReadAsync(buffer.AsMemory(0, buffer.Length), timeoutCts.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                throw new TimeoutException($"ダウンロードが{s_downloadIdleTimeout.TotalSeconds:0}秒以上停止しました。");
+            }
+            finally
+            {
+                timeoutCts.CancelAfter(Timeout.InfiniteTimeSpan);
+            }
+
+            if (bytesRead == 0)
+            {
+                break;
+            }
+
+            await destination.WriteAsync(buffer.AsMemory(0, bytesRead), ct).ConfigureAwait(false);
+            onBytesRead?.Invoke(bytesRead);
+        }
     }
     
     private async Task ExtractZip(string zipPath, string dstDir, CancellationToken ct)
     {
         _logger.LogInformation("Extracting {ZipPath} to {DstDir}", zipPath, dstDir);
         using var source = ZipFile.Open(zipPath, ZipArchiveMode.Read);
+        var fullDstDir = Path.GetFullPath(dstDir);
+        if (!fullDstDir.EndsWith(Path.DirectorySeparatorChar))
+        {
+            fullDstDir += Path.DirectorySeparatorChar;
+        }
+
+        var pathComparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
         ProgressMax.Value = source.Entries.Count;
         foreach (var entry in source.Entries)
         {
             if (entry.Length != 0)
             {
-                var dst = Path.Combine(dstDir,
-                    string.Join(Path.DirectorySeparatorChar, entry.FullName.Split('/')[1..]));
-                Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-                await using var fs = File.OpenWrite(dst);
+                var entrySegments = entry.FullName.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (entrySegments.Length < 2 || entrySegments.Any(x => x == ".."))
+                {
+                    throw new IOException($"Invalid zip entry path: {entry.FullName}");
+                }
+
+                var dst = Path.Combine(dstDir, Path.Combine(entrySegments[1..]));
+                var fullDst = Path.GetFullPath(dst);
+                if (!fullDst.StartsWith(fullDstDir, pathComparison))
+                {
+                    throw new IOException($"Zip entry is outside the target directory: {entry.FullName}");
+                }
+
+                var directory = Path.GetDirectoryName(fullDst);
+                if (string.IsNullOrEmpty(directory))
+                {
+                    throw new IOException($"Invalid zip entry path: {entry.FullName}");
+                }
+
+                Directory.CreateDirectory(directory);
+                await using var fs = File.OpenWrite(fullDst);
                 await using var es = entry.Open();
                 await es.CopyToAsync(fs, ct).ConfigureAwait(false);
             }
@@ -271,7 +402,7 @@ public class VoiceVoxInstaller
         Status.Value = "音声モデル情報を取得中 (7/8)";
         IsIndeterminate.Value = true;
 
-        using var client = new HttpClient();
+        using var client = new HttpClient { Timeout = s_httpHeaderTimeout };
         client.DefaultRequestHeaders.Add("User-Agent", "Beutl");
 
         var releasesJson = await client.GetStringAsync(
@@ -337,12 +468,117 @@ public class VoiceVoxInstaller
             response.EnsureSuccessStatusCode();
             await using var fs = File.OpenWrite(filePath);
             await using var download = await response.Content.ReadAsStreamAsync(ct);
-            await download.CopyToAsync(fs, ct);
+            await CopyDownloadedStream(download, fs, ct);
 
             Progress.Value = i + 1;
         }
 
         _logger.LogInformation("Installed {Count} VVM files to {Dir}", vvmAssets.Count, vvmDir);
+    }
+
+    // 作業中のディレクトリを他プロセスの掃除から守るため、ディレクトリと対になるロックファイルを掴む
+    private static FileStream CreateOwnershipLock(string directoryPath)
+    {
+        return new FileStream($"{directoryPath}.lock", FileMode.Create, FileAccess.ReadWrite, FileShare.None,
+            bufferSize: 1, FileOptions.DeleteOnClose);
+    }
+
+    private static bool IsOwnedByAnotherInstaller(string directoryPath)
+    {
+        var lockPath = $"{directoryPath}.lock";
+        if (!File.Exists(lockPath)) return false;
+
+        try
+        {
+            using var _ = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    // 削除に失敗した一時ディレクトリやバックアップは全モデルを含むため、後続のインストールで回収する
+    private void DeleteLeftoverDirectories(string home)
+    {
+        try
+        {
+            foreach (var path in Directory.EnumerateDirectories(home, ".voicevox-*.tmp"))
+            {
+                if (IsOwnedByAnotherInstaller(path))
+                {
+                    _logger.LogInformation("Skipping directory in use: {Path}", path);
+                    continue;
+                }
+
+                _logger.LogInformation("Deleting leftover directory: {Path}", path);
+                DeleteDirectoryIfExists(path);
+            }
+
+            foreach (var path in Directory.EnumerateFiles(home, ".voicevox-*.tmp.lock"))
+            {
+                var directoryPath = path[..^".lock".Length];
+                if (Directory.Exists(directoryPath) || IsOwnedByAnotherInstaller(directoryPath)) continue;
+
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to delete leftover lock file: {Path}", path);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enumerate leftover directories in {Path}", home);
+        }
+    }
+
+    private bool RestorePreviousInstallation(string voicevoxHomePath, string backupVoicevoxHomePath)
+    {
+        try
+        {
+            DeleteDirectoryIfExists(voicevoxHomePath);
+            if (Directory.Exists(voicevoxHomePath))
+            {
+                _logger.LogError(
+                    "Failed to remove the failed installation. The previous installation is kept at {Path}",
+                    backupVoicevoxHomePath);
+                return false;
+            }
+
+            MoveDirectoryCrossDevice(backupVoicevoxHomePath, voicevoxHomePath);
+            _logger.LogInformation("Restored the previous voicevox installation");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to restore the previous voicevox installation from {Path}",
+                backupVoicevoxHomePath);
+            return false;
+        }
+    }
+
+    private void DeleteDirectoryIfExists(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete directory: {Path}", path);
+        }
     }
 
     private static void MoveDirectoryCrossDevice(string source, string dest)
