@@ -33,6 +33,7 @@ public class VoiceVoxInstaller
             string? voicevoxHomePath = null;
             string? tempVoicevoxHomePath = null;
             string? backupVoicevoxHomePath = null;
+            var installedNewTree = false;
             try
             {
                 var home = BeutlEnvironment.GetHomeDirectoryPath();
@@ -60,6 +61,7 @@ public class VoiceVoxInstaller
 
                 MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
                 tempVoicevoxHomePath = null;
+                installedNewTree = true;
 
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
@@ -86,20 +88,30 @@ public class VoiceVoxInstaller
                 }
 
                 var restored = false;
+                var removed = false;
                 if (backupVoicevoxHomePath != null && Directory.Exists(backupVoicevoxHomePath))
                 {
                     restored = RestorePreviousInstallation(voicevoxHomePath!, backupVoicevoxHomePath);
                 }
                 else if (voicevoxHomePath != null
                          && Directory.Exists(voicevoxHomePath)
-                         && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
+                         && (installedNewTree || !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath)))
                 {
                     DeleteDirectoryIfExists(voicevoxHomePath);
+                    removed = installedNewTree && !Directory.Exists(voicevoxHomePath);
                 }
 
-                Error.Value = restored
-                    ? $"{ex.Message}\n以前のインストールに復元しました。Beutlを再起動してください。"
-                    : ex.Message;
+                var message = ex.Message;
+                if (restored)
+                {
+                    message += "\n以前のインストールに復元しました。Beutlを再起動してください。";
+                }
+                else if (removed)
+                {
+                    message += "\nインストールしたファイルを削除しました。もう一度お試しください。";
+                }
+
+                Error.Value = message;
                 _logger.LogError(ex, "Failed to install voicevox_core");
             }
             finally

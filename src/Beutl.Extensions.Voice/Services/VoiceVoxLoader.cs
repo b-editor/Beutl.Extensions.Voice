@@ -182,6 +182,13 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
+                if (!metadatas.Any(m => m.Styles.Length > 0))
+                {
+                    _logger.LogError("VoiceModel has no usable style: {Path}", path);
+                    voiceModel.Dispose();
+                    continue;
+                }
+
                 // 実際の音声モデルはSynthesizerに読み込まず、利用時まで遅延させる
                 VoiceSets.Add(new VoiceSet(voiceModel, metadatas));
                 _logger.LogInformation("Opened VoiceModel metadata: {Path}", path);
