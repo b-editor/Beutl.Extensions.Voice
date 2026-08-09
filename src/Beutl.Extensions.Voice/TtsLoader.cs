@@ -36,8 +36,7 @@ public class TtsLoader : Extension
                     NotificationService.ShowWarning(
                         title: "警告",
                         message: "VOICEVOXがインストールされていません。",
-                        actionButtonText: "インストール",
-                        onActionButtonClick: ShowInstallDialog));
+                        actions: [new NotificationAction("インストール", ShowInstallDialog)]));
             }
         }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
