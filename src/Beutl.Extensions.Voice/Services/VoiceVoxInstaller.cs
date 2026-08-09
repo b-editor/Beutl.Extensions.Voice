@@ -33,14 +33,15 @@ public class VoiceVoxInstaller
             string? voicevoxHomePath = null;
             string? tempVoicevoxHomePath = null;
             string? backupVoicevoxHomePath = null;
-            var installedNewTree = false;
+            var swapStarted = false;
             try
             {
                 var home = BeutlEnvironment.GetHomeDirectoryPath();
                 voicevoxHomePath = Path.Combine(home, "voicevox");
-                tempVoicevoxHomePath = Path.Combine(home, $".voicevox-{Guid.NewGuid():N}.tmp");
 
-                DeleteDirectoryIfExists(tempVoicevoxHomePath);
+                DeleteLeftoverDirectories(home);
+
+                tempVoicevoxHomePath = Path.Combine(home, $".voicevox-{Guid.NewGuid():N}.tmp");
                 Directory.CreateDirectory(tempVoicevoxHomePath);
 
                 await InstallVoiceVoxCore(tempVoicevoxHomePath, ct);
@@ -59,9 +60,9 @@ public class VoiceVoxInstaller
                     Directory.Move(voicevoxHomePath, backupVoicevoxHomePath);
                 }
 
+                swapStarted = true;
                 MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
                 tempVoicevoxHomePath = null;
-                installedNewTree = true;
 
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
@@ -95,10 +96,10 @@ public class VoiceVoxInstaller
                 }
                 else if (voicevoxHomePath != null
                          && Directory.Exists(voicevoxHomePath)
-                         && (installedNewTree || !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath)))
+                         && (swapStarted || !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath)))
                 {
                     DeleteDirectoryIfExists(voicevoxHomePath);
-                    removed = installedNewTree && !Directory.Exists(voicevoxHomePath);
+                    removed = swapStarted && !Directory.Exists(voicevoxHomePath);
                 }
 
                 var message = ex.Message;
@@ -462,6 +463,23 @@ public class VoiceVoxInstaller
         }
 
         _logger.LogInformation("Installed {Count} VVM files to {Dir}", vvmAssets.Count, vvmDir);
+    }
+
+    // 削除に失敗した一時ディレクトリやバックアップは全モデルを含むため、次のインストールで回収する
+    private void DeleteLeftoverDirectories(string home)
+    {
+        try
+        {
+            foreach (var path in Directory.EnumerateDirectories(home, ".voicevox-*.tmp"))
+            {
+                _logger.LogInformation("Deleting leftover directory: {Path}", path);
+                DeleteDirectoryIfExists(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to enumerate leftover directories in {Path}", home);
+        }
     }
 
     private bool RestorePreviousInstallation(string voicevoxHomePath, string backupVoicevoxHomePath)
