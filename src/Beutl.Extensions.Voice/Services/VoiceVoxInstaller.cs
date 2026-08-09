@@ -52,46 +52,31 @@ public class VoiceVoxInstaller
                     throw new InvalidOperationException("VOICEVOXのインストール検証に失敗しました。");
                 }
 
-                backupVoicevoxHomePath = Path.Combine(home, $".voicevox-backup-{Guid.NewGuid():N}.tmp");
-                DeleteDirectoryIfExists(backupVoicevoxHomePath);
-
                 if (Directory.Exists(voicevoxHomePath))
                 {
+                    backupVoicevoxHomePath = Path.Combine(home, $".voicevox-backup-{Guid.NewGuid():N}.tmp");
                     Directory.Move(voicevoxHomePath, backupVoicevoxHomePath);
                 }
 
-                try
-                {
-                    MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
-                    tempVoicevoxHomePath = null;
-                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
-                    backupVoicevoxHomePath = null;
-                }
-                catch
-                {
-                    if (Directory.Exists(backupVoicevoxHomePath))
-                    {
-                        if (Directory.Exists(voicevoxHomePath)
-                            && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
-                        {
-                            DeleteDirectoryIfExists(voicevoxHomePath);
-                        }
-
-                        if (!Directory.Exists(voicevoxHomePath))
-                        {
-                            MoveDirectoryCrossDevice(backupVoicevoxHomePath, voicevoxHomePath);
-                            backupVoicevoxHomePath = null;
-                        }
-                    }
-
-                    throw;
-                }
+                MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
+                tempVoicevoxHomePath = null;
 
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
                 await TtsLoader.StaticLoad();
+                if (TtsLoader.VoiceVoxLoader.Value?.IsLoaded != true)
+                {
+                    throw new InvalidOperationException("VOICEVOXの読み込みに失敗しました。");
+                }
+
                 IsIndeterminate.Value = false;
                 Status.Value = "完了";
+
+                if (backupVoicevoxHomePath != null)
+                {
+                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
+                    backupVoicevoxHomePath = null;
+                }
             }
             catch (Exception ex)
             {
@@ -100,23 +85,21 @@ public class VoiceVoxInstaller
                     DeleteDirectoryIfExists(tempVoicevoxHomePath);
                 }
 
-                if (voicevoxHomePath != null
-                    && Directory.Exists(voicevoxHomePath)
-                    && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
+                var restored = false;
+                if (backupVoicevoxHomePath != null && Directory.Exists(backupVoicevoxHomePath))
+                {
+                    restored = RestorePreviousInstallation(voicevoxHomePath!, backupVoicevoxHomePath);
+                }
+                else if (voicevoxHomePath != null
+                         && Directory.Exists(voicevoxHomePath)
+                         && !VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
                 {
                     DeleteDirectoryIfExists(voicevoxHomePath);
                 }
 
-                if (backupVoicevoxHomePath != null
-                    && Directory.Exists(backupVoicevoxHomePath)
-                    && voicevoxHomePath != null
-                    && Directory.Exists(voicevoxHomePath)
-                    && VoiceVoxLoader.IsValidInstallation(voicevoxHomePath))
-                {
-                    DeleteDirectoryIfExists(backupVoicevoxHomePath);
-                }
-
-                Error.Value = ex.Message;
+                Error.Value = restored
+                    ? $"{ex.Message}\n以前のインストールに復元しました。Beutlを再起動してください。"
+                    : ex.Message;
                 _logger.LogError(ex, "Failed to install voicevox_core");
             }
             finally
@@ -467,6 +450,31 @@ public class VoiceVoxInstaller
         }
 
         _logger.LogInformation("Installed {Count} VVM files to {Dir}", vvmAssets.Count, vvmDir);
+    }
+
+    private bool RestorePreviousInstallation(string voicevoxHomePath, string backupVoicevoxHomePath)
+    {
+        try
+        {
+            DeleteDirectoryIfExists(voicevoxHomePath);
+            if (Directory.Exists(voicevoxHomePath))
+            {
+                _logger.LogError(
+                    "Failed to remove the failed installation. The previous installation is kept at {Path}",
+                    backupVoicevoxHomePath);
+                return false;
+            }
+
+            MoveDirectoryCrossDevice(backupVoicevoxHomePath, voicevoxHomePath);
+            _logger.LogInformation("Restored the previous voicevox installation");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to restore the previous voicevox installation from {Path}",
+                backupVoicevoxHomePath);
+            return false;
+        }
     }
 
     private void DeleteDirectoryIfExists(string path)

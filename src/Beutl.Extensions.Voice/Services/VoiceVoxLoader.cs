@@ -187,6 +187,16 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 _logger.LogInformation("Opened VoiceModel metadata: {Path}", path);
             }
 
+            if (VoiceSets.Count == 0)
+            {
+                _logger.LogError("No usable voice model was found in {Path}",
+                    Path.Combine(voicevoxHomePath, "models"));
+                NotificationService.ShowError("VoiceVoxLoader", "利用可能な音声モデルが見つかりませんでした。");
+                Unload();
+                InitializationTcs.TrySetResult(false);
+                return;
+            }
+
             _logger.LogInformation("Core initialized");
             InitializationTcs.TrySetResult(true);
             IsLoaded = true;
