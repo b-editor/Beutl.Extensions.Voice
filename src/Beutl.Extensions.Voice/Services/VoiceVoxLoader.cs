@@ -182,7 +182,20 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                     continue;
                 }
 
-                if (!metadatas.Any(m => m.Styles.Length > 0))
+                // requiredはプロパティの存在しか強制しないため、値のnullはここで弾く
+                var usableMetadatas = metadatas
+                    .Where(m => m is { Name: not null, Styles: not null })
+                    .Select(m => new VoiceMetadata
+                    {
+                        Name = m.Name,
+                        Version = m.Version,
+                        SpeakerUuid = m.SpeakerUuid,
+                        Styles = m.Styles.Where(s => s is { Name: not null }).ToArray()
+                    })
+                    .Where(m => m.Styles.Length > 0)
+                    .ToArray();
+
+                if (usableMetadatas.Length == 0)
                 {
                     _logger.LogError("VoiceModel has no usable style: {Path}", path);
                     voiceModel.Dispose();
@@ -190,7 +203,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 }
 
                 // 実際の音声モデルはSynthesizerに読み込まず、利用時まで遅延させる
-                VoiceSets.Add(new VoiceSet(voiceModel, metadatas));
+                VoiceSets.Add(new VoiceSet(voiceModel, usableMetadatas));
                 _logger.LogInformation("Opened VoiceModel metadata: {Path}", path);
             }
 

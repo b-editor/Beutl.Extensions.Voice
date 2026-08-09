@@ -34,14 +34,15 @@ public class VoiceVoxInstaller
             string? tempVoicevoxHomePath = null;
             string? backupVoicevoxHomePath = null;
             var swapStarted = false;
+            FileStream? tempLock = null;
+            FileStream? backupLock = null;
             try
             {
                 var home = BeutlEnvironment.GetHomeDirectoryPath();
                 voicevoxHomePath = Path.Combine(home, "voicevox");
 
-                DeleteLeftoverDirectories(home);
-
                 tempVoicevoxHomePath = Path.Combine(home, $".voicevox-{Guid.NewGuid():N}.tmp");
+                tempLock = CreateOwnershipLock(tempVoicevoxHomePath);
                 Directory.CreateDirectory(tempVoicevoxHomePath);
 
                 await InstallVoiceVoxCore(tempVoicevoxHomePath, ct);
@@ -57,12 +58,15 @@ public class VoiceVoxInstaller
                 if (Directory.Exists(voicevoxHomePath))
                 {
                     backupVoicevoxHomePath = Path.Combine(home, $".voicevox-backup-{Guid.NewGuid():N}.tmp");
+                    backupLock = CreateOwnershipLock(backupVoicevoxHomePath);
                     Directory.Move(voicevoxHomePath, backupVoicevoxHomePath);
                 }
 
                 swapStarted = true;
                 MoveDirectoryCrossDevice(tempVoicevoxHomePath, voicevoxHomePath);
                 tempVoicevoxHomePath = null;
+                tempLock?.Dispose();
+                tempLock = null;
 
                 Status.Value = "ロード中 (8/8)";
                 IsIndeterminate.Value = true;
@@ -79,7 +83,12 @@ public class VoiceVoxInstaller
                 {
                     DeleteDirectoryIfExists(backupVoicevoxHomePath);
                     backupVoicevoxHomePath = null;
+                    backupLock?.Dispose();
+                    backupLock = null;
                 }
+
+                // 動作する環境が所定の位置にある状態でのみ、過去の残留物を回収する
+                DeleteLeftoverDirectories(home);
             }
             catch (Exception ex)
             {
@@ -117,6 +126,8 @@ public class VoiceVoxInstaller
             }
             finally
             {
+                tempLock?.Dispose();
+                backupLock?.Dispose();
                 IsCompleted.Value = true;
             }
         }, ct);
@@ -465,15 +476,63 @@ public class VoiceVoxInstaller
         _logger.LogInformation("Installed {Count} VVM files to {Dir}", vvmAssets.Count, vvmDir);
     }
 
-    // 削除に失敗した一時ディレクトリやバックアップは全モデルを含むため、次のインストールで回収する
+    // 作業中のディレクトリを他プロセスの掃除から守るため、ディレクトリと対になるロックファイルを掴む
+    private static FileStream CreateOwnershipLock(string directoryPath)
+    {
+        return new FileStream($"{directoryPath}.lock", FileMode.Create, FileAccess.ReadWrite, FileShare.None,
+            bufferSize: 1, FileOptions.DeleteOnClose);
+    }
+
+    private static bool IsOwnedByAnotherInstaller(string directoryPath)
+    {
+        var lockPath = $"{directoryPath}.lock";
+        if (!File.Exists(lockPath)) return false;
+
+        try
+        {
+            using var _ = new FileStream(lockPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+            return false;
+        }
+        catch (IOException)
+        {
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    // 削除に失敗した一時ディレクトリやバックアップは全モデルを含むため、後続のインストールで回収する
     private void DeleteLeftoverDirectories(string home)
     {
         try
         {
             foreach (var path in Directory.EnumerateDirectories(home, ".voicevox-*.tmp"))
             {
+                if (IsOwnedByAnotherInstaller(path))
+                {
+                    _logger.LogInformation("Skipping directory in use: {Path}", path);
+                    continue;
+                }
+
                 _logger.LogInformation("Deleting leftover directory: {Path}", path);
                 DeleteDirectoryIfExists(path);
+            }
+
+            foreach (var path in Directory.EnumerateFiles(home, ".voicevox-*.tmp.lock"))
+            {
+                var directoryPath = path[..^".lock".Length];
+                if (Directory.Exists(directoryPath) || IsOwnedByAnotherInstaller(directoryPath)) continue;
+
+                try
+                {
+                    File.Delete(path);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to delete leftover lock file: {Path}", path);
+                }
             }
         }
         catch (Exception ex)
