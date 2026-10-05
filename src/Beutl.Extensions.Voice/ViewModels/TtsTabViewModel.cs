@@ -56,7 +56,7 @@ public class TtsTabViewModel : IToolContext
 
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
 
-    public string Header { get; } = "テキスト読み上げ";
+    public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
 
     public ReactiveProperty<string> Text { get; } = new();
 

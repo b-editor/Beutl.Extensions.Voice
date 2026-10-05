@@ -20,16 +20,16 @@
         </Border>
         <ScrollViewer Grid.Row="1">
             <StackPanel Margin="10">
-                <ui:InfoBar Title="警告"
+                <ui:FAInfoBar Title="警告"
                             Margin="0,0,0,8"
                             IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
                             IsVisible="{Binding !IsVoiceVoxInstalled.Value}"
                             Message="VOICEVOXがインストールされていません。"
                             Severity="Warning">
-                    <ui:InfoBar.ActionButton>
+                    <ui:FAInfoBar.ActionButton>
                         <Button Click="DownloadVoiceVox">インストール</Button>
-                    </ui:InfoBar.ActionButton>
-                </ui:InfoBar>
+                    </ui:FAInfoBar.ActionButton>
+                </ui:FAInfoBar>
                 <StackPanel IsEnabled="{Binding IsEnabled.Value}">
 
                     <TextBlock Text="テキスト" />
@@ -70,7 +70,7 @@
                             Command="{Binding CreateQuery}"
                             IsEnabled="{Binding !IsGenerating.Value}">
                         <StackPanel Orientation="Horizontal">
-                            <ui:SymbolIcon Symbol="Play" FontSize="14" />
+                            <ui:FASymbolIcon Symbol="Play" FontSize="14" />
                             <TextBlock Margin="6,0,0,0" Text="解析" />
                         </StackPanel>
                     </Button>

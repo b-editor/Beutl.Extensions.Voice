@@ -64,7 +64,7 @@ public class SimpleWavePlayer : IDisposable
         {
             // 1秒あたりのバイト数 * 1秒分のデータを読み込む
             var buf = new float[fmt.SampleRate * 2];
-            _ = Resampler.Read(buf, 0, buf.Length);
+            _ = Resampler.Read(buf.AsSpan());
             buffer.BufferData(buf.AsSpan(), fmt);
 
             source.QueueBuffer(buffer);
@@ -137,7 +137,7 @@ public class SimpleWavePlayer : IDisposable
             foreach (uint buffer in buffers)
             {
                 var buf = new float[Reader.WaveFormat.SampleRate * 2];
-                _ = Resampler.Read(buf, 0, buf.Length);
+                _ = Resampler.Read(buf.AsSpan());
                 cur += Reader.WaveFormat.SampleRate;
                 var converted = ToPcm16(buf);
 
@@ -156,7 +156,7 @@ public class SimpleWavePlayer : IDisposable
                 {
                     uint buffer = audioContext.SourceUnqueueBuffer(source);
                     var buf = new float[Reader.WaveFormat.SampleRate * 2];
-                    _ = Resampler.Read(buf, 0, buf.Length);
+                    _ = Resampler.Read(buf.AsSpan());
                     cur += Reader.WaveFormat.SampleRate;
                     var converted = ToPcm16(buf);
 

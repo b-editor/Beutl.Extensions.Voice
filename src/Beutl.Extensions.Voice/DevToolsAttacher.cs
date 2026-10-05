@@ -1,7 +1,7 @@
 #if DEBUG
 
 using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Diagnostics;
 using Avalonia.Threading;
 using Beutl.Extensibility;
 
@@ -15,10 +15,7 @@ public class DevToolsAttacher : Extension
         base.Load();
         Dispatcher.UIThread.Post(() =>
         {
-            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime lifetime)
-            {
-                lifetime.MainWindow?.AttachDevTools();
-            }
+            Application.Current?.AttachDeveloperTools();
         });
     }
 

@@ -4,14 +4,14 @@ using FluentAvalonia.UI.Controls;
 
 namespace Beutl.Extensions.Voice.Views;
 
-public partial class VoiceVoxInstallDialog : ContentDialog
+public partial class VoiceVoxInstallDialog : FAContentDialog
 {
     public VoiceVoxInstallDialog()
     {
         InitializeComponent();
     }
 
-    protected override Type StyleKeyOverride => typeof(ContentDialog);
+    protected override Type StyleKeyOverride => typeof(FAContentDialog);
 
     protected override void OnKeyUp(KeyEventArgs e)
     {
@@ -23,7 +23,7 @@ public partial class VoiceVoxInstallDialog : ContentDialog
         base.OnKeyUp(e);
     }
 
-    protected override async void OnPrimaryButtonClick(ContentDialogButtonClickEventArgs args)
+    protected override async void OnPrimaryButtonClick(FAContentDialogButtonClickEventArgs args)
     {
         base.OnPrimaryButtonClick(args);
         if (DataContext is not VoiceVoxInstallDialogViewModel viewModel) return;
@@ -46,7 +46,7 @@ public partial class VoiceVoxInstallDialog : ContentDialog
         }
     }
 
-    protected override void OnCloseButtonClick(ContentDialogButtonClickEventArgs args)
+    protected override void OnCloseButtonClick(FAContentDialogButtonClickEventArgs args)
     {
         base.OnCloseButtonClick(args);
         if (DataContext is not VoiceVoxInstallDialogViewModel viewModel) return;
