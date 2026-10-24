@@ -12,8 +12,6 @@ using Beutl.ProjectSystem;
 using Beutl.Utilities;
 using Beutl.Editor;
 using Beutl.Editor.Services;
-using Beutl.Extensions.Voice.Internals;
-using Beutl.Serialization;
 using Beutl.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -28,7 +26,7 @@ public class TtsTabViewModel : IToolContext
     private readonly IEditorContext _editorContext;
     private readonly Scene _scene;
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
-    private IReactiveProperty<TimeSpan> _currentTime;
+    private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private HistoryManager _historyManager;
     private TaskCompletionSource _initTcs = new();
     private int _busy;
@@ -305,23 +303,22 @@ public class TtsTabViewModel : IToolContext
                 var source = SoundSource.Open(path);
                 var element = new Element
                 {
-                    Start = _currentTime.Value,
-                    ZIndex = 1,
+                    Start = { Value = _currentTime.Value },
+                    ZIndex = { Value = 1 },
                     Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
-                    Name = Text.Value.ReplaceLineEndings(" "),
-                    AccentColor = ColorGenerator.GenerateColor(null, typeof(TtsController).FullName!)
+                    Name = { Value = Text.Value.ReplaceLineEndings(" ") },
+                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
                 };
                 var obj1 = new SourceSound();
                 var obj2 = new TtsController();
                 element.AddObject(obj1);
                 element.AddObject(obj2);
-                obj1.Source.CurrentValue = source;
-                obj2.Text.CurrentValue = Text.Value;
+                obj1.Source.Value = source;
+                obj2.Text.Value = Text.Value;
                 if (element.TryGetOriginalDuration(out var duration))
                 {
-                    element.Length = duration;
+                    element.Length.Value = duration;
                 }
-                CoreSerializer.StoreToUri(element, element.Uri);
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     _scene.AddChild(element, ElementOverlapHandling.ZIndex);

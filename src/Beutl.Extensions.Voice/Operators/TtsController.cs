@@ -11,5 +11,5 @@ public partial class TtsController : EngineObject
     }
 
     [DataType(DataType.MultilineText)]
-    public IProperty<string> Text { get; } = Property.Create<string>("");
+    public IExpressionProperty<string> Text { get; } = Property.CreateExpression<string>("");
 }
