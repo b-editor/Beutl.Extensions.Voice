@@ -218,8 +218,8 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             }
 
             _logger.LogInformation("Core initialized");
-            InitializationTcs.TrySetResult(true);
             IsLoaded = true;
+            InitializationTcs.TrySetResult(true);
         }
         catch (Exception ex)
         {

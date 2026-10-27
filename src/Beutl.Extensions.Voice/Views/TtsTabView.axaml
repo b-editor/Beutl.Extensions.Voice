@@ -30,7 +30,57 @@
                         <Button Click="DownloadVoiceVox">インストール</Button>
                     </ui:FAInfoBar.ActionButton>
                 </ui:FAInfoBar>
+                <StackPanel IsEnabled="{Binding !IsGenerating.Value}" Spacing="8">
+                    <Expander HorizontalAlignment="Stretch" Header="声のプリセット" IsExpanded="True">
+                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding PresetScopes}"
+                                      SelectedIndex="{Binding PresetScope.Value, Mode=TwoWay}" />
+                            <ComboBox HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
+                                      ItemsSource="{Binding Presets.Value}"
+                                      SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:VoicePreset">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock FontSize="11" Text="{Binding Settings.SpeakerName}"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <WrapPanel>
+                                <Button Content="適用" Command="{Binding ApplyPreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
+                                <Button Content="複製" Command="{Binding DuplicatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
+                                <Button Content="削除" Command="{Binding DeletePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
+                                <Button Content="再読込" Command="{Binding RefreshPresets}" Margin="0,0,4,4" />
+                            </WrapPanel>
+                            <TextBox Text="{Binding PresetName.Value, Mode=TwoWay}" PlaceholderText="プリセット名" />
+                            <WrapPanel>
+                                <Button Content="現在の設定を追加" Command="{Binding AddPreset}" Margin="0,0,4,4" />
+                                <Button Content="改名" Command="{Binding RenamePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
+                                <Button Content="設定を更新" Command="{Binding UpdatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
+                            </WrapPanel>
+                            <TextBlock Text="保存値と現在値の差分" IsVisible="{Binding HasSelectedPreset.Value}" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding PresetDetails.Value}" TextWrapping="Wrap" FontSize="12" />
+                            <TextBlock Text="{Binding PresetMessage.Value}" TextWrapping="Wrap" FontSize="12" />
+                        </StackPanel>
+                    </Expander>
+                    <Expander HorizontalAlignment="Stretch" Header="既存セリフの設定・再生成">
+                        <StackPanel Spacing="8" Margin="0,8,0,0">
+                            <TextBlock Text="タイムラインで選択した読み上げ要素を読み込み、プリセットや調声を変更して再生成できます。" TextWrapping="Wrap" FontSize="12" />
+                            <Button Content="選択したセリフを読み込む" Command="{Binding LoadSelectedSpeech}" />
+                            <TextBlock Text="{Binding EditingElementName.Value}" TextWrapping="Wrap" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding GenerationDetails.Value}" TextWrapping="Wrap" FontSize="12" />
+                            <StackPanel IsVisible="{Binding HasEditingElement.Value}" Spacing="8">
+                                <TextBlock Text="再生成では音声を置き換えます。配置・要素の長さ・トリムは保持します。" TextWrapping="Wrap" FontSize="12" />
+                                <Button Content="現在の設定で再生成" Command="{Binding Regenerate}" />
+                                <Button Content="対象を解除" Command="{Binding ClearEditingSpeech}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Expander>
+                </StackPanel>
                 <StackPanel IsEnabled="{Binding IsEnabled.Value}">
+                    <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
 
                     <TextBlock Text="テキスト" />
                     <TextBox MinHeight="100"
@@ -100,7 +150,6 @@
                     <!-- グローバルパラメータ -->
                     <Expander Margin="0,16,0,0"
                               HorizontalAlignment="Stretch"
-                              IsVisible="{Binding HasAudioQuery.Value}"
                               Header="詳細パラメータ"
                               IsExpanded="False">
                         <StackPanel Margin="0,8,0,0">
@@ -184,6 +233,7 @@
                             </Grid>
                         </StackPanel>
                     </Expander>
+                    </StackPanel>
 
                     <!-- 生成・再生ボタン -->
                     <WrapPanel Margin="0,24,0,0" Orientation="Horizontal">

@@ -6,4 +6,5 @@
   </Folder>
   <Project Path="src\Beutl.Extensions.Voice\Beutl.Extensions.Voice.csproj" Type="C#" />
   <Project Path="src\XamlPreview\XamlPreview.csproj" Type="C#" />
+  <Project Path="tests/Beutl.Extensions.Voice.Tests/Beutl.Extensions.Voice.Tests.csproj" />
 </Solution>
