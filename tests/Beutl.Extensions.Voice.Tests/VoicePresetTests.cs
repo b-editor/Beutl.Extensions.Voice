@@ -2,8 +2,11 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
+using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -15,6 +18,7 @@ using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
 using Beutl.ProjectSystem;
 using Beutl.Serialization;
+using FluentAvalonia.UI.Controls;
 
 namespace Beutl.Extensions.Voice.Tests;
 
@@ -225,9 +229,67 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
+    public async Task Preset_menu_opens_name_input_and_exposes_management_and_details()
+    {
+        using var editor = Editor();
+        using var model = Model(editor);
+        var view = new TtsTabView { DataContext = model };
+        var window = new Window { Width = 320, Height = 600, Content = view };
+        try
+        {
+            window.Show();
+            var button = view.FindControl<Button>("PresetMenuButton")!;
+            var menu = (FAMenuFlyout)button.Flyout!;
+            menu.ShowAt(button);
+            await Settle();
+            var items = menu.Items.OfType<FAMenuFlyoutItem>().ToArray();
+            Assert.That(items.Single(x => x.Text == "削除").IsEnabled, Is.False);
+            Capture(menu, "preset-menu");
+            menu.Hide();
+            items.Single(x => x.Text == "現在の設定を保存…").RaiseEvent(new RoutedEventArgs(FAMenuFlyoutItem.ClickEvent));
+            await Settle();
+            var inputFlyout = (Flyout)FlyoutBase.GetAttachedFlyout(button)!;
+            var input = ((StackPanel)inputFlyout.Content!).Children.OfType<TextBox>().Single();
+            input.Text = "会話の声";
+            Capture(inputFlyout, "preset-name");
+            input.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Enter });
+            await Settle();
+            Assert.That(inputFlyout.IsOpen, Is.False);
+            Assert.That(model.Presets.Value.Single().Name, Is.EqualTo("会話の声"));
+
+            menu.ShowAt(button);
+            await Settle();
+            Assert.That(items.Single(x => x.Text == "名前を変更…").IsEnabled, Is.True);
+            Assert.That(items.Single(x => x.Text == "複製").Command, Is.Not.Null);
+            model.SpeedScale.Value = 1.2;
+            items.Single(x => x.Text == "現在の設定で更新").Command!.Execute(null);
+            Assert.That(model.SelectedPreset.Value!.Settings.SpeedScale, Is.EqualTo(1.2));
+            menu.Hide();
+            items.Single(x => x.Text == "保存値との差分…").RaiseEvent(new RoutedEventArgs(FAMenuFlyoutItem.ClickEvent));
+            await Settle();
+            var detailsFlyout = (Flyout)FlyoutBase.GetAttachedFlyout(button)!;
+            Assert.That(model.SelectedPreset.Value?.Name, Is.EqualTo("会話の声"));
+            Assert.That(model.PresetDetails.Value, Is.Not.Empty);
+            Assert.That(((StackPanel)detailsFlyout.Content!).GetVisualDescendants().OfType<TextBlock>()
+                .Any(x => x.Text == model.PresetDetails.Value), Is.True);
+            Capture(detailsFlyout, "preset-details");
+            detailsFlyout.Hide();
+        }
+        finally { window.Close(); }
+
+        static void Capture(PopupFlyoutBase flyout, string name)
+        {
+            if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is not { } directory) return;
+            Directory.CreateDirectory(directory);
+            using var frame = TopLevel.GetTopLevel(flyout.Popup.Child)!.CaptureRenderedFrame()!;
+            frame.Save(Path.Combine(directory, name + ".png"), new PngBitmapEncoderOptions());
+        }
+    }
+
+    [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Preset_controls_render_in_narrow_and_wide_tabs(int width, bool light)
+    public async Task Editor_keeps_primary_actions_visible_and_presets_out_of_the_text_entry_flow(int width, bool light)
     {
         using var editor = Editor();
         using var model = Model(editor);
@@ -235,59 +297,85 @@ public class VoicePresetTests
         model.AddPreset();
         model.SpeedScale.Value = 1.1;
         var view = new TtsTabView { DataContext = model };
-        var window = new Window { Width = width, Height = 1100, Content = view,
+        var window = new Window { Width = width, Height = 600, Content = view,
             RequestedThemeVariant = light ? ThemeVariant.Light : ThemeVariant.Dark };
         try
         {
             window.Show();
-            Dispatcher.UIThread.RunJobs();
-            AvaloniaHeadlessPlatform.ForceRenderTimerTick(3);
-            var apply = view.GetVisualDescendants().OfType<Button>().Single(x => Equals(x.Content, "適用"));
-            Assert.That(apply.Command, Is.Not.Null);
+            await Settle();
+            var text = view.FindControl<TextBox>("SpeechTextBox")!;
+            var preset = view.FindControl<ComboBox>("PresetSelector")!;
+            Assert.That(text.TranslatePoint(default, view)!.Value.Y, Is.LessThan(preset.TranslatePoint(default, view)!.Value.Y));
+            var apply = view.FindControl<Button>("ApplyPresetButton")!;
             apply.Command!.Execute(null);
+            await Settle();
             Assert.That(model.SpeedScale.Value, Is.EqualTo(1.3));
-            Assert.That(apply.Bounds.Width, Is.GreaterThan(20));
-            if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is { } directory)
+            var add = view.FindControl<Button>("AddSpeechButton")!;
+            var regenerate = view.FindControl<Button>("RegenerateSpeechButton")!;
+            var preview = view.FindControl<Button>("PreviewButton")!;
+            double footerY = add.TranslatePoint(default, window)!.Value.Y;
+            Assert.That(footerY, Is.InRange(540, 580));
+            Assert.That(add.IsEffectivelyVisible, Is.True);
+            Assert.That(regenerate.IsEffectivelyVisible, Is.False);
+            Capture("editor");
+
+            // Expanding and scrolling the accent editor must not move the main actions.
+            model.AudioQuery.Value = new AudioQueryModel();
+            model.HasAudioQuery.Value = true;
+            view.FindControl<Expander>("AccentExpander")!.IsExpanded = true;
+            await Settle();
+            view.FindControl<ScrollViewer>("EditorScroll")!.Offset = new Vector(0, 10000);
+            await Settle();
+            Assert.That(view.FindControl<ScrollViewer>("EditorScroll")!.Offset.Y, Is.GreaterThan(0));
+            Assert.That(add.TranslatePoint(default, window)!.Value.Y, Is.EqualTo(footerY));
+
+            var element = new Element { Name = { Value = "ナレーション 01" } };
+            element.AddObject(new TtsController
             {
+                Text = { Value = model.Text.Value },
+                Generation = { Value = new VoiceGeneration
+                {
+                    Text = model.Text.Value, Settings = model.SelectedPreset.Value!.Settings,
+                    PresetId = model.SelectedPreset.Value.Id, PresetName = model.SelectedPreset.Value.Name
+                } }
+            });
+            editor.Selection.Value = element;
+            view.FindControl<Button>("LoadSpeechButton")!.Command!.Execute(null);
+            view.FindControl<Expander>("AccentExpander")!.IsExpanded = false;
+            view.FindControl<ScrollViewer>("EditorScroll")!.Offset = default;
+            await Settle();
+            Assert.That(add.IsEffectivelyVisible, Is.False);
+            Assert.That(regenerate.IsEffectivelyVisible, Is.True);
+            Assert.That(regenerate.TranslatePoint(default, window)!.Value.Y, Is.EqualTo(footerY));
+            Capture("regeneration");
+            model.IsGenerating.Value = true;
+            await Settle();
+            Assert.That(preview.IsEffectivelyEnabled, Is.False);
+            Assert.That(regenerate.IsEffectivelyEnabled, Is.False);
+            model.IsGenerating.Value = false;
+            view.FindControl<Button>("NewSpeechButton")!.Command!.Execute(null);
+            await Settle();
+            Assert.That(add.IsEffectivelyVisible, Is.True);
+            Assert.That(regenerate.IsEffectivelyVisible, Is.False);
+            Assert.That(model.Text.Value, Is.EqualTo("こんにちは。保存した声で読み上げます。"));
+
+            void Capture(string name)
+            {
+                if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is not { } directory) return;
                 Directory.CreateDirectory(directory);
-                await Settle();
-                Capture("presets");
-                var element = new Element { Name = { Value = "ナレーション 01" } };
-                element.AddObject(new TtsController
-                {
-                    Text = { Value = model.Text.Value },
-                    Generation = { Value = new VoiceGeneration
-                    {
-                        Text = model.Text.Value, Settings = model.SelectedPreset.Value!.Settings,
-                        PresetId = model.SelectedPreset.Value.Id, PresetName = model.SelectedPreset.Value.Name
-                    } }
-                });
-                editor.Selection.Value = element;
-                model.LoadSelectedSpeech();
-                var expanders = view.GetVisualDescendants().OfType<Expander>().ToArray();
-                expanders.Single(x => Equals(x.Header, "声のプリセット")).IsExpanded = false;
-                expanders.Single(x => Equals(x.Header, "既存セリフの設定・再生成")).IsExpanded = true;
-                expanders.Single(x => Equals(x.Header, "詳細パラメータ")).IsExpanded = true;
-                await Settle();
-                Assert.That(view.GetVisualDescendants().OfType<TextBlock>()
-                    .Any(x => x.Text == model.GenerationDetails.Value && x.IsEffectivelyVisible), Is.True);
-                Capture("regeneration");
-
-                static async Task Settle()
-                {
-                    Dispatcher.UIThread.RunJobs();
-                    await Task.Delay(350); // Let expander transitions and reactive bindings settle.
-                    Dispatcher.UIThread.RunJobs();
-                    AvaloniaHeadlessPlatform.ForceRenderTimerTick(3);
-                }
-
-                void Capture(string name)
-                {
-                    using var frame = window.CaptureRenderedFrame()!;
-                    frame.Save(Path.Combine(directory, $"{name}-{width}-{(light ? "light" : "dark")}.png"), new PngBitmapEncoderOptions());
-                }
+                using var frame = window.CaptureRenderedFrame()!;
+                frame.Save(Path.Combine(directory, $"{name}-{width}-{(light ? "light" : "dark")}.png"), new PngBitmapEncoderOptions());
             }
         }
         finally { window.Close(); }
+
+    }
+
+    private static async Task Settle()
+    {
+        Dispatcher.UIThread.RunJobs();
+        await Task.Delay(250);
+        Dispatcher.UIThread.RunJobs();
+        AvaloniaHeadlessPlatform.ForceRenderTimerTick(3);
     }
 }

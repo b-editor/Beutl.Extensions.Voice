@@ -3,256 +3,199 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:controls="using:Beutl.Controls"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:ui="using:FluentAvalonia.UI.Controls"
              xmlns:views="using:Beutl.Extensions.Voice.Views"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
-             d:DesignHeight="700"
-             d:DesignWidth="400"
+             d:DesignHeight="600" d:DesignWidth="320"
              x:CompileBindings="True"
              x:DataType="viewModels:TtsTabViewModel"
              mc:Ignorable="d">
-    <Grid RowDefinitions="40,*">
-        <Border Background="Transparent">
-            <TextBlock Margin="10,0,0,0"
-                       VerticalAlignment="Center"
-                       Text="テキスト読み上げ" />
-        </Border>
-        <ScrollViewer Grid.Row="1">
-            <StackPanel Margin="10">
-                <ui:FAInfoBar Title="警告"
-                            Margin="0,0,0,8"
-                            IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
-                            IsVisible="{Binding !IsVoiceVoxInstalled.Value}"
-                            Message="VOICEVOXがインストールされていません。"
-                            Severity="Warning">
+    <Grid RowDefinitions="Auto,*,Auto">
+        <controls:ToolTabBar IsEnabled="{Binding !IsGenerating.Value}">
+            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+                <TextBlock Margin="8,0" VerticalAlignment="Center"
+                           Text="新しいセリフ" IsVisible="{Binding !HasEditingElement.Value}" />
+                <TextBlock Margin="8,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Text="{Binding EditingElementName.Value}" ToolTip.Tip="{Binding EditingElementName.Value}"
+                           IsVisible="{Binding HasEditingElement.Value}" />
+                <Button x:Name="LoadSpeechButton" Grid.Column="1" Command="{Binding LoadSelectedSpeech}"
+                        Content="選択から読込" Padding="8,4"
+                        ToolTip.Tip="タイムラインで選択した読み上げ要素を編集します。" />
+                <Button x:Name="GenerationInfoButton" Grid.Column="2" Click="ShowGenerationDetails"
+                        IsVisible="{Binding HasEditingElement.Value}"
+                        Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                        AutomationProperties.Name="生成時の設定" ToolTip.Tip="生成時の設定">
+                    <icons:FluentIcon Icon="Info" FontSize="16" />
+                </Button>
+                <Button x:Name="NewSpeechButton" Grid.Column="3" Command="{Binding ClearEditingSpeech}"
+                        IsVisible="{Binding HasEditingElement.Value}"
+                        Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                        AutomationProperties.Name="新しいセリフに切り替え" ToolTip.Tip="新しいセリフに切り替え">
+                    <icons:FluentIcon Icon="Add" FontSize="16" />
+                </Button>
+            </Grid>
+        </controls:ToolTabBar>
+
+        <ScrollViewer x:Name="EditorScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <ui:FAInfoBar Title="VOICEVOXがインストールされていません。" Margin="8"
+                              IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
+                              IsVisible="{Binding !IsVoiceVoxInstalled.Value}" Severity="Warning">
                     <ui:FAInfoBar.ActionButton>
                         <Button Click="DownloadVoiceVox">インストール</Button>
                     </ui:FAInfoBar.ActionButton>
                 </ui:FAInfoBar>
-                <StackPanel IsEnabled="{Binding !IsGenerating.Value}" Spacing="8">
-                    <Expander HorizontalAlignment="Stretch" Header="声のプリセット" IsExpanded="True">
-                        <StackPanel Spacing="8" Margin="0,8,0,0">
-                            <ComboBox HorizontalAlignment="Stretch" ItemsSource="{Binding PresetScopes}"
-                                      SelectedIndex="{Binding PresetScope.Value, Mode=TwoWay}" />
-                            <ComboBox HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
-                                      ItemsSource="{Binding Presets.Value}"
-                                      SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="models:VoicePreset">
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock FontSize="11" Text="{Binding Settings.SpeakerName}"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <WrapPanel>
-                                <Button Content="適用" Command="{Binding ApplyPreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
-                                <Button Content="複製" Command="{Binding DuplicatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
-                                <Button Content="削除" Command="{Binding DeletePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
-                                <Button Content="再読込" Command="{Binding RefreshPresets}" Margin="0,0,4,4" />
-                            </WrapPanel>
-                            <TextBox Text="{Binding PresetName.Value, Mode=TwoWay}" PlaceholderText="プリセット名" />
-                            <WrapPanel>
-                                <Button Content="現在の設定を追加" Command="{Binding AddPreset}" Margin="0,0,4,4" />
-                                <Button Content="改名" Command="{Binding RenamePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
-                                <Button Content="設定を更新" Command="{Binding UpdatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" Margin="0,0,4,4" />
-                            </WrapPanel>
-                            <TextBlock Text="保存値と現在値の差分" IsVisible="{Binding HasSelectedPreset.Value}" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding PresetDetails.Value}" TextWrapping="Wrap" FontSize="12" />
-                            <TextBlock Text="{Binding PresetMessage.Value}" TextWrapping="Wrap" FontSize="12" />
+                <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
+                    <TextBox x:Name="SpeechTextBox" MinHeight="112" MaxHeight="200" Margin="8"
+                             VerticalContentAlignment="Top" AcceptsReturn="True"
+                             PlaceholderText="読み上げるテキストを入力"
+                             AutomationProperties.Name="読み上げるテキスト"
+                             Text="{Binding Text.Value, Mode=TwoWay}" TextWrapping="Wrap" />
+
+                    <Grid Margin="8,4,8,0" ColumnDefinitions="*,Auto">
+                        <TextBlock Text="プリセット" VerticalAlignment="Center" />
+                        <ComboBox Grid.Column="1" ItemsSource="{Binding PresetScopes}" MinHeight="28" Padding="8,2"
+                                  AutomationProperties.Name="プリセットの保存先"
+                                  SelectedIndex="{Binding PresetScope.Value, Mode=TwoWay}" />
+                    </Grid>
+                    <Grid Margin="8,4,8,0" ColumnDefinitions="*,Auto,Auto">
+                        <ComboBox x:Name="PresetSelector" HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
+                                  AutomationProperties.Name="声のプリセット"
+                                  ItemsSource="{Binding Presets.Value}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:VoicePreset">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding Settings.SpeakerName}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button x:Name="ApplyPresetButton" Grid.Column="1" Margin="4,0,0,0" Padding="8,4"
+                                Content="適用" Command="{Binding ApplyPreset}" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                        <Button x:Name="PresetMenuButton" Grid.Column="2"
+                                Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                                ToolTip.Tip="プリセットの管理" AutomationProperties.Name="プリセットの管理">
+                            <icons:FluentIcon Icon="MoreHorizontal" FontSize="16" />
+                            <Button.Flyout>
+                                <ui:FAMenuFlyout>
+                                    <ui:FAMenuFlyoutItem Text="現在の設定を保存…" Click="SavePresetClick" />
+                                    <ui:FAMenuFlyoutItem Text="現在の設定で更新" Command="{Binding UpdatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                                    <ui:FAMenuFlyoutItem Text="保存値との差分…" Click="ShowPresetDetails" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                                    <ui:FAMenuFlyoutSeparator />
+                                    <ui:FAMenuFlyoutItem Text="名前を変更…" Click="RenamePresetClick" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                                    <ui:FAMenuFlyoutItem Text="複製" Command="{Binding DuplicatePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                                    <ui:FAMenuFlyoutItem Text="削除" Command="{Binding DeletePreset}" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                                    <ui:FAMenuFlyoutSeparator />
+                                    <ui:FAMenuFlyoutItem Text="再読み込み" Command="{Binding RefreshPresets}" />
+                                </ui:FAMenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </Grid>
+                    <TextBlock Margin="8,4" FontSize="11" TextWrapping="Wrap"
+                               IsVisible="{Binding PresetMessage.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{Binding PresetMessage.Value}" />
+
+                    <Grid Margin="8,4,8,8" ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsEnabled="{Binding IsEnabled.Value}">
+                        <TextBlock Text="話者" Margin="0,0,0,4" />
+                        <TextBlock Grid.Column="2" Text="スタイル" Margin="0,0,0,4" />
+                        <ComboBox x:Name="VoiceSelector" Grid.Row="1" HorizontalAlignment="Stretch"
+                                  AutomationProperties.Name="話者"
+                                  ItemsSource="{Binding Voice.Value}" SelectedItem="{Binding SelectedVoice.Value, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:VoiceMetadata">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox x:Name="StyleSelector" Grid.Row="1" Grid.Column="2" HorizontalAlignment="Stretch"
+                                  AutomationProperties.Name="スタイル"
+                                  ItemsSource="{Binding SelectedVoice.Value.Styles}" SelectedItem="{Binding SelectedStyle.Value, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:VoiceStyle">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+
+                    <Expander x:Name="TuningExpander" Theme="{StaticResource ToolTabExpanderTheme}"
+                              HorizontalAlignment="Stretch" Header="調声" IsEnabled="{Binding IsEnabled.Value}">
+                        <StackPanel Margin="8,4" Spacing="0">
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="話速" />
+                                <Slider Grid.Column="1" Minimum="0.5" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="話速" Value="{Binding SpeedScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding SpeedScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="音高" />
+                                <Slider Grid.Column="1" Minimum="-0.15" Maximum="0.15" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="音高" Value="{Binding PitchScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding PitchScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="抑揚" />
+                                <Slider Grid.Column="1" Minimum="0.0" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="抑揚" Value="{Binding IntonationScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding IntonationScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="音量" />
+                                <Slider Grid.Column="1" Minimum="0.0" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="音量" Value="{Binding VolumeScale.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding VolumeScale.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="前無音" ToolTip.Tip="音声の前の無音（秒）" />
+                                <Slider Grid.Column="1" Minimum="0.0" Maximum="1.5" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="前無音（秒）" Value="{Binding PrePhonemeLength.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding PrePhonemeLength.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
+                            <Grid ColumnDefinitions="60,*,44" Height="32">
+                                <TextBlock VerticalAlignment="Center" Text="後無音" ToolTip.Tip="音声の後の無音（秒）" />
+                                <Slider Grid.Column="1" Minimum="0.0" Maximum="1.5" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                                        AutomationProperties.Name="後無音（秒）" Value="{Binding PostPhonemeLength.Value, Mode=TwoWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding PostPhonemeLength.Value, StringFormat={}{0:F2}}" />
+                            </Grid>
                         </StackPanel>
                     </Expander>
-                    <Expander HorizontalAlignment="Stretch" Header="既存セリフの設定・再生成">
-                        <StackPanel Spacing="8" Margin="0,8,0,0">
-                            <TextBlock Text="タイムラインで選択した読み上げ要素を読み込み、プリセットや調声を変更して再生成できます。" TextWrapping="Wrap" FontSize="12" />
-                            <Button Content="選択したセリフを読み込む" Command="{Binding LoadSelectedSpeech}" />
-                            <TextBlock Text="{Binding EditingElementName.Value}" TextWrapping="Wrap" FontWeight="SemiBold" />
-                            <TextBlock Text="{Binding GenerationDetails.Value}" TextWrapping="Wrap" FontSize="12" />
-                            <StackPanel IsVisible="{Binding HasEditingElement.Value}" Spacing="8">
-                                <TextBlock Text="再生成では音声を置き換えます。配置・要素の長さ・トリムは保持します。" TextWrapping="Wrap" FontSize="12" />
-                                <Button Content="現在の設定で再生成" Command="{Binding Regenerate}" />
-                                <Button Content="対象を解除" Command="{Binding ClearEditingSpeech}" />
-                            </StackPanel>
-                        </StackPanel>
-                    </Expander>
-                </StackPanel>
-                <StackPanel IsEnabled="{Binding IsEnabled.Value}">
-                    <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
-
-                    <TextBlock Text="テキスト" />
-                    <TextBox MinHeight="100"
-                             Margin="0,4,0,0"
-                             VerticalContentAlignment="Top"
-                             AcceptsReturn="True"
-                             Text="{Binding Text.Value, Mode=TwoWay}"
-                             TextWrapping="Wrap" />
-
-                    <TextBlock Margin="0,16,0,0" Text="話者" />
-                    <ComboBox Margin="0,4,0,0"
-                              HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding Voice.Value}"
-                              SelectedItem="{Binding SelectedVoice.Value, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="models:VoiceMetadata">
-                                <TextBlock Text="{Binding Name}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-
-                    <TextBlock Margin="0,16,0,0" Text="スタイル" />
-                    <ComboBox Margin="0,4,0,0"
-                              HorizontalAlignment="Stretch"
-                              ItemsSource="{Binding SelectedVoice.Value.Styles}"
-                              SelectedItem="{Binding SelectedStyle.Value, Mode=TwoWay}">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate x:DataType="models:VoiceStyle">
-                                <TextBlock Text="{Binding Name}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                    </ComboBox>
-
-                    <!-- AudioQuery生成ボタン -->
-                    <Button Margin="0,16,0,0"
-                            HorizontalAlignment="Stretch"
-                            Command="{Binding CreateQuery}"
-                            IsEnabled="{Binding !IsGenerating.Value}">
-                        <StackPanel Orientation="Horizontal">
-                            <ui:FASymbolIcon Symbol="Play" FontSize="14" />
-                            <TextBlock Margin="6,0,0,0" Text="解析" />
-                        </StackPanel>
-                    </Button>
-
-                    <!-- アクセント句編集パネル -->
-                    <Border Margin="0,16,0,0"
-                            IsVisible="{Binding HasAudioQuery.Value}"
-                            CornerRadius="4"
-                            BorderBrush="{DynamicResource ControlStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            Padding="4">
-                        <StackPanel>
-                            <TextBlock Margin="4,0,0,4"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="アクセント / ピッチ（ドラッグで調整・バーをクリックでアクセント位置変更）" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto"
-                                          VerticalScrollBarVisibility="Disabled">
-                                <views:AccentPhrasePanel x:Name="AccentPanel"
-                                                         MinHeight="220"
+                    <Expander x:Name="AccentExpander" Theme="{StaticResource ToolTabExpanderTheme}"
+                              HorizontalAlignment="Stretch" Header="アクセント / ピッチ" IsEnabled="{Binding IsEnabled.Value}">
+                        <StackPanel Margin="8" Spacing="8">
+                            <Button Content="テキストを解析" Command="{Binding CreateQuery}"
+                                    ToolTip.Tip="テキストからアクセントを解析し直します。手動のアクセント編集は置き換わります。" />
+                            <TextBlock IsVisible="{Binding !HasAudioQuery.Value}" Text="解析すると、発音ごとのアクセントとピッチを編集できます。"
+                                       TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                          IsVisible="{Binding HasAudioQuery.Value}">
+                                <views:AccentPhrasePanel x:Name="AccentPanel" MinHeight="220"
+                                                         ToolTip.Tip="ドラッグでピッチを調整、バーをクリックでアクセント位置を変更"
                                                          AccentPhrases="{Binding AudioQuery.Value.AccentPhrases}"
                                                          AccentPhrasesChanged="OnAccentPhrasesChanged" />
                             </ScrollViewer>
                         </StackPanel>
-                    </Border>
-
-                    <!-- グローバルパラメータ -->
-                    <Expander Margin="0,16,0,0"
-                              HorizontalAlignment="Stretch"
-                              Header="詳細パラメータ"
-                              IsExpanded="False">
-                        <StackPanel Margin="0,8,0,0">
-                            <!-- 話速 -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="話速" />
-                                <Slider Grid.Column="1"
-                                        Minimum="0.5" Maximum="2.0"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding SpeedScale.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding SpeedScale.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                            <!-- ピッチ -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="ピッチ" />
-                                <Slider Grid.Column="1"
-                                        Minimum="-0.15" Maximum="0.15"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding PitchScale.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding PitchScale.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                            <!-- 抑揚 -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="抑揚" />
-                                <Slider Grid.Column="1"
-                                        Minimum="0.0" Maximum="2.0"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding IntonationScale.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding IntonationScale.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                            <!-- 音量 -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="音量" />
-                                <Slider Grid.Column="1"
-                                        Minimum="0.0" Maximum="2.0"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding VolumeScale.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding VolumeScale.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                            <!-- 開始無音 -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="開始無音" />
-                                <Slider Grid.Column="1"
-                                        Minimum="0.0" Maximum="1.5"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding PrePhonemeLength.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding PrePhonemeLength.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                            <!-- 終了無音 -->
-                            <Grid ColumnDefinitions="90,*,50" Margin="0,0,0,8">
-                                <TextBlock VerticalAlignment="Center" Text="終了無音" />
-                                <Slider Grid.Column="1"
-                                        Minimum="0.0" Maximum="1.5"
-                                        TickFrequency="0.01"
-                                        IsSnapToTickEnabled="True"
-                                        Value="{Binding PostPhonemeLength.Value, Mode=TwoWay}" />
-                                <TextBlock Grid.Column="2"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           Text="{Binding PostPhonemeLength.Value, StringFormat={}{0:F2}}" />
-                            </Grid>
-                        </StackPanel>
                     </Expander>
-                    </StackPanel>
-
-                    <!-- 生成・再生ボタン -->
-                    <WrapPanel Margin="0,24,0,0" Orientation="Horizontal">
-                        <Button Classes="accent"
-                                Command="{Binding Generate}"
-                                IsEnabled="{Binding !IsGenerating.Value}">
-                            <TextBlock Text="追加" />
-                        </Button>
-                        <Button Margin="4,0,0,0"
-                                Command="{Binding Play}"
-                                IsEnabled="{Binding !IsGenerating.Value}">
-                            <TextBlock Text="読み上げ" />
-                        </Button>
-                    </WrapPanel>
-                    <ProgressBar Margin="0,4,0,0"
-                                 IsIndeterminate="{Binding IsGenerating.Value}"
-                                 IsVisible="{Binding IsGenerating.Value}" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>
+
+        <Border Grid.Row="2" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+            <StackPanel>
+                <ProgressBar Height="2" IsIndeterminate="True" IsVisible="{Binding IsGenerating.Value}" />
+                <Grid Margin="8" ColumnDefinitions="*,8,*" IsEnabled="{Binding IsEnabled.Value}">
+                    <Button x:Name="PreviewButton" Content="試聴" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding Play}" IsEnabled="{Binding !IsGenerating.Value}" />
+                    <Button x:Name="AddSpeechButton" Grid.Column="2" Content="追加" Classes="accent"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            Command="{Binding Generate}" IsEnabled="{Binding !IsGenerating.Value}" IsVisible="{Binding !HasEditingElement.Value}" />
+                    <Button x:Name="RegenerateSpeechButton" Grid.Column="2" Content="再生成" Classes="accent"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                            ToolTip.Tip="編集中のセリフを再生成します。配置・長さ・トリムは保持します。"
+                            Command="{Binding Regenerate}" IsEnabled="{Binding !IsGenerating.Value}" IsVisible="{Binding HasEditingElement.Value}" />
+                </Grid>
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

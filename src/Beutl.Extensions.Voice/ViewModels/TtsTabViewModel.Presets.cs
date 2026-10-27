@@ -17,10 +17,11 @@ public partial class TtsTabViewModel
     private VoiceSettings? _unavailableSettings;
     private readonly SerialDisposable _editingSubscription = new();
 
-    public string[] PresetScopes { get; } = ["全体で共有", "このプロジェクト／シーン"];
+    public string[] PresetScopes { get; } = ["全体", "プロジェクト"];
     public ReactiveProperty<int> PresetScope { get; } = new();
-    public ReactiveProperty<VoicePreset[]> Presets { get; } = new([]);
-    public ReactiveProperty<VoicePreset?> SelectedPreset { get; } = new();
+    // Keep item replacement and selection notifications in order on the UI thread.
+    public ReactivePropertySlim<VoicePreset[]> Presets { get; } = new([]);
+    public ReactivePropertySlim<VoicePreset?> SelectedPreset { get; } = new();
     public ReactiveProperty<string> PresetName { get; } = new("");
     public ReactiveProperty<string> PresetDetails { get; } = new("");
     public ReactiveProperty<string> PresetMessage { get; } = new("");
@@ -122,7 +123,7 @@ public partial class TtsTabViewModel
             VoicePresetStore.Save(GetPresetPath(), preset);
             RefreshPresets();
             SelectedPreset.Value = Presets.Value.First(x => x.Id == preset.Id);
-            PresetMessage.Value = "保存しました。既存の音声は変更されません。";
+            PresetMessage.Value = "プリセットを保存しました。";
         }
         catch (Exception ex)
         {
@@ -136,7 +137,7 @@ public partial class TtsTabViewModel
         {
             VoicePresetStore.Delete(GetPresetPath(), RequirePreset().Id);
             RefreshPresets();
-            PresetMessage.Value = "削除しました。既存の音声と生成時設定は保持されています。";
+            PresetMessage.Value = "プリセットを削除しました。";
         }
         catch (Exception ex)
         {
@@ -184,7 +185,7 @@ public partial class TtsTabViewModel
             ? $"保存された声が見つかりません: {settings.EngineId} / {settings.SpeakerName} / {settings.StyleName}。話者を選び直してください。"
             : voice!.Version != settings.ModelVersion
                 ? $"モデルのバージョンが異なります（保存時 {settings.ModelVersion} → 現在 {voice.Version}）。"
-                : "設定を適用しました。既存の音声への反映は「再生成」で行います。";
+                : "声の設定を適用しました。";
         RefreshPresetDetails();
         return style != null;
     }

@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Markup.Xaml.Styling;
 using Beutl.Collections;
 using Beutl.Editor;
 using Beutl.Editor.Services;
@@ -16,7 +17,14 @@ namespace Beutl.Extensions.Voice.Tests;
 
 public class TestApp : Application
 {
-    public override void Initialize() => Styles.Add(new FluentAvaloniaTheme());
+    public override void Initialize()
+    {
+        Styles.Add(new FluentAvaloniaTheme());
+        Styles.Add(new StyleInclude(new Uri("avares://Beutl.Controls/"))
+        {
+            Source = new Uri("avares://Beutl.Controls/Styles.axaml")
+        });
+    }
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApp>()
         .UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
 }
