@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Documents;
 using Avalonia.Input;
 using Avalonia.Media;
 using Beutl.Extensions.Voice.Models;
@@ -35,7 +36,7 @@ public class AccentPhrasePanel : Control
 
     static AccentPhrasePanel()
     {
-        AffectsRender<AccentPhrasePanel>(AccentPhrasesProperty, MinPitchProperty, MaxPitchProperty);
+        AffectsRender<AccentPhrasePanel>(AccentPhrasesProperty, MinPitchProperty, MaxPitchProperty, TextElement.ForegroundProperty);
     }
 
     public List<AccentPhraseModel>? AccentPhrases
@@ -177,7 +178,7 @@ public class AccentPhrasePanel : Control
             }
 
             // モーラテキストラベル
-            var labelBrush = new SolidColorBrush(Color.FromArgb(200, 220, 220, 220));
+            var labelBrush = TextElement.GetForeground(this);
             var typeface = new Typeface("Noto Sans JP, Yu Gothic UI, Meiryo, sans-serif", FontStyle.Normal, FontWeight.Normal);
             for (int mi = 0; mi < phrase.Moras.Count; mi++)
             {
