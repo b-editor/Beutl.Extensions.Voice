@@ -1,4 +1,3 @@
-using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
 using Reactive.Bindings;
@@ -51,9 +50,6 @@ public partial class TtsTabViewModel
         HasAudioQuery.Value = false;
     }
 
-    private static string GetPresetPath() =>
-        Path.Combine(BeutlEnvironment.GetHomeDirectoryPath(), "voice", "presets.json");
-
     public void RefreshPresets()
     {
         var id = SelectedPreset.Value?.Id;
@@ -61,7 +57,7 @@ public partial class TtsTabViewModel
         SelectedPreset.Value = null;
         try
         {
-            Presets.Value = VoicePresetStore.Load(GetPresetPath());
+            Presets.Value = VoicePresetStore.Load(VoicePresetStore.GlobalPath);
             SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
             PresetMessage.Value = "";
         }
@@ -101,7 +97,7 @@ public partial class TtsTabViewModel
         try
         {
             var preset = create();
-            VoicePresetStore.Save(GetPresetPath(), preset);
+            VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
             RefreshPresets();
             SelectedPreset.Value = Presets.Value.First(x => x.Id == preset.Id);
             PresetMessage.Value = "プリセットを保存しました。";
@@ -116,7 +112,7 @@ public partial class TtsTabViewModel
     {
         try
         {
-            VoicePresetStore.Delete(GetPresetPath(), RequirePreset().Id);
+            VoicePresetStore.Delete(VoicePresetStore.GlobalPath, RequirePreset().Id);
             RefreshPresets();
             PresetMessage.Value = "プリセットを削除しました。";
         }

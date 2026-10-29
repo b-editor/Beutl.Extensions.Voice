@@ -18,8 +18,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
 using Reactive.Bindings.Extensions;
-using VoicevoxCoreSharp.Core.Enum;
-using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
@@ -32,11 +30,6 @@ public partial class TtsTabViewModel : IToolContext
     private readonly TaskCompletionSource _initTcs = new();
     private readonly CompositeDisposable _subscriptions = new();
     private bool _disposed;
-
-    private static readonly JsonSerializerOptions s_jsonOptions = new()
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
@@ -127,7 +120,7 @@ public partial class TtsTabViewModel : IToolContext
         IsGenerating.Value = true;
         try
         {
-            var query = await Task.Run(() => CreateQueryCore(request.Text, request.Settings));
+            var query = await Task.Run(() => VoiceSynthesisService.CreateQuery(request.Text, request.Settings));
             PublishQuery(request.Text, request.Settings, query);
         }
         catch (Exception ex)
@@ -139,17 +132,6 @@ public partial class TtsTabViewModel : IToolContext
         {
             IsGenerating.Value = false;
         }
-    }
-
-    private AudioQueryModel CreateQueryCore(string text, VoiceSettings settings)
-    {
-        var loader = TtsLoader.VoiceVoxLoader.Value;
-        if (loader?.Synthesizer == null || !loader.EnsureVoiceModelLoaded(settings.StyleId))
-            throw new InvalidOperationException("VOICEVOXの音声モデルを利用できません。");
-        var result = loader.Synthesizer.CreateAudioQuery(text, settings.StyleId, out var json);
-        if (result != ResultCode.RESULT_OK) throw new InvalidOperationException(result.ToMessage());
-        return JsonSerializer.Deserialize<AudioQueryModel>(json!, s_jsonOptions)
-            ?? throw new JsonException("VOICEVOXの応答を解析できませんでした。");
     }
 
     private void PublishQuery(string text, VoiceSettings settings, AudioQueryModel query)
@@ -167,21 +149,8 @@ public partial class TtsTabViewModel : IToolContext
 
     // Snapshot mutable accent edits on the UI thread before synthesis starts.
     private AudioQueryModel? CopyCurrentQuery() => AudioQuery.Value is { } query
-        ? JsonSerializer.Deserialize<AudioQueryModel>(JsonSerializer.Serialize(query, s_jsonOptions), s_jsonOptions)
+        ? JsonSerializer.Deserialize<AudioQueryModel>(JsonSerializer.Serialize(query, VoiceSynthesisService.JsonOptions), VoiceSynthesisService.JsonOptions)
         : null;
-
-    private (byte[] Wave, AudioQueryModel Query, string Json) Synthesize(string text, VoiceSettings settings, AudioQueryModel? query)
-    {
-        query ??= CreateQueryCore(text, settings);
-        settings.ApplyTo(query);
-        string json = JsonSerializer.Serialize(query, s_jsonOptions);
-        var loader = TtsLoader.VoiceVoxLoader.Value;
-        if (loader?.Synthesizer == null || !loader.EnsureVoiceModelLoaded(settings.StyleId))
-            throw new InvalidOperationException("VOICEVOXの音声モデルを利用できません。");
-        var result = loader.Synthesizer.Synthesis(json, settings.StyleId, SynthesisOptions.Default(), out _, out var wave);
-        if (result != ResultCode.RESULT_OK || wave == null) throw new InvalidOperationException(result.ToMessage());
-        return (wave, query, json);
-    }
 
     public async Task Generate()
     {
@@ -192,10 +161,8 @@ public partial class TtsTabViewModel : IToolContext
         IsGenerating.Value = true;
         try
         {
-            var uri = _scene.FindHierarchicalParent<Project>()?.Uri ?? _scene.Uri;
-            if (uri is not { IsFile: true }) throw new InvalidOperationException("先にプロジェクトまたはシーンを保存してください。");
-            string directory = Path.Combine(Path.GetDirectoryName(uri.LocalPath)!, "resources", "tts");
-            var output = await Task.Run(() => Synthesize(request.Text, request.Settings, query));
+            string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
+            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
             if (_disposed) return;
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
@@ -203,7 +170,7 @@ public partial class TtsTabViewModel : IToolContext
             if (_disposed) return;
             var generation = new VoiceGeneration
             {
-                Text = request.Text, Settings = request.Settings, PresetId = preset?.Id,
+                Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
             var source = SoundSource.Open(path);
@@ -241,7 +208,7 @@ public partial class TtsTabViewModel : IToolContext
         IsGenerating.Value = true;
         try
         {
-            var output = await Task.Run(() => Synthesize(request.Text, request.Settings, query));
+            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
             using var player = new SimpleWavePlayer(output.Wave);

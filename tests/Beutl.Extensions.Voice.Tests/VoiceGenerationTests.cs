@@ -74,8 +74,74 @@ public class VoiceGenerationTests
             Assert.That(editor.History.Redo(), Is.True);
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(2));
             Assert.That(addedController.Generation.Value, Is.EqualTo(updated));
+
+            // The property editor owns its controller even when a different element is selected.
+            editor.Selection.Value = added;
+            var handEditedQuery = JsonSerializer.Deserialize<AudioQueryModel>(original.AudioQueryJson)!;
+            handEditedQuery.AccentPhrases[0].Moras[0].Pitch = 5.5;
+            original = original with { AudioQueryJson = JsonSerializer.Serialize(handEditedQuery) };
+            controller.Generation.Value = original;
+            editor.History.Commit();
+            using var controllerModel = TtsControllerTests.CreateModel(editor, controller);
+            controllerModel.SelectedPreset.Value = controllerModel.Presets.Value.Single();
+            controllerModel.ApplyPreset();
+            var applied = controller.AppliedPreset.Value!;
+            Assert.That(applied.Settings.SpeedScale, Is.EqualTo(1.4));
+            Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(originalPath));
             model.DeletePreset();
+            controllerModel.RefreshPresets();
+            Assert.That(controllerModel.SelectedPreset.Value, Is.Null);
+            element.IsLocked.Value = true;
+            await controllerModel.Regenerate();
+            Assert.That(controllerModel.Message.Value, Does.Contain("ロックされています"));
+            Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(originalPath));
             Assert.That(controller.Generation.Value, Is.EqualTo(original));
+            element.IsLocked.Value = false;
+            await controllerModel.Regenerate();
+            Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
+            var regenerated = controller.Generation.Value!;
+            string regeneratedPath = sound.Source.Value!.Uri.LocalPath;
+            Assert.That(regeneratedPath, Is.Not.EqualTo(originalPath));
+            Assert.That(File.Exists(originalPath), Is.True);
+            Assert.That(regenerated.Settings.SpeedScale, Is.EqualTo(1.4));
+            Assert.That(JsonSerializer.Deserialize<AudioQueryModel>(regenerated.AudioQueryJson)!.AccentPhrases[0].Moras[0].Pitch,
+                Is.EqualTo(5.5), "Changing only tuning must preserve manual accent edits.");
+            Assert.That(addedController.Generation.Value, Is.EqualTo(updated));
+            Assert.That(added.Objects.OfType<SourceSound>().Single().Source.Value!.Uri.LocalPath, Is.EqualTo(updatedPath));
+            Assert.That(element.Start.Value, Is.EqualTo(MediaTime.FromSeconds(3)));
+            Assert.That(element.Length.Value, Is.EqualTo(MediaTime.FromSeconds(1)));
+            Assert.That(sound.OffsetPosition.Value, Is.EqualTo(MediaTime.FromSeconds(0.2)));
+            Assert.That(editor.History.Undo(), Is.True);
+            Assert.That(controller.Generation.Value, Is.EqualTo(original));
+            Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(originalPath));
+            Assert.That(controller.AppliedPreset.Value, Is.EqualTo(applied));
+            Assert.That(editor.History.Redo(), Is.True);
+            Assert.That(controller.Generation.Value, Is.EqualTo(regenerated));
+            Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(regeneratedPath));
+
+            controller.Text.Value = "新しい文章を読み上げます。";
+            await controllerModel.Regenerate();
+            Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
+            Assert.That(controller.Generation.Value!.Text, Is.EqualTo(controller.Text.Value));
+            Assert.That(controller.Generation.Value!.AudioQueryJson, Is.Not.EqualTo(regenerated.AudioQueryJson),
+                "A changed text must be analyzed again, not synthesized with the previous accents.");
+            regenerated = controller.Generation.Value;
+            regeneratedPath = sound.Source.Value!.Uri.LocalPath;
+
+            controller.AppliedPreset.Value = applied with { Settings = applied.Settings with { SpeakerUuid = "missing-speaker" } };
+            await controllerModel.Regenerate();
+            Assert.That(controllerModel.Message.Value, Does.Contain("保存された声が見つかりません"));
+            Assert.That(controller.Generation.Value, Is.EqualTo(regenerated));
+            Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(regeneratedPath));
+
+            // Legacy elements can be regenerated after applying a preset.
+            controller.Generation.Value = null;
+            controller.AppliedPreset.Value = null;
+            controllerModel.SelectedPreset.Value = applied;
+            controllerModel.ApplyPreset();
+            await controllerModel.Regenerate();
+            Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
+            Assert.That(controller.Generation.Value!.Text, Is.EqualTo(controller.Text.Value));
             Assert.That(addedController.Generation.Value, Is.EqualTo(updated));
         }
         finally

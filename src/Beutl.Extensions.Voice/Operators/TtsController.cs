@@ -9,11 +9,13 @@ public partial class TtsController : EngineObject
     public TtsController()
     {
         ScanProperties<TtsController>();
-        HideProperties(Generation);
+        HideProperties(Generation, AppliedPreset);
     }
 
     [DataType(DataType.MultilineText)]
     public IExpressionProperty<string> Text { get; } = Property.CreateExpression<string>("");
 
     public IProperty<VoiceGeneration?> Generation { get; } = Property.CreateValue<VoiceGeneration?>();
+
+    public IProperty<VoicePreset?> AppliedPreset { get; } = Property.CreateValue<VoicePreset?>();
 }

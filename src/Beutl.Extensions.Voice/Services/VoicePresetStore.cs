@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 
 namespace Beutl.Extensions.Voice.Services;
@@ -7,6 +8,8 @@ public static class VoicePresetStore
 {
     private static readonly object s_lock = new();
     private static readonly JsonSerializerOptions s_options = new() { WriteIndented = true };
+
+    public static string GlobalPath => Path.Combine(BeutlEnvironment.GetHomeDirectoryPath(), "voice", "presets.json");
 
     public static VoicePreset[] Load(string path)
     {
