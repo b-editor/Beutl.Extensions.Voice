@@ -12,6 +12,9 @@
              x:CompileBindings="True"
              x:DataType="viewModels:TtsTabViewModel"
              mc:Ignorable="d">
+    <UserControl.Resources>
+        <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
+    </UserControl.Resources>
     <Grid RowDefinitions="*,Auto">
         <ScrollViewer x:Name="EditorScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
@@ -89,6 +92,7 @@
                         </ComboBox>
                     </Grid>
 
+                    <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
                     <Expander x:Name="TuningExpander" Theme="{StaticResource ToolTabExpanderTheme}"
                               HorizontalAlignment="Stretch" Header="調声" IsEnabled="{Binding IsEnabled.Value}">
                         <StackPanel Margin="8,4" Spacing="0">
