@@ -1,11 +1,14 @@
 using System.Text.Json;
+using Avalonia.Controls;
 using Avalonia.Headless.NUnit;
+using Avalonia.Threading;
 using Beutl.Audio;
 using Beutl.Editor.Observers;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
+using Beutl.Extensions.Voice.Views;
 
 namespace Beutl.Extensions.Voice.Tests;
 
@@ -88,9 +91,28 @@ public class VoiceGenerationTests
             var applied = controller.AppliedPreset.Value!;
             Assert.That(applied.Settings.SpeedScale, Is.EqualTo(1.4));
             Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(originalPath));
+            var voiceWindow = new Window { Width = 320, Height = 600,
+                Content = new VoiceEditorView { DataContext = controllerModel } };
+            try
+            {
+                voiceWindow.Show();
+                Dispatcher.UIThread.RunJobs();
+                var beforeRefresh = controller.Draft.Value;
+                controllerModel.OnLoaded();
+                Dispatcher.UIThread.RunJobs();
+                Assert.That(controller.Draft.Value, Is.EqualTo(beforeRefresh));
+                Assert.That(controllerModel.AudioQuery.Value, Is.Not.Null, "Refreshing voice metadata must retain edited accents.");
+                Assert.That(controllerModel.AudioQuery.Value!.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.5));
+            }
+            finally { voiceWindow.Close(); }
             model.DeletePreset();
             controllerModel.RefreshPresets();
             Assert.That(controllerModel.SelectedPreset.Value, Is.Null);
+            controllerModel.SpeedScale.Value = 1.6;
+            controllerModel.VolumeScale.Value = 0.7;
+            controllerModel.ConfirmEdit();
+            controllerModel.AudioQuery.Value!.AccentPhrases[0].Moras[0].Pitch = 5.8;
+            controllerModel.OnAccentPhrasesUpdated();
             element.IsLocked.Value = true;
             await controllerModel.Regenerate();
             Assert.That(controllerModel.Message.Value, Does.Contain("ロックされています"));
@@ -103,9 +125,10 @@ public class VoiceGenerationTests
             string regeneratedPath = sound.Source.Value!.Uri.LocalPath;
             Assert.That(regeneratedPath, Is.Not.EqualTo(originalPath));
             Assert.That(File.Exists(originalPath), Is.True);
-            Assert.That(regenerated.Settings.SpeedScale, Is.EqualTo(1.4));
+            Assert.That(regenerated.Settings.SpeedScale, Is.EqualTo(1.6));
+            Assert.That(regenerated.Settings.VolumeScale, Is.EqualTo(0.7));
             Assert.That(JsonSerializer.Deserialize<AudioQueryModel>(regenerated.AudioQueryJson)!.AccentPhrases[0].Moras[0].Pitch,
-                Is.EqualTo(5.5), "Changing only tuning must preserve manual accent edits.");
+                Is.EqualTo(5.8), "Regeneration uses the controller's manual pitch edits and tuning.");
             Assert.That(addedController.Generation.Value, Is.EqualTo(updated));
             Assert.That(added.Objects.OfType<SourceSound>().Single().Source.Value!.Uri.LocalPath, Is.EqualTo(updatedPath));
             Assert.That(element.Start.Value, Is.EqualTo(MediaTime.FromSeconds(3)));
@@ -115,30 +138,40 @@ public class VoiceGenerationTests
             Assert.That(controller.Generation.Value, Is.EqualTo(original));
             Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(originalPath));
             Assert.That(controller.AppliedPreset.Value, Is.EqualTo(applied));
+            Assert.That(controllerModel.SpeedScale.Value, Is.EqualTo(1.6), "Undo regeneration retains the pending settings.");
+            Assert.That(controllerModel.AudioQuery.Value!.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.8));
             Assert.That(editor.History.Redo(), Is.True);
             Assert.That(controller.Generation.Value, Is.EqualTo(regenerated));
             Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(regeneratedPath));
 
             controller.Text.Value = "新しい文章を読み上げます。";
+            Assert.That(controllerModel.AudioQuery.Value, Is.Null);
+            await controllerModel.CreateQuery();
+            Assert.That(controllerModel.HasAudioQuery.Value, Is.True);
+            controllerModel.AudioQuery.Value!.AccentPhrases[0].Moras[0].Pitch = 6.0;
+            controllerModel.OnAccentPhrasesUpdated();
             await controllerModel.Regenerate();
             Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
             Assert.That(controller.Generation.Value!.Text, Is.EqualTo(controller.Text.Value));
             Assert.That(controller.Generation.Value!.AudioQueryJson, Is.Not.EqualTo(regenerated.AudioQueryJson),
                 "A changed text must be analyzed again, not synthesized with the previous accents.");
+            Assert.That(JsonSerializer.Deserialize<AudioQueryModel>(controller.Generation.Value.AudioQueryJson)!
+                .AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(6.0));
             regenerated = controller.Generation.Value;
             regeneratedPath = sound.Source.Value!.Uri.LocalPath;
 
-            controller.AppliedPreset.Value = applied with { Settings = applied.Settings with { SpeakerUuid = "missing-speaker" } };
+            controllerModel.SelectedPreset.Value = applied with { Settings = applied.Settings with { SpeakerUuid = "missing-speaker" } };
+            controllerModel.ApplyPreset();
             await controllerModel.Regenerate();
             Assert.That(controllerModel.Message.Value, Does.Contain("保存された声が見つかりません"));
             Assert.That(controller.Generation.Value, Is.EqualTo(regenerated));
             Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(regeneratedPath));
 
-            // Legacy elements can be regenerated after applying a preset.
+            // Legacy elements can also select a voice directly, without a preset.
             controller.Generation.Value = null;
             controller.AppliedPreset.Value = null;
-            controllerModel.SelectedPreset.Value = applied;
-            controllerModel.ApplyPreset();
+            controller.Draft.Value = null;
+            controllerModel.SelectedVoice.Value = controllerModel.Voice.Value.First();
             await controllerModel.Regenerate();
             Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
             Assert.That(controller.Generation.Value!.Text, Is.EqualTo(controller.Text.Value));

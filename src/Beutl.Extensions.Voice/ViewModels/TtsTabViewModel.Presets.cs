@@ -7,14 +7,12 @@ namespace Beutl.Extensions.Voice.ViewModels;
 
 public partial class TtsTabViewModel
 {
-    private VoiceSettings? _unavailableSettings;
-
     // Keep item replacement and selection notifications in order on the UI thread.
     public ReactivePropertySlim<VoicePreset[]> Presets { get; } = new([]);
     public ReactivePropertySlim<VoicePreset?> SelectedPreset { get; } = new();
     public ReactiveProperty<string> PresetName { get; } = new("");
     public ReactiveProperty<string> PresetDetails { get; } = new("");
-    public ReactiveProperty<string> PresetMessage { get; } = new("");
+    public ReactivePropertySlim<string> PresetMessage => Message;
     public ReactiveProperty<bool> HasSelectedPreset { get; } = new();
 
     private void InitializePresets()
@@ -26,28 +24,10 @@ public partial class TtsTabViewModel
             HasSelectedPreset.Value = preset != null;
             RefreshPresetDetails();
         }).AddTo(_subscriptions);
-        Text.Subscribe(_ => InvalidateQuery()).AddTo(_subscriptions);
-        SelectedVoice.Subscribe(voice =>
-        {
-            _unavailableSettings = null;
-            if (voice?.Styles.Contains(SelectedStyle.Value!) != true)
-                SelectedStyle.Value = voice?.Styles.FirstOrDefault();
-            InvalidateQuery();
-            RefreshPresetDetails();
-        }).AddTo(_subscriptions);
-        SelectedStyle.Subscribe(_ =>
-        {
-            InvalidateQuery();
-            RefreshPresetDetails();
-        }).AddTo(_subscriptions);
+        SelectedVoice.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
+        SelectedStyle.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength })
             property.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
-    }
-
-    private void InvalidateQuery()
-    {
-        AudioQuery.Value = null;
-        HasAudioQuery.Value = false;
     }
 
     public void RefreshPresets()
@@ -125,46 +105,7 @@ public partial class TtsTabViewModel
     public void ApplyPreset()
     {
         if (SelectedPreset.Value is { } preset) ApplySettings(preset.Settings);
-    }
-
-    private VoiceSettings? CaptureSettings()
-    {
-        var voice = SelectedVoice.Value;
-        var style = SelectedStyle.Value;
-        if (voice == null || style == null || !voice.Styles.Contains(style)) return null;
-        return new VoiceSettings
-        {
-            SpeakerUuid = voice.SpeakerUuid, SpeakerName = voice.Name,
-            StyleId = style.Id, StyleName = style.Name, ModelVersion = voice.Version,
-            SpeedScale = SpeedScale.Value, PitchScale = PitchScale.Value,
-            IntonationScale = IntonationScale.Value, VolumeScale = VolumeScale.Value,
-            PrePhonemeLength = PrePhonemeLength.Value, PostPhonemeLength = PostPhonemeLength.Value
-        };
-    }
-
-    private bool ApplySettings(VoiceSettings settings)
-    {
-        var voice = settings.EngineId == VoiceSettings.CoreEngineId
-            ? Voice.Value.FirstOrDefault(x => x.SpeakerUuid == settings.SpeakerUuid) : null;
-        var style = voice?.Styles.FirstOrDefault(x => x.Id == settings.StyleId);
-        bool sameVoice = CaptureSettings()?.UsesSameVoice(settings) == true;
-        SelectedVoice.Value = voice;
-        SelectedStyle.Value = style;
-        SpeedScale.Value = settings.SpeedScale;
-        PitchScale.Value = settings.PitchScale;
-        IntonationScale.Value = settings.IntonationScale;
-        VolumeScale.Value = settings.VolumeScale;
-        PrePhonemeLength.Value = settings.PrePhonemeLength;
-        PostPhonemeLength.Value = settings.PostPhonemeLength;
-        if (!sameVoice) InvalidateQuery();
-        _unavailableSettings = style == null ? settings : null;
-        PresetMessage.Value = style == null
-            ? $"保存された声が見つかりません: {settings.EngineId} / {settings.SpeakerName} / {settings.StyleName}。話者を選び直してください。"
-            : voice!.Version != settings.ModelVersion
-                ? $"モデルのバージョンが異なります（保存時 {settings.ModelVersion} → 現在 {voice.Version}）。"
-                : "声の設定を適用しました。";
         RefreshPresetDetails();
-        return style != null;
     }
 
     private void RefreshPresetDetails()

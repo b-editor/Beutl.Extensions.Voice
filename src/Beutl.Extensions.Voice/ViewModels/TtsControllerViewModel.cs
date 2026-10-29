@@ -1,5 +1,3 @@
-using System.Reactive.Disposables;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 using Beutl.Audio;
 using Beutl.Editor;
@@ -16,13 +14,12 @@ using Reactive.Bindings.Extensions;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
-public class TtsControllerViewModel : IPropertyEditorContext
+public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorContext
 {
     private readonly TtsController _controller;
-    private readonly CompositeDisposable _subscriptions = new();
     private readonly ILogger _logger = Log.CreateLogger<TtsControllerViewModel>();
     private HistoryManager? _history;
-    private bool _disposed;
+    private bool _writingDraft;
 
     public TtsControllerViewModel(IPropertyEditorContext inner, PropertyEditorExtension extension, TtsController controller)
     {
@@ -31,7 +28,11 @@ public class TtsControllerViewModel : IPropertyEditorContext
         _controller = controller;
         SelectedPreset.Subscribe(value => HasSelectedPreset.Value = value != null).AddTo(_subscriptions);
         controller.AppliedPreset.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
+        controller.Draft.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Generation.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
+        controller.Text.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
+        Edited += SaveDraft;
+        EditCompleted += () => _history?.Commit();
         RefreshPresets();
     }
 
@@ -43,11 +44,7 @@ public class TtsControllerViewModel : IPropertyEditorContext
     public ReactivePropertySlim<bool> HasSelectedPreset { get; } = new();
     public ReactivePropertySlim<bool> HasSettings { get; } = new();
     public ReactivePropertySlim<bool> HasEditor { get; } = new();
-    public ReactivePropertySlim<bool> IsGenerating { get; } = new();
-    public ReactivePropertySlim<string> SettingsSummary { get; } = new("");
-    public ReactivePropertySlim<string> CurrentSettings { get; } = new("");
     public ReactivePropertySlim<string> GenerationSettings { get; } = new("");
-    public ReactivePropertySlim<string> Message { get; } = new("");
 
     public void RefreshPresets()
     {
@@ -70,7 +67,16 @@ public class TtsControllerViewModel : IPropertyEditorContext
         try
         {
             GetEditableTarget();
-            _history!.ExecuteInTransaction(() => _controller.AppliedPreset.Value = preset);
+            var draft = new VoiceGeneration
+            {
+                Text = _controller.Text.Value, Settings = preset.Settings, PresetId = preset.Id, PresetName = preset.Name,
+                AudioQueryJson = CaptureStoredSettings()?.UsesSameVoice(preset.Settings) == true ? SerializeQuery() : ""
+            };
+            _history!.ExecuteInTransaction(() =>
+            {
+                _controller.AppliedPreset.Value = preset;
+                _controller.Draft.Value = draft;
+            });
             Message.Value = "プリセットを適用しました。「再生成」で音声に反映します。";
         }
         catch (Exception ex)
@@ -82,13 +88,55 @@ public class TtsControllerViewModel : IPropertyEditorContext
     private void RefreshDetails()
     {
         var generation = _controller.Generation.Value;
-        var settings = _controller.AppliedPreset.Value?.Settings ?? generation?.Settings;
+        var draft = _controller.Draft.Value;
+        var settings = draft?.Settings ?? _controller.AppliedPreset.Value?.Settings ?? generation?.Settings;
         HasSettings.Value = settings != null;
-        SettingsSummary.Value = settings == null ? "プリセットを適用すると再生成できます。"
-            : $"使用する声: {settings.SpeakerName} / {settings.StyleName}";
-        CurrentSettings.Value = settings?.Describe() ?? "未設定";
         GenerationSettings.Value = generation == null ? "生成時の設定が保存されていません。"
             : $"プリセット: {generation.PresetName ?? "なし"}\n{generation.Settings.Describe()}\n本文: {generation.Text}";
+        if (_writingDraft) return;
+        // Editing text invalidates the visible query, but Undo can restore its saved accents.
+        var query = new[] { draft, generation }.FirstOrDefault(x => x != null && settings != null
+            && x.Text == _controller.Text.Value && x.Settings.UsesSameVoice(settings));
+        RestoreState(_controller.Text.Value, settings, query?.AudioQueryJson);
+    }
+
+    private void SaveDraft()
+    {
+        if (_disposed) return;
+        try
+        {
+            GetEditableTarget();
+            if (CaptureStoredSettings() is not { } settings) return;
+            _writingDraft = true;
+            _controller.Draft.Value = new VoiceGeneration
+            {
+                Text = _controller.Text.Value, Settings = settings, AudioQueryJson = SerializeQuery(),
+                PresetId = _controller.AppliedPreset.Value?.Id ?? _controller.Generation.Value?.PresetId,
+                PresetName = _controller.AppliedPreset.Value?.Name ?? _controller.Generation.Value?.PresetName
+            };
+        }
+        catch (Exception ex)
+        {
+            _writingDraft = false;
+            RefreshDetails();
+            Message.Value = ex.Message;
+        }
+        finally { _writingDraft = false; }
+    }
+
+    public override Task CreateQuery()
+    {
+        try
+        {
+            GetEditableTarget();
+            _history!.Commit();
+            return base.CreateQuery();
+        }
+        catch (Exception ex)
+        {
+            Message.Value = ex.Message;
+            return Task.CompletedTask;
+        }
     }
 
     private (Element Element, Scene Scene) GetEditableTarget()
@@ -115,18 +163,13 @@ public class TtsControllerViewModel : IPropertyEditorContext
             var source = sound.Source.Value;
             var preset = _controller.AppliedPreset.Value;
             var generation = _controller.Generation.Value;
-            var settings = preset?.Settings ?? generation?.Settings
-                ?? throw new InvalidOperationException("先に声のプリセットを適用してください。");
+            var draft = _controller.Draft.Value;
+            var settings = CaptureStoredSettings()
+                ?? throw new InvalidOperationException("話者を選ぶか、声のプリセットを適用してください。");
             string text = _controller.Text.Value;
             if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("テキストを入力してください。");
 
-            // Reuse hand-edited accents only for the text and voice they were generated for.
-            AudioQueryModel? query = null;
-            if (generation != null && generation.Text == text && generation.Settings.UsesSameVoice(settings))
-            {
-                try { query = JsonSerializer.Deserialize<AudioQueryModel>(generation.AudioQueryJson); }
-                catch (JsonException) { /* Older snapshots can be analyzed again. */ }
-            }
+            var query = CopyCurrentQuery();
             string directory = VoiceSynthesisService.GetOutputDirectory(scene);
             var output = await Task.Run(() => VoiceSynthesisService.Synthesize(text, settings, query));
             if (_disposed) return;
@@ -137,7 +180,8 @@ public class TtsControllerViewModel : IPropertyEditorContext
             var current = GetEditableTarget();
             if (current.Element != element || current.Scene != scene || !element.Objects.Contains(sound)
                 || sound.Source.Value != source || _controller.Text.Value != text
-                || _controller.AppliedPreset.Value != preset || _controller.Generation.Value != generation)
+                || _controller.AppliedPreset.Value != preset || _controller.Generation.Value != generation
+                || _controller.Draft.Value != draft)
                 throw new InvalidOperationException("生成中に対象の設定が変わりました。もう一度再生成してください。");
 
             var nextSource = SoundSource.Open(path);
@@ -150,6 +194,7 @@ public class TtsControllerViewModel : IPropertyEditorContext
                     PresetId = preset?.Id ?? generation?.PresetId,
                     PresetName = preset?.Name ?? generation?.PresetName
                 };
+                _controller.Draft.Value = _controller.Generation.Value;
             });
             Message.Value = "音声を再生成しました。";
         }
@@ -164,10 +209,9 @@ public class TtsControllerViewModel : IPropertyEditorContext
         }
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
-        _disposed = true;
-        _subscriptions.Dispose();
+        base.Dispose();
         Inner.Dispose();
     }
 

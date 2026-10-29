@@ -9,7 +9,7 @@ public partial class TtsController : EngineObject
     public TtsController()
     {
         ScanProperties<TtsController>();
-        HideProperties(Generation, AppliedPreset);
+        HideProperties(Generation, AppliedPreset, Draft);
     }
 
     [DataType(DataType.MultilineText)]
@@ -18,4 +18,7 @@ public partial class TtsController : EngineObject
     public IProperty<VoiceGeneration?> Generation { get; } = Property.CreateValue<VoiceGeneration?>();
 
     public IProperty<VoicePreset?> AppliedPreset { get; } = Property.CreateValue<VoicePreset?>();
+
+    // Pending edits use the same immutable snapshot format as a completed generation.
+    public IProperty<VoiceGeneration?> Draft { get; } = Property.CreateValue<VoiceGeneration?>();
 }

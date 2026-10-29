@@ -1,4 +1,3 @@
-using System.Reactive.Disposables;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
@@ -17,19 +16,15 @@ using Beutl.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
-using Reactive.Bindings.Extensions;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
-public partial class TtsTabViewModel : IToolContext
+public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 {
     private readonly Scene _scene;
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private readonly HistoryManager _historyManager;
-    private readonly TaskCompletionSource _initTcs = new();
-    private readonly CompositeDisposable _subscriptions = new();
-    private bool _disposed;
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
@@ -38,119 +33,14 @@ public partial class TtsTabViewModel : IToolContext
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
         Extension = extension;
         InitializePresets();
-        TtsLoader.VoiceVoxLoader.Subscribe(async loader =>
-        {
-            if (loader == null) return;
-            await loader.InitializationTcs.Task;
-            await Dispatcher.UIThread.InvokeAsync(() =>
-            {
-                if (!_disposed && ReferenceEquals(loader, TtsLoader.VoiceVoxLoader.Value)) OnLoaded();
-            });
-        }).AddTo(_subscriptions);
     }
 
     public ToolTabExtension Extension { get; }
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
-    public ReactiveProperty<string> Text { get; } = new("");
-    public ReactiveProperty<VoiceMetadata[]> Voice { get; } = new([]);
-    public ReactiveProperty<VoiceMetadata?> SelectedVoice { get; } = new();
-    public ReactiveProperty<VoiceStyle?> SelectedStyle { get; } = new();
-    public ReactiveProperty<bool> IsGenerating { get; } = new();
-    public ReactiveProperty<bool> IsEnabled { get; } = new();
-    public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new(true);
-    public ReactiveProperty<AudioQueryModel?> AudioQuery { get; } = new();
-    public ReactiveProperty<bool> HasAudioQuery { get; } = new();
-    public ReactiveProperty<double> SpeedScale { get; } = new(1.0);
-    public ReactiveProperty<double> PitchScale { get; } = new(0.0);
-    public ReactiveProperty<double> IntonationScale { get; } = new(1.0);
-    public ReactiveProperty<double> VolumeScale { get; } = new(1.0);
-    public ReactiveProperty<double> PrePhonemeLength { get; } = new(0.1);
-    public ReactiveProperty<double> PostPhonemeLength { get; } = new(0.1);
-
-    public void OnLoaded()
-    {
-        try
-        {
-            var loader = TtsLoader.VoiceVoxLoader.Value;
-            IsVoiceVoxInstalled.Value = loader?.IsInstalled == true;
-            IsEnabled.Value = loader?.IsLoaded == true;
-            if (loader?.IsLoaded != true) return;
-            var previous = CaptureSettings() ?? _unavailableSettings;
-            Voice.Value = loader.VoiceSets.SelectMany(x => x.Metadata)
-                .GroupBy(x => x.SpeakerUuid)
-                .Select(group => new VoiceMetadata
-                {
-                    Name = group.First().Name,
-                    Version = group.First().Version,
-                    SpeakerUuid = group.Key,
-                    Styles = group.SelectMany(x => x.Styles).ToArray()
-                }).ToArray();
-            if (previous != null) ApplySettings(previous);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to initialize VOICEVOX");
-            ShowError("VOICEVOXの初期化に失敗しました。", ex.Message);
-        }
-        finally
-        {
-            _initTcs.TrySetResult();
-        }
-    }
-
-    private (string Text, VoiceSettings Settings)? CaptureRequest()
-    {
-        if (string.IsNullOrWhiteSpace(Text.Value))
-        {
-            ShowWarning("テキストを入力してください。");
-            return null;
-        }
-        if (CaptureSettings() is not { } settings)
-        {
-            ShowWarning("話者とスタイルを選択してください。");
-            return null;
-        }
-        return (Text.Value, settings);
-    }
-
-    public async Task CreateQuery()
-    {
-        if (IsGenerating.Value || CaptureRequest() is not { } request) return;
-        IsGenerating.Value = true;
-        try
-        {
-            var query = await Task.Run(() => VoiceSynthesisService.CreateQuery(request.Text, request.Settings));
-            PublishQuery(request.Text, request.Settings, query);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to create AudioQuery");
-            ShowError("AudioQueryの作成に失敗しました。", ex.Message);
-        }
-        finally
-        {
-            IsGenerating.Value = false;
-        }
-    }
-
-    private void PublishQuery(string text, VoiceSettings settings, AudioQueryModel query)
-    {
-        if (_disposed || Text.Value != text || CaptureSettings()?.UsesSameVoice(settings) != true) return;
-        AudioQuery.Value = query;
-        HasAudioQuery.Value = true;
-    }
-
-    private static void ShowWarning(string message) =>
-        Dispatcher.UIThread.Post(() => NotificationService.ShowWarning("警告", message));
 
     private static void ShowError(string title, string message) =>
         Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
-
-    // Snapshot mutable accent edits on the UI thread before synthesis starts.
-    private AudioQueryModel? CopyCurrentQuery() => AudioQuery.Value is { } query
-        ? JsonSerializer.Deserialize<AudioQueryModel>(JsonSerializer.Serialize(query, VoiceSynthesisService.JsonOptions), VoiceSynthesisService.JsonOptions)
-        : null;
 
     public async Task Generate()
     {
@@ -225,19 +115,10 @@ public partial class TtsTabViewModel : IToolContext
         }
     }
 
-    public void OnAccentPhrasesUpdated() => AudioQuery.ForceNotify();
-
-    public void Dispose()
-    {
-        _disposed = true;
-        _subscriptions.Dispose();
-        _initTcs.TrySetResult();
-    }
-
     public void WriteToJson(JsonObject json)
     {
         json[nameof(Text)] = Text.Value;
-        json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureSettings() ?? _unavailableSettings);
+        json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
     }
 

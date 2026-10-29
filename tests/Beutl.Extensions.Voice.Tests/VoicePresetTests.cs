@@ -301,7 +301,8 @@ public class VoicePresetTests
             Assert.That(add.IsEffectivelyVisible, Is.True);
             Capture("editor");
 
-            var tuning = view.FindControl<Expander>("TuningExpander")!;
+            var voiceEditor = view.FindControl<VoiceEditorView>("VoiceEditor")!;
+            var tuning = voiceEditor.FindControl<Expander>("TuningExpander")!;
             tuning.IsExpanded = true;
             await Settle();
             tuning.BringIntoView();
@@ -323,7 +324,7 @@ public class VoicePresetTests
             // Expanding and scrolling the accent editor must not move the main actions.
             model.AudioQuery.Value = new AudioQueryModel();
             model.HasAudioQuery.Value = true;
-            view.FindControl<Expander>("AccentExpander")!.IsExpanded = true;
+            voiceEditor.FindControl<Expander>("AccentExpander")!.IsExpanded = true;
             await Settle();
             view.FindControl<ScrollViewer>("EditorScroll")!.Offset = new Vector(0, 10000);
             await Settle();

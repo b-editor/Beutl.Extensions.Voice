@@ -6,6 +6,7 @@
              xmlns:icons="using:FluentIcons.Avalonia.Fluent"
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
              d:DesignHeight="450"
              d:DesignWidth="320"
              x:CompileBindings="True"
@@ -37,17 +38,12 @@
                         <icons:FluentIcon Icon="ArrowClockwise" FontSize="16" />
                     </Button>
                 </Grid>
-                <TextBlock Text="{Binding SettingsSummary.Value}" TextWrapping="Wrap" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
             </StackPanel>
-            <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
-            <Expander x:Name="SettingsExpander" Header="声の設定" HorizontalAlignment="Stretch"
+            <views:VoiceEditorView x:Name="VoiceEditor" IsEnabled="{Binding HasEditor.Value}" />
+            <Expander x:Name="SettingsExpander" Header="生成時の設定" HorizontalAlignment="Stretch"
                       Theme="{StaticResource ToolTabExpanderTheme}">
                 <ScrollViewer MaxHeight="240" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel Margin="8" Spacing="8">
-                        <TextBlock Text="使用する設定" FontWeight="SemiBold" />
-                        <TextBlock Text="{Binding CurrentSettings.Value}" TextWrapping="Wrap" FontSize="12" />
-                        <TextBlock Text="生成時の設定" FontWeight="SemiBold" />
                         <TextBlock Text="{Binding GenerationSettings.Value}" TextWrapping="Wrap" FontSize="12" />
                     </StackPanel>
                 </ScrollViewer>
