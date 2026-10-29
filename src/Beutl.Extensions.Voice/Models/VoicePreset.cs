@@ -14,6 +14,4 @@ public sealed record VoiceGeneration
     public Guid? PresetId { get; init; }
     public string? PresetName { get; init; }
     public string AudioQueryJson { get; init; } = "";
-
-    public string Describe() => $"生成時の本文: {Text}\nプリセット: {PresetName ?? "なし"}\n{Settings.Describe()}";
 }

@@ -1,11 +1,6 @@
-using System.Reactive.Disposables;
-using System.Text.Json;
-using Beutl.Editor.Services;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
-using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
-using Beutl.ProjectSystem;
 using Reactive.Bindings;
 using Reactive.Bindings.Extensions;
 
@@ -13,12 +8,8 @@ namespace Beutl.Extensions.Voice.ViewModels;
 
 public partial class TtsTabViewModel
 {
-    private Element? _editingElement;
     private VoiceSettings? _unavailableSettings;
-    private readonly SerialDisposable _editingSubscription = new();
 
-    public string[] PresetScopes { get; } = ["全体", "プロジェクト"];
-    public ReactiveProperty<int> PresetScope { get; } = new();
     // Keep item replacement and selection notifications in order on the UI thread.
     public ReactivePropertySlim<VoicePreset[]> Presets { get; } = new([]);
     public ReactivePropertySlim<VoicePreset?> SelectedPreset { get; } = new();
@@ -26,14 +17,10 @@ public partial class TtsTabViewModel
     public ReactiveProperty<string> PresetDetails { get; } = new("");
     public ReactiveProperty<string> PresetMessage { get; } = new("");
     public ReactiveProperty<bool> HasSelectedPreset { get; } = new();
-    public ReactiveProperty<bool> HasEditingElement { get; } = new();
-    public ReactiveProperty<string> EditingElementName { get; } = new("");
-    public ReactiveProperty<string> GenerationDetails { get; } = new("");
 
     private void InitializePresets()
     {
-        _subscriptions.Add(_editingSubscription);
-        PresetScope.Subscribe(_ => RefreshPresets()).AddTo(_subscriptions);
+        RefreshPresets();
         SelectedPreset.Subscribe(preset =>
         {
             PresetName.Value = preset?.Name ?? "";
@@ -64,14 +51,8 @@ public partial class TtsTabViewModel
         HasAudioQuery.Value = false;
     }
 
-    private string GetPresetPath()
-    {
-        if (PresetScope.Value == 0)
-            return Path.Combine(BeutlEnvironment.GetHomeDirectoryPath(), "voice", "presets.json");
-        var uri = _scene.FindHierarchicalParent<Project>()?.Uri ?? _scene.Uri;
-        if (uri is not { IsFile: true }) throw new InvalidOperationException("先にプロジェクトまたはシーンを保存してください。");
-        return Path.ChangeExtension(uri.LocalPath, ".voice-presets.json");
-    }
+    private static string GetPresetPath() =>
+        Path.Combine(BeutlEnvironment.GetHomeDirectoryPath(), "voice", "presets.json");
 
     public void RefreshPresets()
     {
@@ -196,51 +177,4 @@ public partial class TtsTabViewModel
         PresetDetails.Value = preset == null ? "" : preset.Settings.Describe() + "\n\n" +
             (CaptureSettings() is { } current ? preset.Settings.DescribeDifferences(current) : "現在の話者が未選択です。");
     }
-
-    public void LoadSelectedSpeech()
-    {
-        var selection = _editorContext.GetService(typeof(IEditorSelection)) as IEditorSelection;
-        var element = selection?.SelectedObject.Value as Element
-            ?? (selection?.SelectedObject.Value as Hierarchical)?.FindHierarchicalParent<Element>();
-        var controller = element?.Objects.OfType<TtsController>().FirstOrDefault();
-        if (element == null || controller == null)
-        {
-            ShowWarning("タイムラインで読み上げ要素を1つ選択してください。");
-            return;
-        }
-
-        _editingElement = element;
-        HasEditingElement.Value = true;
-        EditingElementName.Value = element.Name.Value;
-        Text.Value = controller.Text.Value;
-        InvalidateQuery();
-        var generation = controller.Generation.Value;
-        SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == generation?.PresetId);
-        _editingSubscription.Disposable = controller.Generation.GetObservable().Subscribe(value =>
-            GenerationDetails.Value = value?.Describe() ?? "この要素には生成時設定が保存されていません。");
-        if (generation != null && ApplySettings(generation.Settings) && Text.Value == generation.Text)
-        {
-            try
-            {
-                AudioQuery.Value = JsonSerializer.Deserialize<AudioQueryModel>(generation.AudioQueryJson);
-                HasAudioQuery.Value = AudioQuery.Value != null;
-            }
-            catch (JsonException)
-            {
-                // Older or incomplete query data can be analyzed again from the saved text.
-                InvalidateQuery();
-            }
-        }
-    }
-
-    public void ClearEditingSpeech()
-    {
-        _editingSubscription.Disposable = null;
-        _editingElement = null;
-        HasEditingElement.Value = false;
-        EditingElementName.Value = "";
-        GenerationDetails.Value = "";
-    }
-
-    public Task Regenerate() => _editingElement is { } element ? GenerateCore(element) : Task.CompletedTask;
 }

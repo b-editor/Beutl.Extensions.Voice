@@ -87,12 +87,6 @@ public partial class TtsTabView : UserControl
             ShowDetails(PresetMenuButton, "保存値と現在値の差分", nameof(vm.PresetDetails) + ".Value");
     }
 
-    private void ShowGenerationDetails(object? sender, RoutedEventArgs e)
-    {
-        if (DataContext is TtsTabViewModel vm)
-            ShowDetails(GenerationInfoButton, "生成時の設定", nameof(vm.GenerationDetails) + ".Value");
-    }
-
     private void ShowDetails(Control anchor, string title, string propertyPath)
     {
         var flyout = new Flyout

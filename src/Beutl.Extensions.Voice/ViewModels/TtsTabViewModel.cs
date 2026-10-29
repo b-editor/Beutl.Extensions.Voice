@@ -25,7 +25,6 @@ namespace Beutl.Extensions.Voice.ViewModels;
 
 public partial class TtsTabViewModel : IToolContext
 {
-    private readonly IEditorContext _editorContext;
     private readonly Scene _scene;
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
@@ -41,7 +40,6 @@ public partial class TtsTabViewModel : IToolContext
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
-        _editorContext = editorContext;
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
@@ -185,9 +183,7 @@ public partial class TtsTabViewModel : IToolContext
         return (wave, query, json);
     }
 
-    public Task Generate() => GenerateCore(null);
-
-    private async Task GenerateCore(Element? target)
+    public async Task Generate()
     {
         if (IsGenerating.Value || CaptureRequest() is not { } request) return;
         var preset = SelectedPreset.Value;
@@ -196,18 +192,15 @@ public partial class TtsTabViewModel : IToolContext
         IsGenerating.Value = true;
         try
         {
-            EnsureEditableTarget(target);
             var uri = _scene.FindHierarchicalParent<Project>()?.Uri ?? _scene.Uri;
             if (uri is not { IsFile: true }) throw new InvalidOperationException("先にプロジェクトまたはシーンを保存してください。");
             string directory = Path.Combine(Path.GetDirectoryName(uri.LocalPath)!, "resources", "tts");
             var output = await Task.Run(() => Synthesize(request.Text, request.Settings, query));
             if (_disposed) return;
-            EnsureEditableTarget(target);
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
             await File.WriteAllBytesAsync(path, output.Wave);
             if (_disposed) return;
-            EnsureEditableTarget(target);
             var generation = new VoiceGeneration
             {
                 Text = request.Text, Settings = request.Settings, PresetId = preset?.Id,
@@ -216,28 +209,17 @@ public partial class TtsTabViewModel : IToolContext
             var source = SoundSource.Open(path);
             _historyManager.ExecuteInTransaction(() =>
             {
-                if (target == null)
+                var element = new Element
                 {
-                    var element = new Element
-                    {
-                        Start = { Value = start }, ZIndex = { Value = 1 },
-                        Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
-                        Name = { Value = request.Text.ReplaceLineEndings(" ") },
-                        AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
-                    };
-                    element.AddObject(new SourceSound { Source = { Value = source } });
-                    element.AddObject(new TtsController { Text = { Value = request.Text }, Generation = { Value = generation } });
-                    if (element.TryGetOriginalDuration(out var duration)) element.Length.Value = duration;
-                    _scene.AddChild(element, ElementOverlapHandling.ZIndex);
-                }
-                else
-                {
-                    // Keep placement, trimming, effects, and the old WAV (also needed by Undo).
-                    target.Objects.OfType<SourceSound>().First().Source.Value = source;
-                    var controller = target.Objects.OfType<TtsController>().First();
-                    controller.Text.Value = request.Text;
-                    controller.Generation.Value = generation;
-                }
+                    Start = { Value = start }, ZIndex = { Value = 1 },
+                    Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
+                    Name = { Value = request.Text.ReplaceLineEndings(" ") },
+                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
+                };
+                element.AddObject(new SourceSound { Source = { Value = source } });
+                element.AddObject(new TtsController { Text = { Value = request.Text }, Generation = { Value = generation } });
+                if (element.TryGetOriginalDuration(out var duration)) element.Length.Value = duration;
+                _scene.AddChild(element, ElementOverlapHandling.ZIndex);
             });
             PublishQuery(request.Text, request.Settings, output.Query);
         }
@@ -250,13 +232,6 @@ public partial class TtsTabViewModel : IToolContext
         {
             IsGenerating.Value = false;
         }
-    }
-
-    private void EnsureEditableTarget(Element? target)
-    {
-        if (target != null && (!_scene.Children.Contains(target) || _scene.IsElementLocked(target)
-            || !target.Objects.OfType<TtsController>().Any() || !target.Objects.OfType<SourceSound>().Any()))
-            throw new InvalidOperationException("対象の読み上げ要素が削除されたか、編集できない状態です。");
     }
 
     public async Task Play()
@@ -296,14 +271,12 @@ public partial class TtsTabViewModel : IToolContext
     {
         json[nameof(Text)] = Text.Value;
         json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureSettings() ?? _unavailableSettings);
-        json[nameof(PresetScope)] = PresetScope.Value;
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
     }
 
     public async void ReadFromJson(JsonObject json)
     {
         Text.Value = (string?)json[nameof(Text)] ?? "";
-        PresetScope.Value = (int?)json[nameof(PresetScope)] ?? 0;
         if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))
             SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
         await _initTcs.Task;

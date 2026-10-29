@@ -16,7 +16,6 @@ using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
-using Beutl.ProjectSystem;
 using Beutl.Serialization;
 using FluentAvalonia.UI.Controls;
 
@@ -90,9 +89,10 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
-    public void Presets_restore_every_value_by_id_and_support_shared_and_document_scopes()
+    public void Presets_restore_every_value_by_id_and_are_shared_with_unsaved_scenes()
     {
         using var editor = Editor();
+        editor.Scene.Uri = null;
         using var model = Model(editor);
         model.PresetName.Value = "いつもの声";
         model.AddPreset();
@@ -121,25 +121,10 @@ public class VoicePresetTests
         using var otherEditor = Editor("other");
         using var other = Model(otherEditor);
         Assert.That(other.Presets.Value.Single(), Is.EqualTo(preset));
-        model.PresetScope.Value = 1;
-        model.PresetName.Value = "この作品だけ";
-        model.AddPreset();
-        other.PresetScope.Value = 1;
-        Assert.That(other.Presets.Value, Is.Empty);
         using var reopened = Model(editor);
-        reopened.PresetScope.Value = 1;
-        Assert.That(reopened.Presets.Value.Single().Name, Is.EqualTo("この作品だけ"));
-
-        // Scenes in the same project share the project's store, not their own sidecars.
-        var project = new Project { Uri = new Uri(Path.Combine(_directory, "project.bep")) };
-        project.Items.Add(editor.Scene);
-        project.Items.Add(otherEditor.Scene);
-        model.RefreshPresets();
-        Assert.That(model.Presets.Value, Is.Empty);
-        model.PresetName.Value = "プロジェクト共通";
-        model.AddPreset();
-        other.RefreshPresets();
-        Assert.That(other.Presets.Value.Single().Id, Is.EqualTo(model.SelectedPreset.Value!.Id));
+        Assert.That(reopened.Presets.Value.Single(), Is.EqualTo(preset));
+        Assert.That(File.Exists(Path.Combine(_directory, "voice", "presets.json")), Is.True);
+        Assert.That(Directory.GetFiles(_directory, "*.voice-presets.json"), Is.Empty);
     }
 
     [AvaloniaTest]
@@ -173,7 +158,7 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
-    public void Generation_round_trips_independently_of_preset_updates_and_restores_the_final_query()
+    public void Generation_round_trips_independently_of_preset_updates_and_retains_the_final_query()
     {
         using var editor = Editor();
         using var model = Model(editor);
@@ -196,15 +181,9 @@ public class VoicePresetTests
         model.UpdatePreset();
         model.DeletePreset();
         Assert.That(restored.Generation.Value!.Settings.SpeedScale, Is.EqualTo(1.3));
-        var element = new Element { Name = { Value = "保存済みセリフ" } };
-        element.AddObject(restored);
-        editor.Selection.Value = element;
-        model.LoadSelectedSpeech();
-        Assert.That(model.SpeedScale.Value, Is.EqualTo(1.3));
-        Assert.That(model.AudioQuery.Value!.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.5));
-        Assert.That(model.GenerationDetails.Value, Does.Contain("生成したときの声"));
-        model.ClearEditingSpeech();
-        Assert.That(model.HasEditingElement.Value, Is.False);
+        var query = JsonSerializer.Deserialize<AudioQueryModel>(restored.Generation.Value.AudioQueryJson)!;
+        Assert.That(query.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.5));
+        Assert.That(restored.Generation.Value.PresetName, Is.EqualTo("生成したときの声"));
         var legacy = new TtsController();
         CoreSerializer.PopulateFromJsonObject(legacy, new JsonObject { ["Text"] = "旧セリフ" });
         Assert.That(legacy.Text.Value, Is.EqualTo("旧セリフ"));
@@ -216,8 +195,12 @@ public class VoicePresetTests
     {
         using var editor = Editor();
         using var model = Model(editor);
+        model.PresetName.Value = "共通の声";
+        model.AddPreset();
         var json = new JsonObject();
         model.WriteToJson(json);
+        Assert.That(json.ContainsKey("PresetScope"), Is.False);
+        json["PresetScope"] = 1; // Old tab state must not switch away from the global store.
         using var restored = Model(editor);
         restored.SelectedVoice.Value = restored.Voice.Value[0];
         restored.SpeedScale.Value = 0.5;
@@ -226,6 +209,7 @@ public class VoicePresetTests
         await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
         Assert.That(restored.SelectedVoice.Value!.SpeakerUuid, Is.EqualTo("speaker-b"));
         Assert.That(restored.SpeedScale.Value, Is.EqualTo(1.3));
+        Assert.That(restored.SelectedPreset.Value!.Id, Is.EqualTo(model.SelectedPreset.Value!.Id));
     }
 
     [AvaloniaTest]
@@ -289,7 +273,7 @@ public class VoicePresetTests
     [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Editor_keeps_primary_actions_visible_and_presets_out_of_the_text_entry_flow(int width, bool light)
+    public async Task Editor_keeps_actions_visible_and_tuning_sliders_inside_their_rows(int width, bool light)
     {
         using var editor = Editor();
         using var model = Model(editor);
@@ -311,13 +295,30 @@ public class VoicePresetTests
             await Settle();
             Assert.That(model.SpeedScale.Value, Is.EqualTo(1.3));
             var add = view.FindControl<Button>("AddSpeechButton")!;
-            var regenerate = view.FindControl<Button>("RegenerateSpeechButton")!;
             var preview = view.FindControl<Button>("PreviewButton")!;
             double footerY = add.TranslatePoint(default, window)!.Value.Y;
             Assert.That(footerY, Is.InRange(540, 580));
             Assert.That(add.IsEffectivelyVisible, Is.True);
-            Assert.That(regenerate.IsEffectivelyVisible, Is.False);
             Capture("editor");
+
+            var tuning = view.FindControl<Expander>("TuningExpander")!;
+            tuning.IsExpanded = true;
+            await Settle();
+            tuning.BringIntoView();
+            await Settle();
+            Capture("tuning");
+            var sliders = tuning.GetVisualDescendants().OfType<Slider>().ToArray();
+            Assert.That(sliders, Has.Length.EqualTo(6));
+            foreach (var slider in sliders)
+            {
+                var row = (Grid)slider.Parent!;
+                var thumb = slider.GetVisualDescendants().OfType<Thumb>().Single();
+                var border = thumb.GetVisualDescendants().OfType<Border>().First();
+                var origin = border.TranslatePoint(default, row)!.Value;
+                Assert.That(origin.Y, Is.GreaterThanOrEqualTo(0));
+                Assert.That(origin.Y + border.Bounds.Height, Is.LessThanOrEqualTo(row.Bounds.Height),
+                    "The slider thumb must fit inside its row, including its outer border.");
+            }
 
             // Expanding and scrolling the accent editor must not move the main actions.
             model.AudioQuery.Value = new AudioQueryModel();
@@ -329,35 +330,13 @@ public class VoicePresetTests
             Assert.That(view.FindControl<ScrollViewer>("EditorScroll")!.Offset.Y, Is.GreaterThan(0));
             Assert.That(add.TranslatePoint(default, window)!.Value.Y, Is.EqualTo(footerY));
 
-            var element = new Element { Name = { Value = "ナレーション 01" } };
-            element.AddObject(new TtsController
-            {
-                Text = { Value = model.Text.Value },
-                Generation = { Value = new VoiceGeneration
-                {
-                    Text = model.Text.Value, Settings = model.SelectedPreset.Value!.Settings,
-                    PresetId = model.SelectedPreset.Value.Id, PresetName = model.SelectedPreset.Value.Name
-                } }
-            });
-            editor.Selection.Value = element;
-            view.FindControl<Button>("LoadSpeechButton")!.Command!.Execute(null);
-            view.FindControl<Expander>("AccentExpander")!.IsExpanded = false;
-            view.FindControl<ScrollViewer>("EditorScroll")!.Offset = default;
-            await Settle();
-            Assert.That(add.IsEffectivelyVisible, Is.False);
-            Assert.That(regenerate.IsEffectivelyVisible, Is.True);
-            Assert.That(regenerate.TranslatePoint(default, window)!.Value.Y, Is.EqualTo(footerY));
-            Capture("regeneration");
             model.IsGenerating.Value = true;
             await Settle();
             Assert.That(preview.IsEffectivelyEnabled, Is.False);
-            Assert.That(regenerate.IsEffectivelyEnabled, Is.False);
+            Assert.That(add.IsEffectivelyEnabled, Is.False);
             model.IsGenerating.Value = false;
-            view.FindControl<Button>("NewSpeechButton")!.Command!.Execute(null);
             await Settle();
-            Assert.That(add.IsEffectivelyVisible, Is.True);
-            Assert.That(regenerate.IsEffectivelyVisible, Is.False);
-            Assert.That(model.Text.Value, Is.EqualTo("こんにちは。保存した声で読み上げます。"));
+            Assert.That(add.IsEffectivelyEnabled, Is.True);
 
             void Capture(string name)
             {
@@ -368,7 +347,6 @@ public class VoicePresetTests
             }
         }
         finally { window.Close(); }
-
     }
 
     private static async Task Settle()
