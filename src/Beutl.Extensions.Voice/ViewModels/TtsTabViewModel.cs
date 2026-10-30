@@ -21,13 +21,13 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private readonly HistoryManager _historyManager;
-    private readonly Func<string, VoiceSettings, AudioQueryModel?, VoiceSynthesisResult> _synthesize;
+    private readonly Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> _synthesize;
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
-        : this(extension, editorContext, VoiceSynthesisService.Synthesize) { }
+        : this(extension, editorContext, (text, settings, query) => VoiceSynthesisService.SynthesizeAsync(text, settings, query)) { }
 
     internal TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext,
-        Func<string, VoiceSettings, AudioQueryModel?, VoiceSynthesisResult> synthesize)
+        Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize)
     {
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
@@ -56,7 +56,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         try
         {
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
-            var output = await Task.Run(() => _synthesize(request.Text, request.Settings, query));
+            var output = await _synthesize(request.Text, request.Settings, query);
             if (_disposed) return;
             Directory.CreateDirectory(directory);
             path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
@@ -78,6 +78,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to generate TTS");
+            Message.Value = $"音声生成に失敗しました: {ex.Message}";
             ShowError("音声生成に失敗しました。", ex.Message);
         }
         finally
@@ -96,7 +97,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         IsGenerating.Value = true;
         try
         {
-            var output = await Task.Run(() => _synthesize(request.Text, request.Settings, query));
+            var output = await _synthesize(request.Text, request.Settings, query);
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
             using var player = new SimpleWavePlayer(output.Wave);
@@ -105,6 +106,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to play TTS");
+            Message.Value = $"音声再生に失敗しました: {ex.Message}";
             ShowError("音声再生に失敗しました。", ex.Message);
         }
         finally

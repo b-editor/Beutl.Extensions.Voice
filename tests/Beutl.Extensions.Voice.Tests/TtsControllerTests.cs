@@ -329,7 +329,7 @@ public class TtsControllerTests
             await Settle();
             tuning.BringIntoView();
             await Settle();
-            var sliders = tuning.GetVisualDescendants().OfType<Slider>().ToArray();
+            var sliders = tuning.GetVisualDescendants().OfType<Slider>().Where(x => x.IsEffectivelyVisible).ToArray();
             Assert.That(sliders, Has.Length.EqualTo(6));
             sliders[0].Value = 1.45;
             model.ConfirmEdit();

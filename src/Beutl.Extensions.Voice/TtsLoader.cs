@@ -30,7 +30,7 @@ public class TtsLoader : Extension
                 _logger.LogError(t.Exception, "Failed to load TTS");
             }
 
-            if (!t.IsFaulted && VoiceVoxLoader.Value?.IsInstalled != true)
+            if (!t.IsFaulted && VoiceVoxLoader.Value?.IsInstalled != true && VoiceEngineStore.Load().Length == 0)
             {
                 Dispatcher.UIThread.Post(() =>
                     NotificationService.ShowWarning(

@@ -171,7 +171,7 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
 
             var query = CopyCurrentQuery();
             string directory = VoiceSynthesisService.GetOutputDirectory(scene);
-            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(text, settings, query));
+            var output = await VoiceSynthesisService.SynthesizeAsync(text, settings, query);
             if (_disposed) return;
             Directory.CreateDirectory(directory);
             string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");

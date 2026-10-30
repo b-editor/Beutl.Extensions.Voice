@@ -23,20 +23,36 @@ internal static class VoiceSynthesisService
         return Path.Combine(Path.GetDirectoryName(uri.LocalPath)!, "resources", "tts");
     }
 
-    public static AudioQueryModel CreateQuery(string text, VoiceSettings settings)
+    public static Task<AudioQueryModel> CreateQueryAsync(string text, VoiceSettings settings,
+        CancellationToken cancellationToken = default)
     {
-        var (loader, _) = ResolveVoice(settings);
-        return CreateQuery(loader, text, settings.StyleId);
+        if (settings.EngineId != VoiceSettings.CoreEngineId)
+            return HttpVoiceEngine.CreateQueryAsync(text, settings, cancellationToken);
+        return Task.Run(() => CreateCoreQuery(text, settings), cancellationToken);
     }
 
-    public static VoiceSynthesisResult Synthesize(
+    public static Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
+        CancellationToken cancellationToken = default)
+    {
+        if (settings.EngineId != VoiceSettings.CoreEngineId)
+            return HttpVoiceEngine.SynthesizeAsync(text, settings, query, cancellationToken);
+        return Task.Run(() => SynthesizeCore(text, settings, query), cancellationToken);
+    }
+
+    private static AudioQueryModel CreateCoreQuery(string text, VoiceSettings settings)
+    {
+        var (loader, _) = ResolveVoice(settings);
+        return CreateQuery(loader, text, checked((uint)settings.StyleId));
+    }
+
+    private static VoiceSynthesisResult SynthesizeCore(
         string text, VoiceSettings settings, AudioQueryModel? query)
     {
         var (loader, resolved) = ResolveVoice(settings);
-        query ??= CreateQuery(loader, text, resolved.StyleId);
+        query ??= CreateQuery(loader, text, checked((uint)resolved.StyleId));
         resolved.ApplyTo(query);
         string json = JsonSerializer.Serialize(query, JsonOptions);
-        var result = loader.Synthesizer!.Synthesis(json, resolved.StyleId, SynthesisOptions.Default(), out _, out var wave);
+        var result = loader.Synthesizer!.Synthesis(json, checked((uint)resolved.StyleId), SynthesisOptions.Default(), out _, out var wave);
         if (result != ResultCode.RESULT_OK || wave == null) throw new InvalidOperationException(result.ToMessage());
         return new(wave, query, json, resolved);
     }
@@ -53,7 +69,7 @@ internal static class VoiceSynthesisService
         var style = voice?.Styles.FirstOrDefault(x => x.Id == settings.StyleId);
         if (voice == null || style == null)
             throw new InvalidOperationException($"保存された声が見つかりません: {settings.SpeakerName} / {settings.StyleName}。別のプリセットを適用してください。");
-        if (!loader.EnsureVoiceModelLoaded(settings.StyleId))
+        if (!loader.EnsureVoiceModelLoaded(checked((uint)settings.StyleId)))
             throw new InvalidOperationException("VOICEVOXの音声モデルを読み込めませんでした。");
         return (loader, settings with { SpeakerName = voice.Name, StyleName = style.Name, ModelVersion = voice.Version });
     }

@@ -69,7 +69,9 @@ public class ScriptImportTests
         model.IsVoiceVoxInstalled.Value = true;
     }
 
-    private static VoiceSynthesisResult Wave(string text, VoiceSettings settings)
+    private static Task<VoiceSynthesisResult> Wave(string text, VoiceSettings settings) => Task.FromResult(MakeWave(text, settings));
+
+    private static VoiceSynthesisResult MakeWave(string text, VoiceSettings settings)
     {
         const int sampleRate = 24000;
         // An odd sample count catches placements that round durations to milliseconds or frames.
@@ -296,7 +298,7 @@ public class ScriptImportTests
         var enteredSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseSecond = new ManualResetEventSlim();
         int count = 0;
-        using var model = new ScriptImportViewModel(new(), editor, (text, settings) =>
+        using var model = new ScriptImportViewModel(new(), editor, (text, settings) => Task.Run(() =>
         {
             if (Interlocked.Increment(ref count) == 2)
             {
@@ -304,8 +306,8 @@ public class ScriptImportTests
                 if (!releaseSecond.Wait(TimeSpan.FromSeconds(10))) throw new TimeoutException();
                 if (reason == "failure") throw new InvalidOperationException("engine failure");
             }
-            return Wave(text, settings);
-        });
+            return MakeWave(text, settings);
+        }));
         model.RawText.Value = Script;
         model.ImportText();
         AssignPresets(model);

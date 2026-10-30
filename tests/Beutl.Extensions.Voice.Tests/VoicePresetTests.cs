@@ -361,7 +361,7 @@ public class VoicePresetTests
             tuning.BringIntoView();
             await Settle();
             Capture("tuning");
-            var sliders = tuning.GetVisualDescendants().OfType<Slider>().ToArray();
+            var sliders = tuning.GetVisualDescendants().OfType<Slider>().Where(x => x.IsEffectivelyVisible).ToArray();
             Assert.That(sliders, Has.Length.EqualTo(6));
             foreach (var slider in sliders)
             {
