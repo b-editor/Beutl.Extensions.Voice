@@ -6,6 +6,8 @@ using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.Services;
 
+internal sealed record VoiceSynthesisResult(byte[] Wave, AudioQueryModel Query, string Json, VoiceSettings Settings);
+
 internal static class VoiceSynthesisService
 {
     internal static readonly JsonSerializerOptions JsonOptions = new()
@@ -27,7 +29,7 @@ internal static class VoiceSynthesisService
         return CreateQuery(loader, text, settings.StyleId);
     }
 
-    public static (byte[] Wave, AudioQueryModel Query, string Json, VoiceSettings Settings) Synthesize(
+    public static VoiceSynthesisResult Synthesize(
         string text, VoiceSettings settings, AudioQueryModel? query)
     {
         var (loader, resolved) = ResolveVoice(settings);
@@ -36,7 +38,7 @@ internal static class VoiceSynthesisService
         string json = JsonSerializer.Serialize(query, JsonOptions);
         var result = loader.Synthesizer!.Synthesis(json, resolved.StyleId, SynthesisOptions.Default(), out _, out var wave);
         if (result != ResultCode.RESULT_OK || wave == null) throw new InvalidOperationException(result.ToMessage());
-        return (wave, query, json, resolved);
+        return new(wave, query, json, resolved);
     }
 
     private static (VoiceVoxLoader Loader, VoiceSettings Settings) ResolveVoice(VoiceSettings settings)

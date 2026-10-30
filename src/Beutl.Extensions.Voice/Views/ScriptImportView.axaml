@@ -1,0 +1,102 @@
+<UserControl x:Class="Beutl.Extensions.Voice.Views.ScriptImportView"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:Beutl.Extensions.Voice.Models"
+             xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             x:CompileBindings="True" x:DataType="vm:ScriptImportViewModel">
+    <UserControl.Resources>
+        <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
+    </UserControl.Resources>
+    <Grid RowDefinitions="*,Auto">
+        <ScrollViewer x:Name="EditorScroll" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
+                <ui:FAInfoBar Title="VOICEVOXがインストールされていません。" Margin="8"
+                              IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
+                              IsVisible="{Binding !IsVoiceVoxInstalled.Value}" Severity="Warning">
+                    <ui:FAInfoBar.ActionButton>
+                        <Button Click="DownloadVoiceVox">インストール</Button>
+                    </ui:FAInfoBar.ActionButton>
+                </ui:FAInfoBar>
+                <Expander x:Name="InputSection" Header="台本の入力" IsExpanded="True"
+                          Theme="{StaticResource ToolTabExpanderTheme}">
+                    <StackPanel Margin="8" Spacing="8">
+                        <TextBox x:Name="ScriptTextBox" MinHeight="120" MaxHeight="200" AcceptsReturn="True"
+                                 VerticalContentAlignment="Top" TextWrapping="Wrap"
+                                 Text="{Binding RawText.Value, Mode=TwoWay}"
+                                 LostFocus="ImportScriptOnLostFocus"
+                                 PlaceholderText="案内役: こんにちは。&#10;ゲスト: よろしくお願いします。"
+                                 AutomationProperties.Name="台本" />
+                        <CheckBox Content="「話者: セリフ」形式" IsChecked="{Binding HasSpeakerNames.Value, Mode=TwoWay}" />
+                        <Grid ColumnDefinitions="*,8,*">
+                            <Button x:Name="OpenScriptButton" Content="ファイルを開く…" Click="OpenFile"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                            <Button x:Name="ImportScriptButton" Grid.Column="2" Content="話者を読み込む" Command="{Binding ImportText}"
+                                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Expander>
+                <Expander x:Name="SpeakersSection" Header="話者の割り当て" IsExpanded="True"
+                          Theme="{StaticResource ToolTabExpanderTheme}">
+                    <StackPanel Margin="8" Spacing="8">
+                        <Button Content="プリセットを再読み込み" Command="{Binding RefreshPresets}" />
+                        <ItemsControl ItemsSource="{Binding Speakers}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ScriptSpeakerViewModel">
+                                    <Border Padding="0,8" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
+                                        <StackPanel Spacing="6">
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <ComboBox HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
+                                                      AutomationProperties.Name="声のプリセット"
+                                                      ItemsSource="{Binding Presets.Value}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:VoicePreset">
+                                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Expander>
+                <Expander x:Name="PlacementSection" Header="配置" IsExpanded="True"
+                          Theme="{StaticResource ToolTabExpanderTheme}">
+                    <StackPanel Margin="8" Spacing="8">
+                        <TextBlock Text="開始位置（秒）" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <NumericUpDown x:Name="StartInput" Minimum="0" Increment="0.1" FormatString="0.###"
+                                           Value="{Binding StartSeconds.Value, Mode=TwoWay}" AutomationProperties.Name="開始位置（秒）" />
+                            <Button Grid.Column="1" Margin="4,0,0,0" Content="現在位置" Command="{Binding UseCurrentPosition}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,4,Auto">
+                            <TextBlock Text="セリフの間隔（秒）" />
+                            <TextBlock Grid.Column="2" Text="先頭レイヤー" />
+                            <NumericUpDown x:Name="GapInput" Grid.Row="2" Minimum="0" Increment="0.1" FormatString="0.###"
+                                           Value="{Binding GapSeconds.Value, Mode=TwoWay}" AutomationProperties.Name="セリフの間隔（秒）" />
+                            <NumericUpDown x:Name="LayerInput" Grid.Row="2" Grid.Column="2" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0"
+                                           Value="{Binding FirstLayer.Value, Mode=TwoWay}" AutomationProperties.Name="先頭レイヤー" />
+                        </Grid>
+                        <CheckBox Content="話者ごとにレイヤーを分ける" IsChecked="{Binding SeparateLayers.Value, Mode=TwoWay}" />
+                    </StackPanel>
+                </Expander>
+            </StackPanel>
+        </ScrollViewer>
+        <Border Grid.Row="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+            <StackPanel>
+                <ProgressBar Height="2" IsIndeterminate="True" IsVisible="{Binding IsGenerating.Value}" />
+                <ScrollViewer MaxHeight="100" HorizontalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Margin="8,6,8,0" FontSize="12" TextWrapping="Wrap" Text="{Binding Message.Value}" />
+                </ScrollViewer>
+                <Button x:Name="GenerateScriptButton" Content="一括生成・配置" Classes="accent" Margin="8"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                        Command="{Binding Generate}" IsVisible="{Binding !IsGenerating.Value}" />
+                <Button Content="中止" ToolTip.Tip="生成中のセリフが完了したら中止します。" Margin="8" Command="{Binding Cancel}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="{Binding IsGenerating.Value}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
