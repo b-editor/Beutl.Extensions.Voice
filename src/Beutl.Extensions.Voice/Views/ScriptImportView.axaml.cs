@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Beutl.Extensions.Voice.ViewModels;
@@ -8,6 +9,11 @@ namespace Beutl.Extensions.Voice.Views;
 public partial class ScriptImportView : UserControl
 {
     public ScriptImportView() => InitializeComponent();
+
+    private void ImportScriptOnLostFocus(object? sender, FocusChangedEventArgs e)
+    {
+        if (DataContext is ScriptImportViewModel model) model.ImportText();
+    }
 
     private async void OpenFile(object? sender, RoutedEventArgs e)
     {

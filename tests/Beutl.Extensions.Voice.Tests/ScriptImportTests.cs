@@ -267,8 +267,10 @@ public class ScriptImportTests
             window.Show();
             await Settle();
             var input = view.FindControl<TextBox>("ScriptTextBox")!;
+            Assert.That(input.Focus(), Is.True);
             input.Text = Script;
-            view.FindControl<Button>("ImportScriptButton")!.Command!.Execute(null);
+            Assert.That(model.Speakers, Is.Empty, "Typing must not rebuild the speaker selectors until focus leaves the input.");
+            Assert.That(view.FindControl<Button>("OpenScriptButton")!.Focus(), Is.True);
             await Settle();
             var speakerSection = view.FindControl<Expander>("SpeakersSection")!;
             var selectors = speakerSection.GetVisualDescendants().OfType<ComboBox>().ToArray();
@@ -277,7 +279,12 @@ public class ScriptImportTests
                 selectors[i].SelectedItem = model.Speakers[i].Presets.Value.Single(x => x.Id == Presets[i].Id);
             Assert.That(speakerSection.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "適用")), Is.False);
             Capture("input");
+            Assert.That(input.Focus(), Is.True);
             input.Text = Script.Replace("こんにちは。", "入力欄で変更したセリフです。");
+            Assert.That(view.FindControl<Button>("OpenScriptButton")!.Focus(), Is.True);
+            Assert.That(model.Lines[0].Text, Is.EqualTo("入力欄で変更したセリフです。"));
+            Assert.That(model.Speakers.Select(x => x.SelectedPreset.Value), Is.EqualTo(Presets),
+                "Automatic imports must retain the presets assigned to unchanged speaker names.");
             view.FindControl<Expander>("InputSection")!.IsExpanded = false;
             await Settle();
             Capture("speakers");
@@ -305,12 +312,18 @@ public class ScriptImportTests
             var add = view.FindControl<Button>("GenerateScriptButton")!;
             Assert.That(add.IsEffectivelyVisible, Is.True);
             Assert.That(add.TranslatePoint(default, window)!.Value.Y + add.Bounds.Height, Is.LessThanOrEqualTo(700));
-            add.Command!.Execute(null);
+            view.FindControl<Expander>("InputSection")!.IsExpanded = true;
+            await Settle();
+            Assert.That(input.Focus(), Is.True);
+            input.Text = Script.Replace("こんにちは。", "生成ボタンを押す直前に変更したセリフです。");
+            var generatePoint = add.TranslatePoint(new Point(add.Bounds.Width / 2, add.Bounds.Height / 2), window)!.Value;
+            window.MouseDown(generatePoint, Avalonia.Input.MouseButton.Left);
+            window.MouseUp(generatePoint, Avalonia.Input.MouseButton.Left);
             for (int i = 0; model.IsGenerating.Value && i < 500; i++) await Task.Delay(10);
             Assert.That(model.IsGenerating.Value, Is.False);
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(3), model.Message.Value);
             var generation = editor.Scene.Children[0].Objects.OfType<TtsController>().Single().Generation.Value!;
-            Assert.That(generation.Text, Is.EqualTo("入力欄で変更したセリフです。"),
+            Assert.That(generation.Text, Is.EqualTo("生成ボタンを押す直前に変更したセリフです。"),
                 "The source input is also the user's confirmation of what will be generated.");
             Assert.That(generation.Settings,
                 Is.EqualTo(updated.Settings), "The ComboBox selection is the complete source of generation settings.");

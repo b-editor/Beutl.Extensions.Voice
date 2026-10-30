@@ -24,6 +24,7 @@
                         <TextBox x:Name="ScriptTextBox" MinHeight="120" MaxHeight="200" AcceptsReturn="True"
                                  VerticalContentAlignment="Top" TextWrapping="Wrap"
                                  Text="{Binding RawText.Value, Mode=TwoWay}"
+                                 LostFocus="ImportScriptOnLostFocus"
                                  PlaceholderText="案内役: こんにちは。&#10;ゲスト: よろしくお願いします。"
                                  AutomationProperties.Name="台本" />
                         <CheckBox Content="「話者: セリフ」形式" IsChecked="{Binding HasSpeakerNames.Value, Mode=TwoWay}" />
