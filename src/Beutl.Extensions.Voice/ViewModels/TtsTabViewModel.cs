@@ -45,7 +45,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     public async Task Generate()
     {
         if (IsGenerating.Value || CaptureRequest() is not { } request) return;
-        var preset = SelectedPreset.Value;
+        var preset = _appliedPreset;
         var query = CopyCurrentQuery();
         var start = _currentTime.Value;
         IsGenerating.Value = true;
@@ -120,6 +120,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         json[nameof(Text)] = Text.Value;
         json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
+        json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
     }
 
     public async void ReadFromJson(JsonObject json)
@@ -140,6 +141,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 var styles = SelectedVoice.Value?.Styles.Where(x => x.Name == (string?)json[nameof(SelectedStyle)]).ToArray();
                 SelectedStyle.Value = styles?.Length == 1 ? styles[0] : null;
             }
+            // Older state records only the selection, which does not establish an applied preset.
+            _appliedPreset = json["AppliedPreset"]?.Deserialize<VoicePreset>();
         });
     }
 

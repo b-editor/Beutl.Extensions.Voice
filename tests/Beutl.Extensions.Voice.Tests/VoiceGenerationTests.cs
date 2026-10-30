@@ -38,12 +38,28 @@ public class VoiceGenerationTests
             model.Text.Value = "こんにちは。";
             model.PresetName.Value = "実音声のテスト";
             model.AddPreset();
+            var appliedPreset = model.SelectedPreset.Value!;
+            model.ApplyPreset();
+            var inspectedPreset = appliedPreset with
+            {
+                Id = Guid.NewGuid(), Name = "確認するだけのプリセット",
+                Settings = appliedPreset.Settings with { SpeedScale = 0.8 }
+            };
+            VoicePresetStore.Save(VoicePresetStore.GlobalPath, inspectedPreset);
+            model.RefreshPresets();
+            model.SelectedPreset.Value = model.Presets.Value.Single(x => x.Id == inspectedPreset.Id);
             await model.Generate();
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(1));
             var element = editor.Scene.Children.Single();
             var controller = element.Objects.OfType<TtsController>().Single();
             var sound = element.Objects.OfType<SourceSound>().Single();
             var original = controller.Generation.Value!;
+            Assert.That(original.PresetId, Is.EqualTo(appliedPreset.Id));
+            Assert.That(original.PresetName, Is.EqualTo(appliedPreset.Name));
+            Assert.That(original.Settings.SpeedScale, Is.EqualTo(appliedPreset.Settings.SpeedScale));
+            VoicePresetStore.Delete(VoicePresetStore.GlobalPath, inspectedPreset.Id);
+            model.RefreshPresets();
+            model.SelectedPreset.Value = model.Presets.Value.Single();
             string originalPath = sound.Source.Value!.Uri.LocalPath;
             Assert.That(new FileInfo(originalPath).Length, Is.GreaterThan(44));
             element.Start.Value = MediaTime.FromSeconds(3);
@@ -61,6 +77,7 @@ public class VoiceGenerationTests
             var added = editor.Scene.Children.Single(x => x != element);
             var addedController = added.Objects.OfType<TtsController>().Single();
             var updated = addedController.Generation.Value!;
+            Assert.That(updated.PresetId, Is.EqualTo(appliedPreset.Id));
             string updatedPath = added.Objects.OfType<SourceSound>().Single().Source.Value!.Uri.LocalPath;
             Assert.That(updatedPath, Is.Not.EqualTo(originalPath));
             Assert.That(File.Exists(originalPath), Is.True);

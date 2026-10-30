@@ -128,6 +128,43 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
+    public void Cross_tab_edits_preserve_latest_fields_and_do_not_recreate_deleted_presets()
+    {
+        using var editor = Editor();
+        using var otherEditor = Editor("other");
+        using var first = Model(editor);
+        first.PresetName.Value = "共通の声";
+        first.AddPreset();
+        var id = first.SelectedPreset.Value!.Id;
+        using var second = Model(otherEditor);
+        second.SelectedPreset.Value = second.Presets.Value.Single();
+
+        first.SpeedScale.Value = 1.6;
+        first.UpdatePreset();
+        second.PresetName.Value = "変更後の名前";
+        second.RenamePreset();
+        Assert.That(second.SelectedPreset.Value!.Settings.SpeedScale, Is.EqualTo(1.6));
+        first.SpeedScale.Value = 1.7;
+        first.UpdatePreset();
+        var stored = VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single();
+        Assert.That(stored.Name, Is.EqualTo("変更後の名前"), "Updating tuning must retain another tab's rename.");
+        Assert.That(stored.Settings.SpeedScale, Is.EqualTo(1.7));
+        Assert.That(first.SelectedPreset.Value, Is.EqualTo(stored));
+
+        first.DeletePreset();
+        second.PresetName.Value = "削除後の改名";
+        second.RenamePreset();
+        Assert.That(VoicePresetStore.Load(VoicePresetStore.GlobalPath), Is.Empty);
+        Assert.That(second.PresetMessage.Value, Does.Contain("削除されています"));
+        second.UpdatePreset();
+        Assert.That(VoicePresetStore.Load(VoicePresetStore.GlobalPath), Is.Empty);
+        Assert.That(second.PresetMessage.Value, Does.Contain("削除されています"));
+        second.DuplicatePreset();
+        Assert.That(VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single().Id, Is.Not.EqualTo(id),
+            "Explicitly duplicating the cached preset still creates a new preset.");
+    }
+
+    [AvaloniaTest]
     public void Missing_voice_does_not_fall_back_to_same_name_or_style_id_and_query_tracks_input()
     {
         using var editor = Editor();
@@ -191,16 +228,20 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
-    public async Task Tab_state_restores_ids_and_parameters_after_reopening()
+    public async Task Tab_state_restores_applied_preset_independently_of_selection_and_global_store()
     {
         using var editor = Editor();
         using var model = Model(editor);
         model.PresetName.Value = "共通の声";
         model.AddPreset();
+        var applied = model.SelectedPreset.Value!;
+        model.DuplicatePreset(); // Selecting a saved copy does not apply it.
         var json = new JsonObject();
         model.WriteToJson(json);
+        Assert.That(json["AppliedPreset"]!.Deserialize<VoicePreset>(), Is.EqualTo(applied));
         Assert.That(json.ContainsKey("PresetScope"), Is.False);
         json["PresetScope"] = 1; // Old tab state must not switch away from the global store.
+        VoicePresetStore.Delete(VoicePresetStore.GlobalPath, applied.Id);
         using var restored = Model(editor);
         restored.SelectedVoice.Value = restored.Voice.Value[0];
         restored.SpeedScale.Value = 0.5;
@@ -210,6 +251,18 @@ public class VoicePresetTests
         Assert.That(restored.SelectedVoice.Value!.SpeakerUuid, Is.EqualTo("speaker-b"));
         Assert.That(restored.SpeedScale.Value, Is.EqualTo(1.3));
         Assert.That(restored.SelectedPreset.Value!.Id, Is.EqualTo(model.SelectedPreset.Value!.Id));
+        var savedAgain = new JsonObject();
+        restored.WriteToJson(savedAgain);
+        Assert.That(savedAgain["AppliedPreset"]!.Deserialize<VoicePreset>(), Is.EqualTo(applied));
+
+        json.Remove("AppliedPreset");
+        using var legacy = Model(editor);
+        legacy.OnLoaded();
+        legacy.ReadFromJson(json);
+        await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+        legacy.WriteToJson(savedAgain);
+        Assert.That(savedAgain["AppliedPreset"], Is.Null, "Do not infer an applied preset from legacy list selection.");
+        Assert.That(legacy.SelectedPreset.Value!.Id, Is.EqualTo(model.SelectedPreset.Value.Id));
     }
 
     [AvaloniaTest]

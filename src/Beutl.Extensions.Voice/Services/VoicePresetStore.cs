@@ -28,6 +28,13 @@ public static class VoicePresetStore
         else presets[index] = preset;
     });
 
+    public static void Update(string path, Guid id, Func<VoicePreset, VoicePreset> update) => Change(path, presets =>
+    {
+        int index = presets.FindIndex(x => x.Id == id);
+        if (index < 0) throw new InvalidOperationException("プリセットは削除されています。一覧を再読み込みしてください。");
+        presets[index] = update(presets[index]);
+    });
+
     public static void Delete(string path, Guid id) => Change(path, presets => presets.RemoveAll(x => x.Id == id));
 
     private static void Change(string path, Action<List<VoicePreset>> change)

@@ -7,6 +7,9 @@ namespace Beutl.Extensions.Voice.ViewModels;
 
 public partial class TtsTabViewModel
 {
+    // Applying or saving the current settings establishes their source; browsing does not.
+    private VoicePreset? _appliedPreset;
+
     // Keep item replacement and selection notifications in order on the UI thread.
     public ReactivePropertySlim<VoicePreset[]> Presets { get; } = new([]);
     public ReactivePropertySlim<VoicePreset?> SelectedPreset { get; } = new();
@@ -50,21 +53,34 @@ public partial class TtsTabViewModel
     public void AddPreset() => EditPreset(() =>
     {
         var settings = CaptureSettings() ?? throw new InvalidOperationException("話者とスタイルを選択してください。");
-        return new VoicePreset { Name = RequirePresetName(), Settings = settings };
-    });
+        var preset = new VoicePreset { Name = RequirePresetName(), Settings = settings };
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
+        return preset.Id;
+    }, capturesCurrentSettings: true);
 
     public void DuplicatePreset() => EditPreset(() =>
     {
         var preset = RequirePreset();
-        return preset with { Id = Guid.NewGuid(), Name = preset.Name + " のコピー" };
+        var duplicate = preset with { Id = Guid.NewGuid(), Name = preset.Name + " のコピー" };
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, duplicate);
+        return duplicate.Id;
     });
 
-    public void RenamePreset() => EditPreset(() => RequirePreset() with { Name = RequirePresetName() });
-
-    public void UpdatePreset() => EditPreset(() => RequirePreset() with
+    public void RenamePreset() => EditPreset(() =>
     {
-        Settings = CaptureSettings() ?? throw new InvalidOperationException("話者とスタイルを選択してください。")
+        var id = RequirePreset().Id;
+        string name = RequirePresetName();
+        VoicePresetStore.Update(VoicePresetStore.GlobalPath, id, preset => preset with { Name = name });
+        return id;
     });
+
+    public void UpdatePreset() => EditPreset(() =>
+    {
+        var id = RequirePreset().Id;
+        var settings = CaptureSettings() ?? throw new InvalidOperationException("話者とスタイルを選択してください。");
+        VoicePresetStore.Update(VoicePresetStore.GlobalPath, id, preset => preset with { Settings = settings });
+        return id;
+    }, capturesCurrentSettings: true);
 
     private VoicePreset RequirePreset() => SelectedPreset.Value
         ?? throw new InvalidOperationException("プリセットを選択してください。");
@@ -72,14 +88,17 @@ public partial class TtsTabViewModel
     private string RequirePresetName() => string.IsNullOrWhiteSpace(PresetName.Value)
         ? throw new InvalidOperationException("プリセット名を入力してください。") : PresetName.Value.Trim();
 
-    private void EditPreset(Func<VoicePreset> create)
+    private void EditPreset(Func<Guid> edit, bool capturesCurrentSettings = false)
     {
         try
         {
-            var preset = create();
-            VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
+            var id = edit();
             RefreshPresets();
-            SelectedPreset.Value = Presets.Value.First(x => x.Id == preset.Id);
+            var preset = Presets.Value.First(x => x.Id == id);
+            SelectedPreset.Value = preset;
+            if (capturesCurrentSettings) _appliedPreset = preset;
+            else if (_appliedPreset is { } applied && applied.Id == id)
+                _appliedPreset = applied with { Name = preset.Name };
             PresetMessage.Value = "プリセットを保存しました。";
         }
         catch (Exception ex)
@@ -104,7 +123,11 @@ public partial class TtsTabViewModel
 
     public void ApplyPreset()
     {
-        if (SelectedPreset.Value is { } preset) ApplySettings(preset.Settings);
+        if (SelectedPreset.Value is { } preset)
+        {
+            ApplySettings(preset.Settings);
+            _appliedPreset = preset;
+        }
         RefreshPresetDetails();
     }
 
