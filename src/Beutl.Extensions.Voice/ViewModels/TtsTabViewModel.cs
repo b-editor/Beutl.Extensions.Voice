@@ -21,12 +21,18 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private readonly HistoryManager _historyManager;
+    private readonly Func<string, VoiceSettings, AudioQueryModel?, VoiceSynthesisResult> _synthesize;
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
+        : this(extension, editorContext, VoiceSynthesisService.Synthesize) { }
+
+    internal TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext,
+        Func<string, VoiceSettings, AudioQueryModel?, VoiceSynthesisResult> synthesize)
     {
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
+        _synthesize = synthesize;
         Extension = extension;
         InitializePresets();
     }
@@ -45,13 +51,15 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         var query = CopyCurrentQuery();
         var start = _currentTime.Value;
         IsGenerating.Value = true;
+        string? path = null;
+        bool committed = false;
         try
         {
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
-            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
+            var output = await Task.Run(() => _synthesize(request.Text, request.Settings, query));
             if (_disposed) return;
             Directory.CreateDirectory(directory);
-            string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
+            path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
             await File.WriteAllBytesAsync(path, output.Wave);
             if (_disposed) return;
             var generation = new VoiceGeneration
@@ -64,6 +72,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             {
                 _scene.AddChild(element, ElementOverlapHandling.ZIndex);
             });
+            committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
         }
         catch (Exception ex)
@@ -73,6 +82,9 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         }
         finally
         {
+            if (!committed && path != null)
+                try { File.Delete(path); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Could not delete generated speech file {Path}", path); }
             IsGenerating.Value = false;
         }
     }
@@ -84,7 +96,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         IsGenerating.Value = true;
         try
         {
-            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
+            var output = await Task.Run(() => _synthesize(request.Text, request.Settings, query));
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
             using var player = new SimpleWavePlayer(output.Wave);

@@ -224,7 +224,7 @@ public sealed class ScriptImportViewModel : IToolContext
         {
             RawText = RawText.Value, HasSpeakerNames = HasSpeakerNames.Value,
             Lines = Lines.ToArray(),
-            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.SelectedPreset.Value)).ToArray(),
+            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.AssignedPreset)).ToArray(),
             StartSeconds = StartSeconds.Value, GapSeconds = GapSeconds.Value,
             FirstLayer = FirstLayer.Value, SeparateLayers = SeparateLayers.Value
         });
@@ -243,8 +243,7 @@ public sealed class ScriptImportViewModel : IToolContext
         Speakers.Clear();
         foreach (var saved in state.Speakers)
         {
-            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets);
-            speaker.SelectedPreset.Value = _presets.FirstOrDefault(x => x.Id == saved.Preset?.Id);
+            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets, saved.Preset);
             _assignments.Add(saved.Name, speaker);
         }
         SetLines(state.Lines);

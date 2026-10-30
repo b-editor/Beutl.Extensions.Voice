@@ -145,6 +145,82 @@ public class ScriptImportTests
     }
 
     [AvaloniaTest]
+    public async Task Unavailable_preset_assignment_survives_save_restore_and_refresh()
+    {
+        using var editor = Editor();
+        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        model.RawText.Value = Script;
+        model.ImportText();
+        AssignPresets(model);
+        var state = new JsonObject();
+        model.WriteToJson(state);
+
+        VoicePresetStore.Delete(VoicePresetStore.GlobalPath, Presets[0].Id);
+        using var restored = new ScriptImportViewModel(new(), editor, Wave);
+        restored.ReadFromJson(state);
+        restored.RefreshPresets();
+        Assert.That(restored.Speakers[0].SelectedPreset.Value, Is.Null);
+        await restored.Generate();
+        Assert.That(editor.Scene.Children, Is.Empty, "Unavailable presets must not generate using their old settings.");
+        restored.WriteToJson(state);
+
+        using var reopened = new ScriptImportViewModel(new(), editor, Wave);
+        reopened.ReadFromJson(state);
+        var updated = Presets[0] with { Settings = Presets[0].Settings with { SpeedScale = 1.4 } };
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
+        reopened.RefreshPresets();
+        Assert.That(reopened.Speakers[0].SelectedPreset.Value, Is.EqualTo(updated));
+
+        VoicePresetStore.Delete(VoicePresetStore.GlobalPath, updated.Id);
+        reopened.RefreshPresets();
+        reopened.Speakers[0].SelectedPreset.Value = Presets[1];
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
+        reopened.RefreshPresets();
+        Assert.That(reopened.Speakers[0].SelectedPreset.Value, Is.EqualTo(Presets[1]));
+        reopened.Speakers[0].SelectedPreset.Value = null;
+        reopened.WriteToJson(state);
+        restored.ReadFromJson(state);
+        restored.RefreshPresets();
+        Assert.That(restored.Speakers[0].SelectedPreset.Value, Is.Null, "Explicitly cleared assignments must stay cleared.");
+    }
+
+    [AvaloniaTest]
+    public async Task Single_utterance_cleans_up_failed_creation_and_keeps_successful_audio_for_undo_redo()
+    {
+        using var editor = Editor();
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        bool emptyAudio = true;
+        using var model = new TtsTabViewModel(new(), editor,
+            (text, settings, _) => Wave(emptyAudio ? "" : text, settings));
+        var settings = Presets[0].Settings;
+        model.SelectedVoice.Value = new VoiceMetadata
+        {
+            Name = settings.SpeakerName, SpeakerUuid = settings.SpeakerUuid, Version = settings.ModelVersion,
+            Styles = [new VoiceStyle { Id = settings.StyleId, Name = settings.StyleName }]
+        };
+        model.Text.Value = "こんにちは。";
+        await model.Generate();
+        Assert.That(editor.Scene.Children, Is.Empty);
+        Assert.That(editor.History.UndoCount, Is.Zero);
+        string directory = Path.Combine(_directory, "resources", "tts");
+        Assert.That(Directory.GetFiles(directory), Is.Empty);
+
+        emptyAudio = false;
+        await model.Generate();
+        var element = editor.Scene.Children.Single();
+        string path = element.Objects.OfType<SourceSound>().Single().Source.Value!.Uri.LocalPath;
+        Assert.That(File.Exists(path), Is.True);
+        Assert.That(editor.History.Undo(), Is.True);
+        Assert.That(editor.Scene.Children, Is.Empty);
+        Assert.That(File.Exists(path), Is.True);
+        Assert.That(editor.History.Redo(), Is.True);
+        Assert.That(editor.Scene.Children.Single(), Is.SameAs(element));
+        Assert.That(element.TryGetOriginalDuration(out var duration), Is.True);
+        Assert.That(duration, Is.EqualTo(element.Length.Value));
+    }
+
+    [AvaloniaTest]
     [TestCase(false)]
     [TestCase(true)]
     public async Task Batch_uses_wav_durations_order_and_settings_and_is_one_undo(bool separateLayers)
@@ -212,6 +288,11 @@ public class ScriptImportTests
         var originalDuration = editor.Scene.Duration.Value;
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
+        if (reason == "overlap")
+        {
+            existing.Name.Value = "Existing edit";
+            editor.History.Commit();
+        }
         var enteredSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseSecond = new ManualResetEventSlim();
         int count = 0;
@@ -245,6 +326,16 @@ public class ScriptImportTests
         Assert.That(model.RawText.Value, Is.EqualTo(Script));
         Assert.That(model.Lines, Has.Count.EqualTo(3));
         Assert.That(model.Speakers[0].SelectedPreset.Value, Is.Not.Null);
+        if (reason == "overlap")
+        {
+            Assert.That(editor.History.UndoCount, Is.EqualTo(1), "A failed batch must not enter the undo history.");
+            Assert.That(editor.History.Undo(), Is.True);
+            Assert.That(existing.Name.Value, Is.Not.EqualTo("Existing edit"));
+            Assert.That(editor.Scene.Children.Single(), Is.SameAs(existing));
+            Assert.That(editor.History.Redo(), Is.True);
+            Assert.That(existing.Name.Value, Is.EqualTo("Existing edit"));
+            Assert.That(editor.Scene.Children.Single(), Is.SameAs(existing));
+        }
         model.FirstLayer.Value = 3;
         await model.Generate();
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(4), model.Message.Value);
@@ -302,7 +393,8 @@ public class ScriptImportTests
             Assert.That(model.Message.Value, Does.Contain("案内役").And.Contain("プリセットを選択"));
             VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
             model.RefreshPresets();
-            selectors[0].SelectedItem = model.Speakers[0].Presets.Value.Single(x => x.Id == updated.Id);
+            await Settle();
+            Assert.That(selectors[0].SelectedItem, Is.EqualTo(updated), "Returning presets restore their assignment automatically.");
 
             speakerSection.IsExpanded = false;
             await Settle();
@@ -441,6 +533,7 @@ public class ScriptImportTests
             model.RawText.Value = "A:こんにちは。\nB:ありがとう。";
             model.ImportText();
             var voices = loader.VoiceSets.SelectMany(x => x.Metadata).DistinctBy(x => x.SpeakerUuid).Take(2).ToArray();
+            if (voices.Length < 2) Assert.Ignore("Install at least two distinct VOICEVOX speakers to run this test.");
             for (int i = 0; i < voices.Length; i++)
             {
                 var voice = voices[i];
