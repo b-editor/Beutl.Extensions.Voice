@@ -90,7 +90,7 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         var generation = _controller.Generation.Value;
         var draft = _controller.Draft.Value;
         var settings = draft?.Settings ?? _controller.AppliedPreset.Value?.Settings ?? generation?.Settings;
-        HasSettings.Value = settings != null;
+        HasSettings.Value = !string.IsNullOrEmpty(settings?.SpeakerUuid);
         GenerationSettings.Value = generation == null ? "生成時の設定が保存されていません。"
             : $"プリセット: {generation.PresetName ?? "なし"}\n{generation.Settings.Describe()}\n本文: {generation.Text}";
         if (_writingDraft) return;
@@ -106,7 +106,7 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         try
         {
             GetEditableTarget();
-            if (CaptureStoredSettings() is not { } settings) return;
+            var settings = CaptureDraftSettings();
             _writingDraft = true;
             _controller.Draft.Value = new VoiceGeneration
             {

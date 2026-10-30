@@ -117,6 +117,9 @@ public class VoiceEditorViewModel : IDisposable
     protected VoiceSettings? CaptureStoredSettings() => CaptureSettings()
         ?? (_unavailableSettings == null ? null : WithTuning(_unavailableSettings));
 
+    // Tuning can be edited and saved before a voice has been selected.
+    protected VoiceSettings CaptureDraftSettings() => CaptureStoredSettings() ?? WithTuning(new VoiceSettings());
+
     private VoiceSettings WithTuning(VoiceSettings settings) => settings with
     {
         SpeedScale = SpeedScale.Value, PitchScale = PitchScale.Value, IntonationScale = IntonationScale.Value,
@@ -139,7 +142,7 @@ public class VoiceEditorViewModel : IDisposable
             VolumeScale.Value = settings.VolumeScale;
             PrePhonemeLength.Value = settings.PrePhonemeLength;
             PostPhonemeLength.Value = settings.PostPhonemeLength;
-            _unavailableSettings = style == null ? settings : null;
+            _unavailableSettings = style == null && !string.IsNullOrEmpty(settings.SpeakerUuid) ? settings : null;
         });
         if (!sameVoice) InvalidateQuery();
         if (report)

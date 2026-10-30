@@ -164,6 +164,56 @@ public class TtsControllerTests
     }
 
     [AvaloniaTest]
+    public void Tuning_before_voice_selection_survives_text_edits_reopening_and_undo()
+    {
+        using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
+        var controller = AddController(editor);
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        using var model = CreateModel(editor, controller);
+        SetVoices(model);
+
+        model.SpeedScale.Value = 1.5;
+        model.PitchScale.Value = 0.05;
+        model.ConfirmEdit();
+        var pending = controller.Draft.Value;
+        controller.Text.Value = "話者を選ぶ前に本文も変更しました。";
+        editor.History.Commit();
+        Assert.That(model.SpeedScale.Value, Is.EqualTo(1.5));
+        Assert.That(model.PitchScale.Value, Is.EqualTo(0.05));
+        Assert.That(model.SelectedVoice.Value, Is.Null);
+        Assert.That(model.HasSettings.Value, Is.False, "Pending tuning alone cannot enable regeneration.");
+
+        var restored = (TtsController)CoreSerializer.DeserializeFromJsonObject(CoreSerializer.SerializeToJsonObject(controller), typeof(TtsController));
+        using var reopened = CreateModel(editor, restored);
+        Assert.That(reopened.SpeedScale.Value, Is.EqualTo(1.5));
+        Assert.That(reopened.PitchScale.Value, Is.EqualTo(0.05));
+        Assert.That(reopened.SelectedVoice.Value, Is.Null);
+        Assert.That(reopened.HasSettings.Value, Is.False);
+
+        Assert.That(editor.History.Undo(), Is.True); // Text edit
+        Assert.That(model.SpeedScale.Value, Is.EqualTo(1.5));
+        Assert.That(editor.History.Undo(), Is.True); // Tuning edit
+        Assert.That(controller.Draft.Value, Is.Null);
+        Assert.That(model.SpeedScale.Value, Is.EqualTo(1));
+        Assert.That(model.PitchScale.Value, Is.Zero);
+        Assert.That(editor.History.Redo(), Is.True);
+        Assert.That(controller.Draft.Value, Is.EqualTo(pending));
+
+        model.SelectedVoice.Value = model.Voice.Value.First();
+        Assert.That(model.HasSettings.Value, Is.True);
+        Assert.That(controller.Draft.Value!.Settings.SpeakerUuid, Is.EqualTo("speaker"));
+        Assert.That(controller.Draft.Value.Settings.SpeedScale, Is.EqualTo(1.5));
+        Assert.That(controller.Draft.Value.Settings.PitchScale, Is.EqualTo(0.05));
+        Assert.That(editor.History.Undo(), Is.True); // Voice selection
+        Assert.That(model.SelectedVoice.Value, Is.Null);
+        Assert.That(model.HasSettings.Value, Is.False);
+        Assert.That(model.SpeedScale.Value, Is.EqualTo(1.5));
+        Assert.That(editor.History.Redo(), Is.True);
+        Assert.That(model.SelectedStyle.Value!.Id, Is.EqualTo(1));
+    }
+
+    [AvaloniaTest]
     public void Applying_a_preset_is_persistent_undoable_and_keeps_generation_independent()
     {
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
@@ -231,7 +281,22 @@ public class TtsControllerTests
             window.Show();
             await Settle();
             var regenerate = view.FindControl<Button>("RegenerateButton")!;
-            Assert.That(regenerate.IsEffectivelyEnabled, Is.False, "Legacy elements need a preset before their first regeneration.");
+            Assert.That(regenerate.IsEffectivelyEnabled, Is.False, "Legacy elements need a voice before their first regeneration.");
+            var voiceEditor = view.FindControl<VoiceEditorView>("VoiceEditor")!;
+            var tuning = voiceEditor.FindControl<Expander>("TuningExpander")!;
+            tuning.IsExpanded = true;
+            await Settle();
+            var speedSlider = tuning.GetVisualDescendants().OfType<Slider>().First();
+            speedSlider.Value = 1.5;
+            model.ConfirmEdit();
+            inner.PreviewEdit("話者未選択のまま本文を変更します。");
+            editor.History.Commit();
+            await Settle();
+            Assert.That(speedSlider.Value, Is.EqualTo(1.5));
+            Assert.That(regenerate.IsEffectivelyEnabled, Is.False);
+            if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is { } pendingDirectory)
+                Capture("controller-pending-tuning", pendingDirectory);
+            tuning.IsExpanded = false;
             view.FindControl<ComboBox>("PresetSelector")!.SelectedIndex = 0;
             view.FindControl<Button>("ApplyPresetButton")!.Command!.Execute(null);
             await Settle();
@@ -253,9 +318,7 @@ public class TtsControllerTests
                 Capture("controller", directory);
             }
 
-            var voiceEditor = view.FindControl<VoiceEditorView>("VoiceEditor")!;
             view.FindControl<Expander>("SettingsExpander")!.IsExpanded = false;
-            var tuning = voiceEditor.FindControl<Expander>("TuningExpander")!;
             tuning.IsExpanded = true;
             await Settle();
             tuning.BringIntoView();
