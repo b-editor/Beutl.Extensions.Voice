@@ -128,11 +128,14 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         Text.Value = (string?)json[nameof(Text)] ?? "";
         if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))
             SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
-        await _initTcs.Task;
-        if (_disposed) return;
+        var settings = json["VoiceSettings"]?.Deserialize<VoiceSettings>();
+        // Only name-based migration needs Core metadata; ID-based settings can be retained until available.
+        if (settings == null) await _initTcs.Task;
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            if (json["VoiceSettings"]?.Deserialize<VoiceSettings>() is { } settings) ApplySettings(settings);
+            // A newer HTTP selection supersedes a pending legacy Core migration.
+            if (_disposed || settings == null && IsHttpEngine.Value) return;
+            if (settings != null) ApplySettings(settings);
             else
             {
                 // Migrate name-only tab state only when it identifies a single voice/style.

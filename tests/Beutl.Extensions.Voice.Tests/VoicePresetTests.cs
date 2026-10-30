@@ -266,6 +266,85 @@ public class VoicePresetTests
     }
 
     [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Tab_state_waits_for_core_metadata_only_when_migrating_names(bool coreReadyBeforeRestore)
+    {
+        var previousLoader = TtsLoader.VoiceVoxLoader.Value;
+        var loader = new VoiceVoxLoader(Path.Combine(_directory, "voicevox"));
+        var voice = new VoiceMetadata
+        {
+            Name = "復元する話者", SpeakerUuid = "legacy-speaker", Version = "1",
+            Styles = [new() { Id = 1, Name = "通常" }, new() { Id = 2, Name = "復元するスタイル" }]
+        };
+        var settings = new VoiceSettings
+        {
+            SpeakerUuid = voice.SpeakerUuid, SpeakerName = voice.Name, StyleId = 2,
+            StyleName = voice.Styles[1].Name, ModelVersion = voice.Version, SpeedScale = 1.4
+        };
+        var connection = new VoiceEngineConnection { Name = "HTTP", Url = "http://localhost:50021/", Voices = [voice] };
+        VoiceEngineStore.Save(connection);
+        TtsLoader.VoiceVoxLoader.Value = loader;
+        try
+        {
+            if (coreReadyBeforeRestore) CompleteCoreInitialization();
+            using var editor = Editor();
+            using var legacy = new TtsTabViewModel(new(), editor);
+            using var core = new TtsTabViewModel(new(), editor);
+            using var http = new TtsTabViewModel(new(), editor);
+            var legacyState = new JsonObject
+            {
+                ["Text"] = "旧形式の台本", ["SelectedVoice"] = voice.Name, ["SelectedStyle"] = voice.Styles[1].Name
+            };
+            legacy.ReadFromJson(legacyState);
+            core.ReadFromJson(new JsonObject { ["VoiceSettings"] = JsonSerializer.SerializeToNode(settings) });
+            http.ReadFromJson(legacyState);
+            http.ReadFromJson(new JsonObject
+            {
+                ["VoiceSettings"] = JsonSerializer.SerializeToNode(settings with
+                {
+                    EngineId = connection.Id, EngineName = connection.Name, StyleId = 1, StyleName = voice.Styles[0].Name
+                })
+            });
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            Assert.That(http.SelectedEngine.Value!.Id, Is.EqualTo(connection.Id));
+            Assert.That(http.SelectedStyle.Value!.Id, Is.EqualTo(1), "HTTP state restores without Core metadata.");
+            Assert.That(http.SpeedScale.Value, Is.EqualTo(1.4));
+            if (!coreReadyBeforeRestore)
+            {
+                Assert.That(legacy.SelectedVoice.Value, Is.Null);
+                Assert.That(core.SelectedVoice.Value, Is.Null);
+                var pending = new JsonObject();
+                core.WriteToJson(pending);
+                Assert.That(pending["VoiceSettings"]!.Deserialize<VoiceSettings>(), Is.EqualTo(settings));
+                CompleteCoreInitialization();
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            }
+            Assert.That(legacy.Text.Value, Is.EqualTo("旧形式の台本"));
+            Assert.That(legacy.SelectedVoice.Value?.SpeakerUuid, Is.EqualTo(voice.SpeakerUuid));
+            Assert.That(legacy.SelectedStyle.Value?.Id, Is.EqualTo(2), "Restore the saved style, not the first style.");
+            Assert.That(core.SelectedVoice.Value?.SpeakerUuid, Is.EqualTo(voice.SpeakerUuid));
+            Assert.That(core.SelectedStyle.Value?.Id, Is.EqualTo(2));
+            Assert.That(core.SpeedScale.Value, Is.EqualTo(1.4));
+            Assert.That(http.SelectedEngine.Value!.Id, Is.EqualTo(connection.Id));
+            Assert.That(http.SelectedStyle.Value!.Id, Is.EqualTo(1), "Core initialization must not replace HTTP settings.");
+        }
+        finally
+        {
+            loader.InitializationTcs.TrySetResult(false);
+            TtsLoader.VoiceVoxLoader.Value = previousLoader;
+        }
+
+        void CompleteCoreInitialization()
+        {
+            // Publish metadata through the real loader notification without loading native synthesis libraries.
+            loader.VoiceSets.Add(new VoiceSet(null!, [voice]));
+            typeof(VoiceVoxLoader).GetProperty(nameof(VoiceVoxLoader.IsLoaded))!.SetValue(loader, true);
+            loader.InitializationTcs.SetResult(true);
+        }
+    }
+
+    [AvaloniaTest]
     public async Task Preset_menu_opens_name_input_and_exposes_management_and_details()
     {
         using var editor = Editor();

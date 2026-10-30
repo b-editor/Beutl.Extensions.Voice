@@ -50,7 +50,11 @@ public partial class VoiceEditorViewModel : IDisposable
             await loader.InitializationTcs.Task;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!_disposed && ReferenceEquals(loader, TtsLoader.VoiceVoxLoader.Value)) OnLoaded();
+                if (!_disposed && ReferenceEquals(loader, TtsLoader.VoiceVoxLoader.Value))
+                {
+                    OnLoaded();
+                    _initTcs.TrySetResult();
+                }
             });
         }).AddTo(_subscriptions);
     }
@@ -102,7 +106,6 @@ public partial class VoiceEditorViewModel : IDisposable
             });
         }
         catch (Exception ex) { Message.Value = $"VOICEVOXの初期化に失敗しました: {ex.Message}"; }
-        finally { _initTcs.TrySetResult(); }
     }
 
     protected VoiceSettings? CaptureSettings()

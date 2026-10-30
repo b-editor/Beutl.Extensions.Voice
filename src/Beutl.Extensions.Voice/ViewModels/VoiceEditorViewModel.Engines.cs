@@ -38,8 +38,6 @@ public partial class VoiceEditorViewModel
         IsVoiceVoxInstalled.Subscribe(_ => UpdateInstallPrompt()).AddTo(_subscriptions);
         VoiceEngineStore.Changed += OnConnectionsChanged;
         Disposable.Create(() => VoiceEngineStore.Changed -= OnConnectionsChanged).AddTo(_subscriptions);
-        // Restoring HTTP presets must not wait for the optional native Core installation.
-        _initTcs.TrySetResult();
     }
 
     private void OnConnectionsChanged()
