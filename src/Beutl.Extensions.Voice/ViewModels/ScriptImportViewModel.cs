@@ -16,7 +16,7 @@ using Reactive.Bindings;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
-public sealed class ScriptImportViewModel : IToolContext
+public sealed class ScriptImportViewModel : IDisposable
 {
     private readonly Scene _scene;
     private readonly HistoryManager _history;
@@ -32,13 +32,12 @@ public sealed class ScriptImportViewModel : IToolContext
     private CancellationTokenSource? _cancellation;
     private bool _disposed;
 
-    public ScriptImportViewModel(ScriptTabExtension extension, IEditorContext editor)
-        : this(extension, editor, (text, settings) => VoiceSynthesisService.SynthesizeAsync(text, settings, null)) { }
+    public ScriptImportViewModel(IEditorContext editor)
+        : this(editor, (text, settings) => VoiceSynthesisService.SynthesizeAsync(text, settings, null)) { }
 
-    internal ScriptImportViewModel(ScriptTabExtension extension, IEditorContext editor,
+    internal ScriptImportViewModel(IEditorContext editor,
         Func<string, VoiceSettings, Task<VoiceSynthesisResult>> synthesize)
     {
-        Extension = extension;
         _scene = editor.GetRequiredService<Scene>();
         _history = editor.GetRequiredService<HistoryManager>();
         _clock = editor.GetRequiredService<IEditorClock>();
@@ -61,9 +60,6 @@ public sealed class ScriptImportViewModel : IToolContext
         });
     }
 
-    public ToolTabExtension Extension { get; }
-    public IReactiveProperty<bool> IsSelected { get; } = new ReactivePropertySlim<bool>();
-    public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("台本読み込み");
     public ReactivePropertySlim<string> RawText { get; } = new("");
     public ReactivePropertySlim<bool> HasSpeakerNames { get; } = new(true);
     public ObservableCollection<ScriptLine> Lines { get; } = [];
@@ -263,8 +259,6 @@ public sealed class ScriptImportViewModel : IToolContext
         }
         SetLines(state.Lines);
     }
-
-    public object? GetService(Type serviceType) => null;
 
     private void UpdateInstallPrompt()
     {

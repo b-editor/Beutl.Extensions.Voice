@@ -107,7 +107,7 @@ public class ScriptImportTests
     public async Task Reimport_and_tab_restore_keep_source_script_and_preset_assignments()
     {
         using var editor = Editor();
-        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        using var model = new ScriptImportViewModel(editor, Wave);
         string path = Path.Combine(_directory, "script.txt");
         await File.WriteAllTextAsync(path, Script, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
         await using (var stream = File.OpenRead(path)) await model.ImportFile(stream);
@@ -129,7 +129,7 @@ public class ScriptImportTests
         model.SeparateLayers.Value = true;
         var state = new JsonObject();
         model.WriteToJson(state);
-        using var restored = new ScriptImportViewModel(new(), editor, Wave);
+        using var restored = new ScriptImportViewModel(editor, Wave);
         restored.ReadFromJson(state);
         Assert.That(restored.RawText.Value, Is.EqualTo(model.RawText.Value));
         Assert.That(restored.Lines[0].Text, Is.EqualTo("元の台本で修正したセリフ"));
@@ -150,7 +150,7 @@ public class ScriptImportTests
     public async Task Unavailable_preset_assignment_survives_save_restore_and_refresh()
     {
         using var editor = Editor();
-        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        using var model = new ScriptImportViewModel(editor, Wave);
         model.RawText.Value = Script;
         model.ImportText();
         AssignPresets(model);
@@ -158,7 +158,7 @@ public class ScriptImportTests
         model.WriteToJson(state);
 
         VoicePresetStore.Delete(VoicePresetStore.GlobalPath, Presets[0].Id);
-        using var restored = new ScriptImportViewModel(new(), editor, Wave);
+        using var restored = new ScriptImportViewModel(editor, Wave);
         restored.ReadFromJson(state);
         restored.RefreshPresets();
         Assert.That(restored.Speakers[0].SelectedPreset.Value, Is.Null);
@@ -166,7 +166,7 @@ public class ScriptImportTests
         Assert.That(editor.Scene.Children, Is.Empty, "Unavailable presets must not generate using their old settings.");
         restored.WriteToJson(state);
 
-        using var reopened = new ScriptImportViewModel(new(), editor, Wave);
+        using var reopened = new ScriptImportViewModel(editor, Wave);
         reopened.ReadFromJson(state);
         var updated = Presets[0] with { Settings = Presets[0].Settings with { SpeedScale = 1.4 } };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
@@ -230,7 +230,7 @@ public class ScriptImportTests
         using var editor = Editor();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
-        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        using var model = new ScriptImportViewModel(editor, Wave);
         model.RawText.Value = Script;
         model.ImportText();
         AssignPresets(model);
@@ -298,7 +298,7 @@ public class ScriptImportTests
         var enteredSecond = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseSecond = new ManualResetEventSlim();
         int count = 0;
-        using var model = new ScriptImportViewModel(new(), editor, (text, settings) => Task.Run(() =>
+        using var model = new ScriptImportViewModel(editor, (text, settings) => Task.Run(() =>
         {
             if (Interlocked.Increment(ref count) == 2)
             {
@@ -350,7 +350,7 @@ public class ScriptImportTests
     public async Task Tab_generates_current_source_text_with_selected_presets(int width, bool light)
     {
         using var editor = Editor();
-        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        using var model = new ScriptImportViewModel(editor, Wave);
         model.IsVoiceVoxInstalled.Value = true;
         var view = new ScriptImportView { DataContext = model };
         var window = new Window { Width = width, Height = 700, Content = view,
@@ -447,7 +447,7 @@ public class ScriptImportTests
         int width, int height, bool withSpeakers)
     {
         using var editor = Editor();
-        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        using var model = new ScriptImportViewModel(editor, Wave);
         model.IsVoiceVoxInstalled.Value = true;
         if (withSpeakers)
         {
@@ -531,7 +531,7 @@ public class ScriptImportTests
             Assert.That(loader.IsLoaded, Is.True);
             TtsLoader.VoiceVoxLoader.Value = loader;
             using var editor = Editor();
-            using var model = new ScriptImportViewModel(new(), editor);
+            using var model = new ScriptImportViewModel(editor);
             model.RawText.Value = "A:こんにちは。\nB:ありがとう。";
             model.ImportText();
             var voices = loader.VoiceSets.SelectMany(x => x.Metadata).DistinctBy(x => x.SpeakerUuid).Take(2).ToArray();

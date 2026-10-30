@@ -35,7 +35,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _synthesize = synthesize;
         Extension = extension;
         InitializePresets();
-        Script = new ScriptImportViewModel(new ScriptTabExtension(), editorContext,
+        Script = new ScriptImportViewModel(editorContext,
             (text, settings) => synthesize(text, settings, null));
     }
 

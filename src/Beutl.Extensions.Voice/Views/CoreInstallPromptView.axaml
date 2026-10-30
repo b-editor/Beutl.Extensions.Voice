@@ -2,18 +2,15 @@
              xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:ui="using:FluentAvalonia.UI.Controls">
-    <StackPanel>
-        <ContentControl x:Name="LocalEngineSetupHost" IsVisible="False" Margin="8" />
-        <ui:FAInfoBar x:Name="Prompt" Title="VOICEVOX Core（任意）" Margin="8"
-                      IsOpen="True" IsClosable="False" Severity="Informational">
-            <StackPanel Spacing="8" Margin="0,0,0,8">
-                <Button x:Name="FindLocalEnginesButton" Content="エンジンを探す…" Click="FindLocalEngines" />
-                <CheckBox x:Name="NeverShowAgainCheckBox" Content="今後表示しない" />
-                <WrapPanel Orientation="Horizontal">
-                    <Button x:Name="InstallCoreButton" Content="インストール" Click="InstallCore" Margin="0,0,8,0" />
-                    <Button x:Name="SkipCoreButton" Content="今はスキップ" Click="SkipCore" />
-                </WrapPanel>
-            </StackPanel>
-        </ui:FAInfoBar>
-    </StackPanel>
+    <ui:FAInfoBar Title="VOICEVOX Core（任意）" Margin="8"
+                  IsOpen="True" IsClosable="False" Severity="Informational">
+        <StackPanel Spacing="8" Margin="0,0,0,8">
+            <Button x:Name="FindLocalEnginesButton" Content="エンジンを探す…" Click="FindLocalEngines" />
+            <CheckBox x:Name="NeverShowAgainCheckBox" Content="今後表示しない" />
+            <WrapPanel Orientation="Horizontal">
+                <Button x:Name="InstallCoreButton" Content="インストール" Click="InstallCore" Margin="0,0,8,0" />
+                <Button x:Name="SkipCoreButton" Content="今はスキップ" Click="SkipCore" />
+            </WrapPanel>
+        </StackPanel>
+    </ui:FAInfoBar>
 </UserControl>

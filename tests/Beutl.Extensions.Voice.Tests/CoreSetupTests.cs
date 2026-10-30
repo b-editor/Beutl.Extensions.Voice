@@ -156,7 +156,7 @@ public class CoreSetupTests
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, core);
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, http);
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
-        using var model = new ScriptImportViewModel(new(), editor);
+        using var model = new ScriptImportViewModel(editor);
         model.RawText.Value = "A: おはよう。\nB: こんにちは。";
         model.ImportText();
         model.Speakers[0].SelectedPreset.Value = http;
@@ -234,7 +234,7 @@ public class CoreSetupTests
     {
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
         using var speech = new TtsTabViewModel(new(), editor);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         var speechView = new TtsTabView { DataContext = speech };
         var scriptView = new ScriptImportView { DataContext = script };
         Control view = permanent ? scriptView : speechView;

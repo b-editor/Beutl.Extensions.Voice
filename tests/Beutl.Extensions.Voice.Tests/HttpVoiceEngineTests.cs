@@ -270,7 +270,7 @@ public class HttpVoiceEngineTests
         using var editor = Editor();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         script.RawText.Value = "A: 最初のエンジンです。\nB: 別のエンジンです。";
         script.ImportText();
         for (int i = 0; i < engines.Length; i++)
@@ -421,7 +421,7 @@ public class HttpVoiceEngineTests
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(original));
         Assert.That(editor.History.Redo(), Is.True);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         script.RawText.Value = "A: こんにちは。\nB: ありがとうございます。";
         script.ImportText();
         foreach (var speaker in script.Speakers) speaker.SelectedPreset.Value = model.SelectedPreset.Value;

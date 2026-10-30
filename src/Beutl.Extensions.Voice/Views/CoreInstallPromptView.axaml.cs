@@ -1,7 +1,6 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
-using Beutl.Extensions.Voice.ViewModels;
 
 namespace Beutl.Extensions.Voice.Views;
 
@@ -15,15 +14,7 @@ public partial class CoreInstallPromptView : UserControl
         {
             if (NeverShowAgainCheckBox.IsChecked == true) TtsLoader.Preferences.Skip(true);
             tab.ShowSettings();
-            return;
         }
-        bool doNotShowAgain = NeverShowAgainCheckBox.IsChecked == true;
-        Prompt.IsVisible = false;
-        LocalEngineSetupView.ShowIn(LocalEngineSetupHost, DataContext as VoiceEditorViewModel, () =>
-        {
-            Prompt.IsVisible = true;
-            if (doNotShowAgain) TtsLoader.Preferences.Skip(true);
-        });
     }
 
     private void SkipCore(object? sender, RoutedEventArgs e) =>
