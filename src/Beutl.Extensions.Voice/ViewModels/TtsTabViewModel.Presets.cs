@@ -29,7 +29,8 @@ public partial class TtsTabViewModel
         }).AddTo(_subscriptions);
         SelectedVoice.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         SelectedStyle.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
-        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength })
+        SelectedEngine.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
+        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
             property.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
     }
 

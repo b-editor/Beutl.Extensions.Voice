@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reactive.Disposables;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
@@ -20,9 +21,11 @@ public sealed class ScriptImportViewModel : IToolContext
     private readonly Scene _scene;
     private readonly HistoryManager _history;
     private readonly IEditorClock _clock;
-    private readonly Func<string, VoiceSettings, VoiceSynthesisResult> _synthesize;
+    private readonly Func<string, VoiceSettings, Task<VoiceSynthesisResult>> _synthesize;
     private readonly ILogger _logger = Log.CreateLogger<ScriptImportViewModel>();
     private readonly IDisposable _loaderSubscription;
+    private readonly IDisposable _connectionSubscription;
+    private readonly CompositeDisposable _speakerSubscriptions = new();
     // Keep assignments when the source script is edited and imported again.
     private readonly Dictionary<string, ScriptSpeakerViewModel> _assignments = new(StringComparer.Ordinal);
     private VoicePreset[] _presets = [];
@@ -30,10 +33,10 @@ public sealed class ScriptImportViewModel : IToolContext
     private bool _disposed;
 
     public ScriptImportViewModel(ScriptTabExtension extension, IEditorContext editor)
-        : this(extension, editor, (text, settings) => VoiceSynthesisService.Synthesize(text, settings, null)) { }
+        : this(extension, editor, (text, settings) => VoiceSynthesisService.SynthesizeAsync(text, settings, null)) { }
 
     internal ScriptImportViewModel(ScriptTabExtension extension, IEditorContext editor,
-        Func<string, VoiceSettings, VoiceSynthesisResult> synthesize)
+        Func<string, VoiceSettings, Task<VoiceSynthesisResult>> synthesize)
     {
         Extension = extension;
         _scene = editor.GetRequiredService<Scene>();
@@ -43,6 +46,9 @@ public sealed class ScriptImportViewModel : IToolContext
         UseCurrentPosition();
         FirstLayer.Value = editor.GetService<IEditorSelection>()?.SelectedLayerNumber.Value ?? 1;
         RefreshPresets();
+        _connectionSubscription = IsVoiceVoxInstalled.Subscribe(_ => UpdateInstallPrompt());
+        VoiceEngineStore.Changed += OnConnectionsChanged;
+        TtsLoader.Preferences.PromptChanged += OnConnectionsChanged;
         _loaderSubscription = TtsLoader.VoiceVoxLoader.Subscribe(async loader =>
         {
             if (loader == null) return;
@@ -68,6 +74,7 @@ public sealed class ScriptImportViewModel : IToolContext
     public ReactivePropertySlim<bool> SeparateLayers { get; } = new();
     public ReactivePropertySlim<bool> IsGenerating { get; } = new();
     public ReactivePropertySlim<bool> IsVoiceVoxInstalled { get; } = new(TtsLoader.VoiceVoxLoader.Value?.IsInstalled == true);
+    public ReactivePropertySlim<bool> ShowCoreInstallPrompt { get; } = new();
     public ReactivePropertySlim<string> Message { get; } = new("");
 
     public void UseCurrentPosition() => StartSeconds.Value = _clock.CurrentTime.Value.ToSeconds();
@@ -103,7 +110,12 @@ public sealed class ScriptImportViewModel : IToolContext
         Lines.Clear();
         foreach (var line in lines) Lines.Add(line);
         string[] names = Lines.Select(x => x.Speaker).Distinct(StringComparer.Ordinal).ToArray();
-        if (Speakers.Select(x => x.Name).SequenceEqual(names)) return;
+        if (Speakers.Select(x => x.Name).SequenceEqual(names))
+        {
+            UpdateInstallPrompt();
+            return;
+        }
+        _speakerSubscriptions.Clear();
         Speakers.Clear();
         foreach (string name in names)
         {
@@ -113,7 +125,9 @@ public sealed class ScriptImportViewModel : IToolContext
                 _assignments.Add(name, speaker);
             }
             Speakers.Add(speaker);
+            _speakerSubscriptions.Add(speaker.SelectedPreset.Subscribe(_ => UpdateInstallPrompt()));
         }
+        UpdateInstallPrompt();
     }
 
     public void Cancel() => _cancellation?.Cancel();
@@ -142,7 +156,7 @@ public sealed class ScriptImportViewModel : IToolContext
                 var request = requests[i];
                 Message.Value = $"音声を生成中… {i + 1} / {requests.Length}（{request.Speaker}）";
                 failureContext = $"{i + 1} 件目（{request.Speaker}）の音声生成を確認してください。";
-                var output = await Task.Run(() => _synthesize(request.Text, request.Preset.Settings), token);
+                var output = await _synthesize(request.Text, request.Preset.Settings);
                 token.ThrowIfCancellationRequested();
                 string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
                 paths.Add(path);
@@ -239,6 +253,7 @@ public sealed class ScriptImportViewModel : IToolContext
         GapSeconds.Value = state.GapSeconds;
         FirstLayer.Value = state.FirstLayer;
         SeparateLayers.Value = state.SeparateLayers;
+        _speakerSubscriptions.Clear();
         _assignments.Clear();
         Speakers.Clear();
         foreach (var saved in state.Speakers)
@@ -251,11 +266,37 @@ public sealed class ScriptImportViewModel : IToolContext
 
     public object? GetService(Type serviceType) => null;
 
+    private void UpdateInstallPrompt()
+    {
+        bool canPrompt = TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value;
+        try
+        {
+            ShowCoreInstallPrompt.Value = canPrompt &&
+                (Speakers.Any(x => x.SelectedPreset.Value?.Settings.EngineId == VoiceSettings.CoreEngineId)
+                    || VoiceEngineStore.Load().Length == 0);
+        }
+        catch (Exception ex)
+        {
+            ShowCoreInstallPrompt.Value = canPrompt;
+            Message.Value = $"接続先を読み込めませんでした: {ex.Message}";
+        }
+    }
+
+    private void OnConnectionsChanged()
+    {
+        if (Dispatcher.UIThread.CheckAccess()) UpdateInstallPrompt();
+        else Dispatcher.UIThread.Post(() => { if (!_disposed) UpdateInstallPrompt(); });
+    }
+
     public void Dispose()
     {
         _disposed = true;
         Cancel();
         _loaderSubscription.Dispose();
+        _connectionSubscription.Dispose();
+        _speakerSubscriptions.Dispose();
+        VoiceEngineStore.Changed -= OnConnectionsChanged;
+        TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
     private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);

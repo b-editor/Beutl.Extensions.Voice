@@ -15,17 +15,6 @@ public partial class TtsTabView : UserControl
         InitializeComponent();
     }
 
-    private async void DownloadVoiceVox(object? sender, RoutedEventArgs e)
-    {
-        var dialogViewModel = new VoiceVoxInstallDialogViewModel();
-        var dialog = new VoiceVoxInstallDialog
-        {
-            DataContext = dialogViewModel
-        };
-        await dialog.ShowAsync();
-    }
-
-
     private void SavePresetClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not TtsTabViewModel vm) return;

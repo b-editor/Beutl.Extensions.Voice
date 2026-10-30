@@ -155,6 +155,8 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         if (IsGenerating.Value || _disposed) return;
         IsGenerating.Value = true;
         Message.Value = "";
+        string? path = null;
+        bool committed = false;
         try
         {
             var (element, scene) = GetEditableTarget();
@@ -171,10 +173,10 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
 
             var query = CopyCurrentQuery();
             string directory = VoiceSynthesisService.GetOutputDirectory(scene);
-            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(text, settings, query));
+            var output = await VoiceSynthesisService.SynthesizeAsync(text, settings, query);
             if (_disposed) return;
             Directory.CreateDirectory(directory);
-            string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
+            path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
             await File.WriteAllBytesAsync(path, output.Wave);
             if (_disposed) return;
             var current = GetEditableTarget();
@@ -196,6 +198,7 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
                 };
                 _controller.Draft.Value = _controller.Generation.Value;
             });
+            committed = true;
             Message.Value = "音声を再生成しました。";
         }
         catch (Exception ex)
@@ -205,6 +208,9 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         }
         finally
         {
+            if (!committed && path != null)
+                try { File.Delete(path); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Could not delete generated speech file {Path}", path); }
             IsGenerating.Value = false;
         }
     }

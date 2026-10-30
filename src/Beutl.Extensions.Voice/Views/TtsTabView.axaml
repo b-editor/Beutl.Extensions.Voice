@@ -18,13 +18,7 @@
     <Grid RowDefinitions="*,Auto">
         <ScrollViewer x:Name="EditorScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel>
-                <ui:FAInfoBar Title="VOICEVOXがインストールされていません。" Margin="8"
-                              IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
-                              IsVisible="{Binding !IsVoiceVoxInstalled.Value}" Severity="Warning">
-                    <ui:FAInfoBar.ActionButton>
-                        <Button Click="DownloadVoiceVox">インストール</Button>
-                    </ui:FAInfoBar.ActionButton>
-                </ui:FAInfoBar>
+                <views:CoreInstallPromptView x:Name="CoreInstallPrompt" IsVisible="{Binding ShowCoreInstallPrompt.Value}" />
                 <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
                     <TextBox x:Name="SpeechTextBox" MinHeight="112" MaxHeight="200" Margin="8"
                              VerticalContentAlignment="Top" AcceptsReturn="True"

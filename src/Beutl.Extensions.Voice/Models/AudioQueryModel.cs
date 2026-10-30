@@ -1,9 +1,16 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Beutl.Extensions.Voice.Models;
 
 public class AudioQueryModel
 {
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+
+    [JsonPropertyName("tempoDynamicsScale")]
+    public double? TempoDynamicsScale { get; set; }
+
     [JsonPropertyName("accent_phrases")]
     public List<AccentPhraseModel> AccentPhrases { get; set; } = [];
 
@@ -43,6 +50,9 @@ public class AudioQueryModel
 
 public class AccentPhraseModel
 {
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+
     [JsonPropertyName("moras")]
     public List<MoraModel> Moras { get; set; } = [];
 
@@ -58,6 +68,9 @@ public class AccentPhraseModel
 
 public class MoraModel
 {
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
+
     [JsonPropertyName("text")]
     public string Text { get; set; } = "";
 

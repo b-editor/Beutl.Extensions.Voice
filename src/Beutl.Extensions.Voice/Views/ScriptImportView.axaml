@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
-             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
              x:CompileBindings="True" x:DataType="vm:ScriptImportViewModel">
     <UserControl.Resources>
         <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
@@ -11,13 +11,7 @@
     <Grid RowDefinitions="*,Auto">
         <ScrollViewer x:Name="EditorScroll" HorizontalScrollBarVisibility="Disabled">
             <StackPanel IsEnabled="{Binding !IsGenerating.Value}">
-                <ui:FAInfoBar Title="VOICEVOXがインストールされていません。" Margin="8"
-                              IsOpen="{Binding !IsVoiceVoxInstalled.Value}"
-                              IsVisible="{Binding !IsVoiceVoxInstalled.Value}" Severity="Warning">
-                    <ui:FAInfoBar.ActionButton>
-                        <Button Click="DownloadVoiceVox">インストール</Button>
-                    </ui:FAInfoBar.ActionButton>
-                </ui:FAInfoBar>
+                <views:CoreInstallPromptView x:Name="CoreInstallPrompt" IsVisible="{Binding ShowCoreInstallPrompt.Value}" />
                 <Expander x:Name="InputSection" Header="台本の入力" IsExpanded="True"
                           Theme="{StaticResource ToolTabExpanderTheme}">
                     <StackPanel Margin="8" Spacing="8">

@@ -9,7 +9,7 @@ using Reactive.Bindings.Extensions;
 namespace Beutl.Extensions.Voice.ViewModels;
 
 // Shared editing behavior for new speech and an existing TtsController.
-public class VoiceEditorViewModel : IDisposable
+public partial class VoiceEditorViewModel : IDisposable
 {
     protected readonly CompositeDisposable _subscriptions = new();
     protected readonly TaskCompletionSource _initTcs = new();
@@ -19,6 +19,7 @@ public class VoiceEditorViewModel : IDisposable
 
     public VoiceEditorViewModel()
     {
+        InitializeEngines();
         Text.Subscribe(_ => { if (!_updating) InvalidateQuery(); }).AddTo(_subscriptions);
         SelectedVoice.Subscribe(voice =>
         {
@@ -40,7 +41,7 @@ public class VoiceEditorViewModel : IDisposable
             Edited?.Invoke();
             ConfirmEdit();
         }).AddTo(_subscriptions);
-        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength })
+        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
             property.Subscribe(_ => { if (!_updating) Edited?.Invoke(); }).AddTo(_subscriptions);
         AudioQuery.Subscribe(query => HasAudioQuery.Value = query != null).AddTo(_subscriptions);
         TtsLoader.VoiceVoxLoader.Subscribe(async loader =>
@@ -49,7 +50,11 @@ public class VoiceEditorViewModel : IDisposable
             await loader.InitializationTcs.Task;
             await Dispatcher.UIThread.InvokeAsync(() =>
             {
-                if (!_disposed && ReferenceEquals(loader, TtsLoader.VoiceVoxLoader.Value)) OnLoaded();
+                if (!_disposed && ReferenceEquals(loader, TtsLoader.VoiceVoxLoader.Value))
+                {
+                    OnLoaded();
+                    _initTcs.TrySetResult();
+                }
             });
         }).AddTo(_subscriptions);
     }
@@ -69,21 +74,25 @@ public class VoiceEditorViewModel : IDisposable
     public ReactivePropertySlim<double> VolumeScale { get; } = new(1);
     public ReactivePropertySlim<double> PrePhonemeLength { get; } = new(0.1);
     public ReactivePropertySlim<double> PostPhonemeLength { get; } = new(0.1);
+    public ReactivePropertySlim<double> TempoDynamicsScale { get; } = new(1);
     public ReactivePropertySlim<string> Message { get; } = new("");
     protected event Action? Edited;
     protected event Action? EditCompleted;
 
     public void ConfirmEdit() => EditCompleted?.Invoke();
 
-    public void OnLoaded()
+    public void OnLoaded() => LoadCoreMetadata(restoreSettings: true);
+
+    private void LoadCoreMetadata(bool restoreSettings)
     {
         try
         {
             var loader = TtsLoader.VoiceVoxLoader.Value;
             IsVoiceVoxInstalled.Value = loader?.IsInstalled == true;
+            if (IsHttpEngine.Value) return;
             IsEnabled.Value = loader?.IsLoaded == true;
             if (loader?.IsLoaded != true) return;
-            var previous = CaptureStoredSettings();
+            var previous = restoreSettings ? CaptureStoredSettings() : null;
             var query = AudioQuery.Value;
             UpdateSilently(() =>
             {
@@ -99,7 +108,6 @@ public class VoiceEditorViewModel : IDisposable
             });
         }
         catch (Exception ex) { Message.Value = $"VOICEVOXの初期化に失敗しました: {ex.Message}"; }
-        finally { _initTcs.TrySetResult(); }
     }
 
     protected VoiceSettings? CaptureSettings()
@@ -107,7 +115,7 @@ public class VoiceEditorViewModel : IDisposable
         var voice = SelectedVoice.Value;
         var style = SelectedStyle.Value;
         if (voice == null || style == null || !voice.Styles.Contains(style)) return null;
-        return WithTuning(new VoiceSettings
+        return WithTuning(SelectedEngineSettings() with
         {
             SpeakerUuid = voice.SpeakerUuid, SpeakerName = voice.Name, StyleId = style.Id,
             StyleName = style.Name, ModelVersion = voice.Version
@@ -118,22 +126,26 @@ public class VoiceEditorViewModel : IDisposable
         ?? (_unavailableSettings == null ? null : WithTuning(_unavailableSettings));
 
     // Tuning can be edited and saved before a voice has been selected.
-    protected VoiceSettings CaptureDraftSettings() => CaptureStoredSettings() ?? WithTuning(new VoiceSettings());
+    protected VoiceSettings CaptureDraftSettings() => CaptureStoredSettings() ?? WithTuning(SelectedEngineSettings());
 
     private VoiceSettings WithTuning(VoiceSettings settings) => settings with
     {
         SpeedScale = SpeedScale.Value, PitchScale = PitchScale.Value, IntonationScale = IntonationScale.Value,
-        VolumeScale = VolumeScale.Value, PrePhonemeLength = PrePhonemeLength.Value, PostPhonemeLength = PostPhonemeLength.Value
+        VolumeScale = VolumeScale.Value, PrePhonemeLength = PrePhonemeLength.Value, PostPhonemeLength = PostPhonemeLength.Value,
+        TempoDynamicsScale = EngineCapabilities.Value.TempoDynamics ? TempoDynamicsScale.Value : settings.TempoDynamicsScale
     };
 
     protected bool ApplySettings(VoiceSettings settings, bool report = true)
     {
         bool sameVoice = CaptureStoredSettings()?.UsesSameVoice(settings) == true;
-        var voice = settings.EngineId == VoiceSettings.CoreEngineId
-            ? Voice.Value.FirstOrDefault(x => x.SpeakerUuid == settings.SpeakerUuid) : null;
-        var style = voice?.Styles.FirstOrDefault(x => x.Id == settings.StyleId);
+        VoiceMetadata? voice = null;
+        VoiceStyle? style = null;
         UpdateSilently(() =>
         {
+            if (SelectedEngine.Value?.Id != settings.EngineId)
+                UseEngine(FindEngine(settings));
+            voice = Voice.Value.FirstOrDefault(x => x.SpeakerUuid == settings.SpeakerUuid);
+            style = voice?.Styles.FirstOrDefault(x => x.Id == settings.StyleId);
             SelectedVoice.Value = voice;
             SelectedStyle.Value = style;
             SpeedScale.Value = settings.SpeedScale;
@@ -142,12 +154,13 @@ public class VoiceEditorViewModel : IDisposable
             VolumeScale.Value = settings.VolumeScale;
             PrePhonemeLength.Value = settings.PrePhonemeLength;
             PostPhonemeLength.Value = settings.PostPhonemeLength;
+            TempoDynamicsScale.Value = settings.TempoDynamicsScale ?? 1;
             _unavailableSettings = style == null && !string.IsNullOrEmpty(settings.SpeakerUuid) ? settings : null;
         });
         if (!sameVoice) InvalidateQuery();
         if (report)
             Message.Value = style == null
-                ? $"保存された声が見つかりません: {settings.EngineId} / {settings.SpeakerName} / {settings.StyleName}。話者を選び直してください。"
+                ? $"保存された声が見つかりません: {settings.EngineName} / {settings.SpeakerName} / {settings.StyleName}。接続先を再読み込みするか、話者を選び直してください。"
                 : voice!.Version != settings.ModelVersion
                     ? $"モデルのバージョンが異なります（保存時 {settings.ModelVersion} → 現在 {voice.Version}）。"
                     : "声の設定を適用しました。";
@@ -194,7 +207,7 @@ public class VoiceEditorViewModel : IDisposable
         Message.Value = "";
         try
         {
-            var query = await Task.Run(() => VoiceSynthesisService.CreateQuery(request.Text, request.Settings));
+            var query = await VoiceSynthesisService.CreateQueryAsync(request.Text, request.Settings);
             PublishQuery(request.Text, request.Settings, query);
         }
         catch (Exception ex) { Message.Value = $"テキストを解析できませんでした: {ex.Message}"; }

@@ -3,12 +3,44 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:views="using:Beutl.Extensions.Voice.Views"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
              x:CompileBindings="True" x:DataType="viewModels:VoiceEditorViewModel">
     <UserControl.Resources>
         <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
     </UserControl.Resources>
     <StackPanel>
+        <StackPanel Margin="8,4,8,0" Spacing="4">
+            <TextBlock Text="エンジン" />
+            <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding !IsConnecting.Value}">
+                <ComboBox x:Name="EngineSelector" HorizontalAlignment="Stretch" AutomationProperties.Name="エンジン"
+                          ItemsSource="{Binding Engines.Value}" SelectedItem="{Binding SelectedEngine.Value, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:VoiceEngineConnection">
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Url}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button x:Name="EngineMenuButton" Grid.Column="1" Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                        ToolTip.Tip="エンジンの接続先" AutomationProperties.Name="エンジンの接続先">
+                    <icons:FluentIcon Icon="MoreHorizontal" FontSize="16" />
+                    <Button.Flyout>
+                        <ui:FAMenuFlyout>
+                            <ui:FAMenuFlyoutItem Text="接続先を追加…" Click="AddConnectionClick" />
+                            <ui:FAMenuFlyoutItem Text="接続先を編集…" Click="EditConnectionClick" IsEnabled="{Binding IsHttpEngine.Value}" />
+                            <ui:FAMenuFlyoutItem Text="接続確認・再読み込み" Command="{Binding ReloadEngine}" />
+                            <ui:FAMenuFlyoutSeparator />
+                            <ui:FAMenuFlyoutItem Text="接続先を削除" Command="{Binding DeleteConnection}" IsEnabled="{Binding IsHttpEngine.Value}" />
+                            <ui:FAMenuFlyoutSeparator />
+                            <ui:FAMenuFlyoutItem Text="VOICEVOX Coreをインストール…" Click="InstallCoreClick" />
+                        </ui:FAMenuFlyout>
+                    </Button.Flyout>
+                </Button>
+            </Grid>
+            <TextBlock Text="{Binding SelectedEngine.Value.Url}" IsVisible="{Binding IsHttpEngine.Value}"
+                       TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
         <Grid Margin="8,4,8,8" ColumnDefinitions="*,8,*" RowDefinitions="Auto,Auto" IsEnabled="{Binding IsEnabled.Value}">
             <TextBlock Text="話者" Margin="0,0,0,4" />
             <TextBlock Grid.Column="2" Text="スタイル" Margin="0,0,0,4" />
@@ -36,25 +68,31 @@
         <Expander x:Name="TuningExpander" Theme="{StaticResource ToolTabExpanderTheme}"
                   HorizontalAlignment="Stretch" Header="調声" IsEnabled="{Binding IsEnabled.Value}">
             <StackPanel Margin="8,4" Spacing="0">
-                <Grid ColumnDefinitions="60,*,44">
+                <Grid ColumnDefinitions="60,*,44" IsVisible="{Binding EngineCapabilities.Value.AdjustSpeed}">
                     <TextBlock VerticalAlignment="Center" Text="話速" />
                     <Slider Grid.Column="1" Minimum="0.5" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
                             AutomationProperties.Name="話速" Value="{Binding SpeedScale.Value, Mode=TwoWay}" />
                     <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding SpeedScale.Value, StringFormat={}{0:F2}}" />
                 </Grid>
-                <Grid ColumnDefinitions="60,*,44">
+                <Grid ColumnDefinitions="60,*,44" IsVisible="{Binding EngineCapabilities.Value.AdjustPitch}">
                     <TextBlock VerticalAlignment="Center" Text="音高" />
                     <Slider Grid.Column="1" Minimum="-0.15" Maximum="0.15" TickFrequency="0.01" IsSnapToTickEnabled="True"
                             AutomationProperties.Name="音高" Value="{Binding PitchScale.Value, Mode=TwoWay}" />
                     <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding PitchScale.Value, StringFormat={}{0:F2}}" />
                 </Grid>
-                <Grid ColumnDefinitions="60,*,44">
-                    <TextBlock VerticalAlignment="Center" Text="抑揚" />
+                <Grid ColumnDefinitions="60,*,44" IsVisible="{Binding EngineCapabilities.Value.AdjustIntonation}">
+                    <TextBlock VerticalAlignment="Center" Text="{Binding EngineCapabilities.Value.IntonationLabel}" />
                     <Slider Grid.Column="1" Minimum="0.0" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
-                            AutomationProperties.Name="抑揚" Value="{Binding IntonationScale.Value, Mode=TwoWay}" />
+                            AutomationProperties.Name="{Binding EngineCapabilities.Value.IntonationLabel}" Value="{Binding IntonationScale.Value, Mode=TwoWay}" />
                     <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding IntonationScale.Value, StringFormat={}{0:F2}}" />
                 </Grid>
-                <Grid ColumnDefinitions="60,*,44">
+                <Grid ColumnDefinitions="60,*,44" IsVisible="{Binding EngineCapabilities.Value.TempoDynamics}">
+                    <TextBlock VerticalAlignment="Center" Text="緩急" ToolTip.Tip="話す速さの緩急の強さ" />
+                    <Slider Grid.Column="1" Minimum="0.0" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
+                            AutomationProperties.Name="緩急" Value="{Binding TempoDynamicsScale.Value, Mode=TwoWay}" />
+                    <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding TempoDynamicsScale.Value, StringFormat={}{0:F2}}" />
+                </Grid>
+                <Grid ColumnDefinitions="60,*,44" IsVisible="{Binding EngineCapabilities.Value.AdjustVolume}">
                     <TextBlock VerticalAlignment="Center" Text="音量" />
                     <Slider Grid.Column="1" Minimum="0.0" Maximum="2.0" TickFrequency="0.01" IsSnapToTickEnabled="True"
                             AutomationProperties.Name="音量" Value="{Binding VolumeScale.Value, Mode=TwoWay}" />
@@ -75,7 +113,8 @@
             </StackPanel>
         </Expander>
         <Expander x:Name="AccentExpander" Theme="{StaticResource ToolTabExpanderTheme}"
-                  HorizontalAlignment="Stretch" Header="アクセント / ピッチ" IsEnabled="{Binding IsEnabled.Value}">
+                  HorizontalAlignment="Stretch" Header="アクセント / ピッチ" IsEnabled="{Binding IsEnabled.Value}"
+                  IsVisible="{Binding EngineCapabilities.Value.EditAccent}">
             <StackPanel Margin="8" Spacing="8">
                 <Button Content="テキストを解析" Command="{Binding CreateQuery}"
                         ToolTip.Tip="テキストからアクセントを解析し直します。手動のアクセント編集は置き換わります。" />

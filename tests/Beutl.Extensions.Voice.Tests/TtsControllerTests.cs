@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using System.Text.Json;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -329,8 +330,9 @@ public class TtsControllerTests
             await Settle();
             tuning.BringIntoView();
             await Settle();
-            var sliders = tuning.GetVisualDescendants().OfType<Slider>().ToArray();
-            Assert.That(sliders, Has.Length.EqualTo(6));
+            var sliders = tuning.GetVisualDescendants().OfType<Slider>().Where(x => x.IsEffectivelyVisible).ToArray();
+            Assert.That(sliders.Select(AutomationProperties.GetName),
+                Is.EqualTo(new[] { "話速", "音高", "抑揚", "音量", "前無音（秒）", "後無音（秒）" }));
             sliders[0].Value = 1.45;
             model.ConfirmEdit();
             Assert.That(controller.Draft.Value!.Settings.SpeedScale, Is.EqualTo(1.45));
