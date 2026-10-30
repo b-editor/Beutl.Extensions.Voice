@@ -92,9 +92,9 @@
         <Border Grid.Row="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
             <StackPanel>
                 <ProgressBar Height="2" IsIndeterminate="True" IsVisible="{Binding IsGenerating.Value}" />
-                <ScrollViewer MaxHeight="100" HorizontalScrollBarVisibility="Disabled">
-                    <TextBlock Margin="8,6,8,0" FontSize="12" TextWrapping="Wrap" Text="{Binding Message.Value}"
-                               IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <ScrollViewer MaxHeight="100" HorizontalScrollBarVisibility="Disabled"
+                              IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                    <TextBlock Margin="8,6,8,0" FontSize="12" TextWrapping="Wrap" Text="{Binding Message.Value}" />
                 </ScrollViewer>
                 <Button x:Name="GenerateScriptButton" Content="一括生成・配置" Classes="accent" Margin="8"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"

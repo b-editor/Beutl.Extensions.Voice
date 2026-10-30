@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.Media.Imaging;
@@ -327,6 +328,85 @@ public class ScriptImportTests
                 Directory.CreateDirectory(directory);
                 using var frame = window.CaptureRenderedFrame()!;
                 frame.Save(Path.Combine(directory, $"script-{section}-{width}-{(light ? "light" : "dark")}.png"), new PngBitmapEncoderOptions());
+            }
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTest]
+    [TestCase(390, 410, false)]
+    [TestCase(320, 350, true)]
+    public async Task Tab_scroll_reaches_placement_after_status_is_cleared_and_panel_is_resized(
+        int width, int height, bool withSpeakers)
+    {
+        using var editor = Editor();
+        using var model = new ScriptImportViewModel(new(), editor, Wave);
+        model.IsVoiceVoxInstalled.Value = true;
+        if (withSpeakers)
+        {
+            model.RawText.Value = Script;
+            model.ImportText();
+        }
+        var view = new ScriptImportView { DataContext = model };
+        // Match the tab header and nested content presenters used by the dock host.
+        var host = new DockPanel();
+        var header = new Border { Height = 28 };
+        DockPanel.SetDock(header, Dock.Top);
+        host.Children.Add(header);
+        host.Children.Add(new ContentControl { Content = new ContentControl { Content = view } });
+        var window = new Window { Width = width + 160, Height = height + 300, Content = host,
+            RequestedThemeVariant = ThemeVariant.Dark };
+        try
+        {
+            window.Show();
+            await Settle();
+            var scroll = view.FindControl<ScrollViewer>("EditorScroll")!;
+            model.Message.Value = "台本を入力して話者にプリセットを割り当ててください。";
+            await Settle();
+            model.Message.Value = "";
+            await Settle();
+            window.Width = width;
+            window.Height = height;
+            view.FindControl<TextBox>("ScriptTextBox")!.Focus();
+            model.IsVoiceVoxInstalled.Value = false;
+            await Settle();
+            model.IsVoiceVoxInstalled.Value = true;
+            await Settle();
+            await CheckScrollEnd("cleared");
+            model.Message.Value = string.Join('\n', Enumerable.Repeat("台本を入力して話者にプリセットを割り当ててください。", 8));
+            await Settle();
+            await CheckScrollEnd("status");
+
+            async Task CheckScrollEnd(string stage)
+            {
+                var bar = scroll.GetVisualDescendants().OfType<ScrollBar>()
+                    .Single(x => x.Name == "PART_VerticalScrollBar" && x.TemplatedParent == scroll);
+                var thumb = bar.GetVisualDescendants().OfType<Thumb>().Single();
+                var start = thumb.TranslatePoint(new Point(thumb.Bounds.Width / 2, thumb.Bounds.Height / 2), window)!.Value;
+                window.MouseMove(start);
+                await Settle();
+                window.MouseDown(start, Avalonia.Input.MouseButton.Left);
+                var end = new Point(start.X, window.Height + 200);
+                window.MouseMove(end);
+                window.MouseUp(end, Avalonia.Input.MouseButton.Left);
+                await Settle();
+
+                Assert.That(scroll.ScrollBarMaximum.Y, Is.GreaterThan(0));
+                Assert.That(scroll.Offset.Y, Is.EqualTo(scroll.ScrollBarMaximum.Y).Within(1), stage);
+                var placement = view.FindControl<Expander>("PlacementSection")!;
+                var bottom = placement.TranslatePoint(new Point(0, placement.Bounds.Height), scroll)!.Value.Y;
+                Assert.That(bottom, Is.LessThanOrEqualTo(scroll.Viewport.Height + 1),
+                    "The end of the placement settings must remain reachable after the status disappears.");
+                var add = view.FindControl<Button>("GenerateScriptButton")!;
+                double buttonTop = add.TranslatePoint(default, view)!.Value.Y;
+                Assert.That(buttonTop, Is.GreaterThanOrEqualTo(scroll.Bounds.Bottom));
+                Assert.That(buttonTop + add.Bounds.Height,
+                    Is.LessThanOrEqualTo(view.Bounds.Height));
+
+                if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is not { } directory) return;
+                Directory.CreateDirectory(directory);
+                using var frame = window.CaptureRenderedFrame()!;
+                frame.Save(Path.Combine(directory, $"script-scroll-{width}-{height}-{stage}.png"), new PngBitmapEncoderOptions());
             }
         }
         finally { window.Close(); }
