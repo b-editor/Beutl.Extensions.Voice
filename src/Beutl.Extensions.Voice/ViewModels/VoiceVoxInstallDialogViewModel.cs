@@ -9,6 +9,7 @@ public class VoiceVoxInstallDialogViewModel
     private CancellationTokenSource? _cts;
 
     public ReactiveProperty<bool> IsInstalling { get; } = new(false);
+    public ReactivePropertySlim<bool> DoNotShowAgain { get; } = new(TtsLoader.Preferences.HideCoreInstallPrompt.Value);
 
     public ReactiveProperty<double> Progress => _installer.Progress;
 

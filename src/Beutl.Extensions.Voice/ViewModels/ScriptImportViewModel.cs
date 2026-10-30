@@ -46,6 +46,7 @@ public sealed class ScriptImportViewModel : IToolContext
         RefreshPresets();
         _connectionSubscription = IsVoiceVoxInstalled.Subscribe(_ => UpdateInstallPrompt());
         VoiceEngineStore.Changed += OnConnectionsChanged;
+        TtsLoader.Preferences.PromptChanged += OnConnectionsChanged;
         _loaderSubscription = TtsLoader.VoiceVoxLoader.Subscribe(async loader =>
         {
             if (loader == null) return;
@@ -257,7 +258,7 @@ public sealed class ScriptImportViewModel : IToolContext
 
     private void UpdateInstallPrompt()
     {
-        try { ShowCoreInstallPrompt.Value = !IsVoiceVoxInstalled.Value && VoiceEngineStore.Load().Length == 0; }
+        try { ShowCoreInstallPrompt.Value = TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value && VoiceEngineStore.Load().Length == 0; }
         catch (Exception ex) { Message.Value = $"接続先を読み込めませんでした: {ex.Message}"; }
     }
 
@@ -274,6 +275,7 @@ public sealed class ScriptImportViewModel : IToolContext
         _loaderSubscription.Dispose();
         _connectionSubscription.Dispose();
         VoiceEngineStore.Changed -= OnConnectionsChanged;
+        TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
     private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);

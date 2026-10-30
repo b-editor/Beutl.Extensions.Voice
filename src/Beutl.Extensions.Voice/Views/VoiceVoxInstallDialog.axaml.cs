@@ -1,4 +1,4 @@
-using Avalonia.Input;
+using Avalonia.Controls;
 using Beutl.Extensions.Voice.ViewModels;
 using FluentAvalonia.UI.Controls;
 
@@ -13,14 +13,12 @@ public partial class VoiceVoxInstallDialog : FAContentDialog
 
     protected override Type StyleKeyOverride => typeof(FAContentDialog);
 
-    protected override void OnKeyUp(KeyEventArgs e)
+    internal static Task<FAContentDialogResult> ShowFor(Control? owner = null, bool? doNotShowAgain = null)
     {
-        if (e.Key == Key.Escape)
-        {
-            e.Handled = true;
-        }
-
-        base.OnKeyUp(e);
+        var model = new VoiceVoxInstallDialogViewModel();
+        if (doNotShowAgain.HasValue) model.DoNotShowAgain.Value = doNotShowAgain.Value;
+        var dialog = new VoiceVoxInstallDialog { DataContext = model };
+        return owner != null && TopLevel.GetTopLevel(owner) is { } topLevel ? dialog.ShowAsync(topLevel) : dialog.ShowAsync();
     }
 
     protected override async void OnPrimaryButtonClick(FAContentDialogButtonClickEventArgs args)
@@ -40,19 +38,19 @@ public partial class VoiceVoxInstallDialog : FAContentDialog
             if (!viewModel.IsCompleted.Value)
             {
                 IsPrimaryButtonEnabled = false;
+                CloseButtonText = "キャンセル";
                 await viewModel.Install();
                 CloseButtonText = "閉じる";
             }
         }
     }
 
-    protected override void OnCloseButtonClick(FAContentDialogButtonClickEventArgs args)
+    protected override void OnClosing(FAContentDialogClosingEventArgs args)
     {
-        base.OnCloseButtonClick(args);
-        if (DataContext is not VoiceVoxInstallDialogViewModel viewModel) return;
-        if (Root.Root.SelectedIndex == 1 && viewModel.IsInstalling.Value)
-        {
-            viewModel.Cancel();
-        }
+        base.OnClosing(args);
+        if (args.Cancel || DataContext is not VoiceVoxInstallDialogViewModel viewModel) return;
+        TtsLoader.Preferences.HideCoreInstallPrompt.Value = viewModel.DoNotShowAgain.Value;
+        TtsLoader.Preferences.Skip(false);
+        viewModel.Cancel();
     }
 }

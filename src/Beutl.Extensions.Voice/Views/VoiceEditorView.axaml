@@ -32,6 +32,8 @@
                             <ui:FAMenuFlyoutItem Text="接続確認・再読み込み" Command="{Binding ReloadEngine}" />
                             <ui:FAMenuFlyoutSeparator />
                             <ui:FAMenuFlyoutItem Text="接続先を削除" Command="{Binding DeleteConnection}" IsEnabled="{Binding IsHttpEngine.Value}" />
+                            <ui:FAMenuFlyoutSeparator />
+                            <ui:FAMenuFlyoutItem Text="VOICEVOX Coreをインストール…" Click="InstallCoreClick" />
                         </ui:FAMenuFlyout>
                     </Button.Flyout>
                 </Button>

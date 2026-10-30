@@ -1,6 +1,5 @@
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Services;
-using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
 using Beutl.Logging;
 using Beutl.Services;
@@ -14,7 +13,11 @@ namespace Beutl.Extensions.Voice;
 public class TtsLoader : Extension
 {
     private readonly ILogger _logger = Log.CreateLogger<TtsLoader>();
+    private CancellationTokenSource? _installNotification;
     internal static readonly ReactiveProperty<VoiceVoxLoader?> VoiceVoxLoader = new();
+    internal static VoiceExtensionSettings Preferences { get; } = new();
+
+    public override VoiceExtensionSettings Settings => Preferences;
 
     public override string Name => "TTS Loader";
 
@@ -23,6 +26,9 @@ public class TtsLoader : Extension
     public override void Load()
     {
         base.Load();
+        Preferences.BeginSession();
+        _installNotification = new();
+        Preferences.PromptChanged += OnPromptChanged;
         _ = StaticLoad().ContinueWith(t =>
         {
             if (t.IsFaulted)
@@ -30,22 +36,48 @@ public class TtsLoader : Extension
                 _logger.LogError(t.Exception, "Failed to load TTS");
             }
 
-            if (!t.IsFaulted && VoiceVoxLoader.Value?.IsInstalled != true && VoiceEngineStore.Load().Length == 0)
+            if (!t.IsFaulted)
             {
                 Dispatcher.UIThread.Post(() =>
-                    NotificationService.ShowWarning(
-                        title: "警告",
-                        message: "VOICEVOXがインストールされていません。",
-                        actions: [new NotificationAction("インストール", ShowInstallDialog)]));
+                {
+                    try
+                    {
+                        if (_installNotification is { IsCancellationRequested: false } notification
+                            && CreateInstallNotification(notification.Token) is { } prompt)
+                            NotificationService.Show(prompt);
+                    }
+                    catch (Exception ex) { _logger.LogError(ex, "Failed to show Core setup prompt"); }
+                });
             }
         }, CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
     }
 
-    private async void ShowInstallDialog()
+    internal static Notification? CreateInstallNotification(CancellationToken cancellationToken = default)
     {
-        var dialogViewModel = new VoiceVoxInstallDialogViewModel();
-        var dialog = new VoiceVoxInstallDialog { DataContext = dialogViewModel };
-        await dialog.ShowAsync();
+        if (!Preferences.ShouldPrompt || VoiceVoxLoader.Value?.IsInstalled == true || VoiceEngineStore.Load().Length > 0)
+            return null;
+        return new Notification("VOICEVOX Coreのセットアップ", "外部エンジンだけを使う場合は不要です。",
+            OnClose: () => Preferences.Skip(false),
+            Actions:
+            [
+                new("インストール", async () => await VoiceVoxInstallDialog.ShowFor()),
+                new("今はスキップ", () => Preferences.Skip(false)),
+                new("今後表示しない", () => Preferences.Skip(true))
+            ]) { CancellationToken = cancellationToken };
+    }
+
+    private void OnPromptChanged()
+    {
+        if (!Preferences.ShouldPrompt) _installNotification?.Cancel();
+    }
+
+    public override void Unload()
+    {
+        Preferences.PromptChanged -= OnPromptChanged;
+        _installNotification?.Cancel();
+        _installNotification?.Dispose();
+        _installNotification = null;
+        base.Unload();
     }
 
     public static Task StaticLoad()

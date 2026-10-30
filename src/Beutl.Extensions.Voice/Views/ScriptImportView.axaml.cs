@@ -34,9 +34,4 @@ public partial class ScriptImportView : UserControl
         catch (Exception ex) { model.Message.Value = $"台本を読み込めませんでした: {ex.Message}"; }
     }
 
-    private async void DownloadVoiceVox(object? sender, RoutedEventArgs e)
-    {
-        var dialog = new VoiceVoxInstallDialog { DataContext = new VoiceVoxInstallDialogViewModel() };
-        await dialog.ShowAsync();
-    }
 }

@@ -36,6 +36,8 @@ public partial class VoiceEditorViewModel
             ConfirmEdit();
         }).AddTo(_subscriptions);
         IsVoiceVoxInstalled.Subscribe(_ => UpdateInstallPrompt()).AddTo(_subscriptions);
+        TtsLoader.Preferences.PromptChanged += OnInstallPromptChanged;
+        Disposable.Create(() => TtsLoader.Preferences.PromptChanged -= OnInstallPromptChanged).AddTo(_subscriptions);
         VoiceEngineStore.Changed += OnConnectionsChanged;
         Disposable.Create(() => VoiceEngineStore.Changed -= OnConnectionsChanged).AddTo(_subscriptions);
     }
@@ -46,7 +48,14 @@ public partial class VoiceEditorViewModel
         else Dispatcher.UIThread.Post(() => { if (!_disposed) RefreshEngines(); });
     }
 
-    private void UpdateInstallPrompt() => ShowCoreInstallPrompt.Value = !IsVoiceVoxInstalled.Value && !IsHttpEngine.Value;
+    private void UpdateInstallPrompt() => ShowCoreInstallPrompt.Value =
+        TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value && !IsHttpEngine.Value;
+
+    private void OnInstallPromptChanged()
+    {
+        if (Dispatcher.UIThread.CheckAccess()) UpdateInstallPrompt();
+        else Dispatcher.UIThread.Post(() => { if (!_disposed) UpdateInstallPrompt(); });
+    }
 
     private VoiceSettings SelectedEngineSettings()
     {

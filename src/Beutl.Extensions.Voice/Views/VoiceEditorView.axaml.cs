@@ -23,6 +23,7 @@ public partial class VoiceEditorView : UserControl
 
     private void AddConnectionClick(object? sender, RoutedEventArgs e) => ShowConnectionEditor(edit: false);
     private void EditConnectionClick(object? sender, RoutedEventArgs e) => ShowConnectionEditor(edit: true);
+    private async void InstallCoreClick(object? sender, RoutedEventArgs e) => await VoiceVoxInstallDialog.ShowFor(this);
 
     private void ShowConnectionEditor(bool edit)
     {
