@@ -13,7 +13,7 @@ public class CustomPropertyEditorExtension : PropertyEditorExtension
     {
         registry.Register<string, TtsControllerViewModel>(
             property => registry.TryCreateDefault(property, out var innerContext)
-                ? new TtsControllerViewModel(innerContext, this)
+                ? new TtsControllerViewModel(innerContext, this, (TtsController)((EnginePropertyAdapter<string>)property).Object)
                 : null!,
             context => registry.TryCreateControl(context.Inner, out var innerControl)
                 ? new TtsControllerView

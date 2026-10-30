@@ -16,453 +16,135 @@ using Beutl.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
-using VoicevoxCoreSharp.Core.Enum;
-using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
-public class TtsTabViewModel : IToolContext
+public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 {
-    private readonly IEditorContext _editorContext;
     private readonly Scene _scene;
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
-    private HistoryManager _historyManager;
-    private TaskCompletionSource _initTcs = new();
-    private int _busy;
-
-    private static readonly JsonSerializerOptions s_jsonOptions = new()
-    {
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
-    };
+    private readonly HistoryManager _historyManager;
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
     {
-        _editorContext = editorContext;
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
         Extension = extension;
-        TtsLoader.VoiceVoxLoader.Subscribe(l =>
-        {
-            if (l == null) return;
-            l.InitializationTcs.Task.ContinueWith(_ => OnLoaded());
-        });
+        InitializePresets();
     }
 
     public ToolTabExtension Extension { get; }
-
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
-
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
 
-    public ReactiveProperty<string> Text { get; } = new();
+    private static void ShowError(string title, string message) =>
+        Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
 
-    public ReactiveProperty<VoiceMetadata[]> Voice { get; } = new([]);
-
-    public ReactiveProperty<VoiceMetadata?> SelectedVoice { get; } = new();
-
-    public ReactiveProperty<VoiceStyle?> SelectedStyle { get; } = new();
-
-    public ReactiveProperty<bool> IsGenerating { get; } = new();
-
-    public ReactiveProperty<bool> IsEnabled { get; } = new();
-
-    public ReactiveProperty<bool> IsVoiceVoxInstalled { get; } = new(true);
-
-    // AudioQuery関連プロパティ
-    public ReactiveProperty<AudioQueryModel?> AudioQuery { get; } = new();
-
-    public ReactiveProperty<bool> HasAudioQuery { get; } = new();
-
-    // グローバルパラメータ
-    public ReactiveProperty<double> SpeedScale { get; } = new(1.0);
-
-    public ReactiveProperty<double> PitchScale { get; } = new(0.0);
-
-    public ReactiveProperty<double> IntonationScale { get; } = new(1.0);
-
-    public ReactiveProperty<double> VolumeScale { get; } = new(1.0);
-
-    public ReactiveProperty<double> PrePhonemeLength { get; } = new(0.1);
-
-    public ReactiveProperty<double> PostPhonemeLength { get; } = new(0.1);
-
-    public void OnLoaded()
+    public async Task Generate()
     {
+        if (IsGenerating.Value || CaptureRequest() is not { } request) return;
+        var preset = _appliedPreset;
+        var query = CopyCurrentQuery();
+        var start = _currentTime.Value;
+        IsGenerating.Value = true;
         try
         {
-            var loader = TtsLoader.VoiceVoxLoader.Value;
-            if (loader == null)
+            string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
+            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
+            if (_disposed) return;
+            Directory.CreateDirectory(directory);
+            string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
+            await File.WriteAllBytesAsync(path, output.Wave);
+            if (_disposed) return;
+            var generation = new VoiceGeneration
             {
-                return;
-            }
-
-            IsVoiceVoxInstalled.Value = loader.IsInstalled;
-            if (!loader.IsLoaded)
+                Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
+                PresetName = preset?.Name, AudioQueryJson = output.Json
+            };
+            var source = SoundSource.Open(path);
+            _historyManager.ExecuteInTransaction(() =>
             {
-                return;
-            }
-
-            IsEnabled.Value = true;
-            var a = loader.VoiceSets
-                .SelectMany(x => x.Metadata.Select(y => new VoiceFlattenSet(x.Model, y)));
-
-            var b = a.SelectMany(x => x.Metadata.Styles.Select(y => (x.Metadata, Style: y)));
-
-            Voice.Value = b.GroupBy(x => x.Metadata.Name, x => x,
-                    (x, y) =>
-                    {
-                        var items = y.ToArray();
-                        var metadata = items[0].Metadata;
-                        return new VoiceMetadata
-                        {
-                            Name = x,
-                            Version = metadata.Version,
-                            SpeakerUuid = metadata.SpeakerUuid,
-                            Styles = items.Select(z => z.Style).ToArray()
-                        };
-                    })
-                .ToArray();
+                var element = new Element
+                {
+                    Start = { Value = start }, ZIndex = { Value = 1 },
+                    Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
+                    Name = { Value = request.Text.ReplaceLineEndings(" ") },
+                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
+                };
+                element.AddObject(new SourceSound { Source = { Value = source } });
+                element.AddObject(new TtsController { Text = { Value = request.Text }, Generation = { Value = generation } });
+                if (element.TryGetOriginalDuration(out var duration)) element.Length.Value = duration;
+                _scene.AddChild(element, ElementOverlapHandling.ZIndex);
+            });
+            PublishQuery(request.Text, request.Settings, output.Query);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to initialize VOICEVOX");
-            ShowError("VOICEVOXの初期化に失敗しました。", ex.Message);
+            _logger.LogError(ex, "Failed to generate TTS");
+            ShowError("音声生成に失敗しました。", ex.Message);
         }
         finally
         {
-            _initTcs.TrySetResult();
+            IsGenerating.Value = false;
         }
     }
 
-    public Task CreateQuery()
+    public async Task Play()
     {
-        return Task.Run(() =>
-        {
-            if (Interlocked.Exchange(ref _busy, 1) == 1) return;
-
-            try
-            {
-                IsGenerating.Value = true;
-                var query = CreateQueryCore();
-                if (query == null) return;
-
-                UpdateAudioQuery(query);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to create AudioQuery");
-                ShowError("AudioQueryの作成に失敗しました。", ex.Message);
-            }
-            finally
-            {
-                IsGenerating.Value = false;
-                Interlocked.Exchange(ref _busy, 0);
-            }
-        });
-    }
-
-    private AudioQueryModel? CreateQueryCore()
-    {
+        if (IsGenerating.Value || CaptureRequest() is not { } request) return;
+        var query = CopyCurrentQuery();
+        IsGenerating.Value = true;
         try
         {
-            var loader = TtsLoader.VoiceVoxLoader.Value;
-            var synthesizer = loader?.Synthesizer;
-            var voice = SelectedVoice.Value;
-            var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
-            if (loader == null || synthesizer == null)
-            {
-                _logger.LogError("Synthesizer is not initialized");
-                ShowWarning("VOICEVOXが初期化されていません。");
-                return null;
-            }
-
-            if (style == null)
-            {
-                _logger.LogError("Style is not selected");
-                ShowWarning("話者またはスタイルを選択してください。");
-                return null;
-            }
-
-            if (string.IsNullOrWhiteSpace(Text.Value))
-            {
-                _logger.LogError("Text is empty");
-                ShowWarning("テキストを入力してください。");
-                return null;
-            }
-
-            if (!loader.EnsureVoiceModelLoaded(style.Id))
-            {
-                _logger.LogError("Failed to load voice model for style {StyleId}", style.Id);
-                ShowError("音声モデルのロードに失敗しました。", $"Style ID: {style.Id}");
-                return null;
-            }
-
-            var result = synthesizer.CreateAudioQuery(Text.Value, style.Id, out var audioQueryJson);
-            if (result != ResultCode.RESULT_OK || audioQueryJson == null)
-            {
-                var message = result.ToMessage();
-                _logger.LogError("Failed to create AudioQuery: {Result}", message);
-                ShowError("AudioQueryの作成に失敗しました。", message);
-                return null;
-            }
-
-            var query = JsonSerializer.Deserialize<AudioQueryModel>(audioQueryJson, s_jsonOptions);
-            if (query == null)
-            {
-                _logger.LogError("Failed to deserialize AudioQuery");
-                ShowError("AudioQueryの読み込みに失敗しました。", "VOICEVOXの応答を解析できませんでした。");
-                return null;
-            }
-
-            _logger.LogInformation("AudioQuery created with {Count} accent phrases",
-                query.AccentPhrases.Count);
-            return query;
+            var output = await Task.Run(() => VoiceSynthesisService.Synthesize(request.Text, request.Settings, query));
+            if (_disposed) return;
+            PublishQuery(request.Text, request.Settings, output.Query);
+            using var player = new SimpleWavePlayer(output.Wave);
+            await player.Play(default);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to create AudioQuery");
-            ShowError("AudioQueryの作成に失敗しました。", ex.Message);
-            return null;
+            _logger.LogError(ex, "Failed to play TTS");
+            ShowError("音声再生に失敗しました。", ex.Message);
         }
-    }
-
-    private void UpdateAudioQuery(AudioQueryModel query)
-    {
-        Dispatcher.UIThread.Post(() =>
+        finally
         {
-            AudioQuery.Value = query;
-            HasAudioQuery.Value = true;
-        });
-    }
-
-    private static void ShowWarning(string message)
-    {
-        Dispatcher.UIThread.Post(() => NotificationService.ShowWarning("警告", message));
-    }
-
-    private static void ShowError(string title, string message)
-    {
-        Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
-    }
-
-    private string BuildAudioQueryJson(AudioQueryModel query)
-    {
-        query.SpeedScale = SpeedScale.Value;
-        query.PitchScale = PitchScale.Value;
-        query.IntonationScale = IntonationScale.Value;
-        query.VolumeScale = VolumeScale.Value;
-        query.PrePhonemeLength = PrePhonemeLength.Value;
-        query.PostPhonemeLength = PostPhonemeLength.Value;
-        return JsonSerializer.Serialize(query, s_jsonOptions);
-    }
-
-    public Task Generate()
-    {
-        return Task.Run(async () =>
-        {
-            if (Interlocked.Exchange(ref _busy, 1) == 1) return;
-
-            try
-            {
-                IsGenerating.Value = true;
-
-                // AudioQueryがない場合は先に作成
-                var query = AudioQuery.Value;
-                if (query == null)
-                {
-                    query = CreateQueryCore();
-                    if (query == null) return;
-                    UpdateAudioQuery(query);
-                }
-
-                var outputWave = SynthesisFromQuery(query);
-                if (outputWave == null)
-                {
-                    return;
-                }
-
-                _logger.LogInformation("Writing output wav file...");
-
-                var projectDir = _scene.FindHierarchicalParent<Project>() is { Uri: { } projUri }
-                    ? Path.GetDirectoryName(projUri.LocalPath)
-                    : Path.GetDirectoryName(_scene.Uri!.LocalPath)!;
-                var dir = Path.Combine(projectDir!, "resources", "tts");
-                Directory.CreateDirectory(dir);
-                var id = Guid.NewGuid().ToString();
-                var path = Path.Combine(dir, $"{id}.wav");
-                await using (var stream = File.OpenWrite(path))
-                await using (var writer = new BinaryWriter(stream))
-                {
-                    writer.Write(outputWave);
-                }
-
-                _logger.LogInformation("Output wav file saved");
-
-                var source = SoundSource.Open(path);
-                var element = new Element
-                {
-                    Start = { Value = _currentTime.Value },
-                    ZIndex = { Value = 1 },
-                    Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
-                    Name = { Value = Text.Value.ReplaceLineEndings(" ") },
-                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
-                };
-                var obj1 = new SourceSound();
-                var obj2 = new TtsController();
-                element.AddObject(obj1);
-                element.AddObject(obj2);
-                obj1.Source.Value = source;
-                obj2.Text.Value = Text.Value;
-                if (element.TryGetOriginalDuration(out var duration))
-                {
-                    element.Length.Value = duration;
-                }
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    _scene.AddChild(element, ElementOverlapHandling.ZIndex);
-                    _historyManager.Commit();
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate TTS");
-                ShowError("音声生成に失敗しました。", ex.Message);
-            }
-            finally
-            {
-                IsGenerating.Value = false;
-                Interlocked.Exchange(ref _busy, 0);
-            }
-        });
-    }
-
-    public Task Play()
-    {
-        return Task.Run(async () =>
-        {
-            if (Interlocked.Exchange(ref _busy, 1) == 1) return;
-
-            try
-            {
-                IsGenerating.Value = true;
-
-                // AudioQueryがない場合は先に作成
-                var query = AudioQuery.Value;
-                if (query == null)
-                {
-                    query = CreateQueryCore();
-                    if (query == null) return;
-                    UpdateAudioQuery(query);
-                }
-
-                var outputWave = SynthesisFromQuery(query);
-                if (outputWave == null)
-                {
-                    return;
-                }
-
-                _logger.LogInformation("Playing TTS...");
-
-                using (var player = new SimpleWavePlayer(outputWave))
-                {
-                    await player.Play(default);
-                }
-
-                _logger.LogInformation("TTS played");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to play TTS");
-                ShowError("音声再生に失敗しました。", ex.Message);
-            }
-            finally
-            {
-                IsGenerating.Value = false;
-                Interlocked.Exchange(ref _busy, 0);
-            }
-        });
-    }
-
-    private byte[]? SynthesisFromQuery(AudioQueryModel query)
-    {
-        try
-        {
-            var loader = TtsLoader.VoiceVoxLoader.Value;
-            var synthesizer = loader?.Synthesizer;
-            var voice = SelectedVoice.Value;
-            var style = SelectedStyle.Value ?? voice?.Styles.FirstOrDefault();
-            if (loader == null || synthesizer == null || style == null)
-            {
-                _logger.LogError("Synthesizer or style is not initialized");
-                ShowWarning("VOICEVOX、話者、またはスタイルが初期化されていません。");
-                return null;
-            }
-
-            if (!loader.EnsureVoiceModelLoaded(style.Id))
-            {
-                _logger.LogError("Failed to load voice model for style {StyleId}", style.Id);
-                ShowError("音声モデルのロードに失敗しました。", $"Style ID: {style.Id}");
-                return null;
-            }
-
-            var audioQueryJson = BuildAudioQueryJson(query);
-
-            var result = synthesizer.Synthesis(
-                audioQueryJson, style.Id, SynthesisOptions.Default(),
-                out var outputWavSize, out var outputWav);
-            if (result != ResultCode.RESULT_OK)
-            {
-                var message = result.ToMessage();
-                _logger.LogError("Failed to synthesize: {Result}", message);
-                ShowError("音声合成に失敗しました。", message);
-                return null;
-            }
-
-            return outputWav;
+            IsGenerating.Value = false;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to synthesize from AudioQuery");
-            ShowError("音声合成に失敗しました。", ex.Message);
-            return null;
-        }
-    }
-
-    public void OnAccentPhrasesUpdated()
-    {
-        // AccentPhrasePanelからの変更通知を受け取る
-        // AudioQuery.Valueの中身は直接更新されているので、UIの更新のみ
-        AudioQuery.ForceNotify();
-    }
-
-    public void Dispose()
-    {
     }
 
     public void WriteToJson(JsonObject json)
     {
         json[nameof(Text)] = Text.Value;
-        json[nameof(SelectedVoice)] = SelectedVoice.Value?.Name;
-        json[nameof(SelectedStyle)] = SelectedStyle.Value?.Name;
+        json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
+        json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
+        json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
     }
 
     public async void ReadFromJson(JsonObject json)
     {
         Text.Value = (string?)json[nameof(Text)] ?? "";
+        if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))
+            SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
         await _initTcs.Task;
-        var selectedVoice = (string?)json[nameof(SelectedVoice)] ?? "";
-        var selectedStyle = (string?)json[nameof(SelectedStyle)] ?? "";
-        Dispatcher.UIThread.Post(() =>
+        if (_disposed) return;
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            SelectedVoice.Value = Voice.Value.FirstOrDefault(x => x.Name == selectedVoice);
-            SelectedStyle.Value = SelectedVoice.Value?.Styles.FirstOrDefault(x => x.Name == selectedStyle);
-        }, DispatcherPriority.SystemIdle);
+            if (json["VoiceSettings"]?.Deserialize<VoiceSettings>() is { } settings) ApplySettings(settings);
+            else
+            {
+                // Migrate name-only tab state only when it identifies a single voice/style.
+                var voices = Voice.Value.Where(x => x.Name == (string?)json[nameof(SelectedVoice)]).ToArray();
+                SelectedVoice.Value = voices.Length == 1 ? voices[0] : null;
+                var styles = SelectedVoice.Value?.Styles.Where(x => x.Name == (string?)json[nameof(SelectedStyle)]).ToArray();
+                SelectedStyle.Value = styles?.Length == 1 ? styles[0] : null;
+            }
+            // Older state records only the selection, which does not establish an applied preset.
+            _appliedPreset = json["AppliedPreset"]?.Deserialize<VoicePreset>();
+        });
     }
 
-    public object? GetService(Type serviceType)
-    {
-        return null;
-    }
+    public object? GetService(Type serviceType) => null;
 }

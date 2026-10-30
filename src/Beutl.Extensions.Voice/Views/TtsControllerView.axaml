@@ -3,14 +3,58 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
+             xmlns:models="using:Beutl.Extensions.Voice.Models"
              xmlns:viewModels="using:Beutl.Extensions.Voice.ViewModels"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
              d:DesignHeight="450"
-             d:DesignWidth="800"
+             d:DesignWidth="320"
              x:CompileBindings="True"
              x:DataType="viewModels:TtsControllerViewModel"
              mc:Ignorable="d">
-    <StackPanel Spacing="4">
-        <ContentControl Name="Inner" DataContext="{Binding Inner}" />
-        <Button Margin="8,0" Content="再生成" />
+    <UserControl.Resources>
+        <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
+    </UserControl.Resources>
+    <StackPanel Spacing="8">
+        <StackPanel Spacing="8" IsEnabled="{Binding !IsGenerating.Value}">
+            <ContentControl Name="Inner" DataContext="{Binding Inner}" />
+            <StackPanel Margin="8,0" Spacing="4" IsEnabled="{Binding HasEditor.Value}">
+                <TextBlock Text="声のプリセット" />
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <ComboBox x:Name="PresetSelector" HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
+                              AutomationProperties.Name="声のプリセット"
+                              ItemsSource="{Binding Presets.Value}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:VoicePreset">
+                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button x:Name="ApplyPresetButton" Grid.Column="1" Margin="4,0,0,0" Padding="8,4"
+                            Content="適用" Command="{Binding ApplyPreset}" IsEnabled="{Binding HasSelectedPreset.Value}" />
+                    <Button Grid.Column="2" Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                            Command="{Binding RefreshPresets}" ToolTip.Tip="プリセットを再読み込み"
+                            AutomationProperties.Name="プリセットを再読み込み">
+                        <icons:FluentIcon Icon="ArrowClockwise" FontSize="16" />
+                    </Button>
+                </Grid>
+            </StackPanel>
+            <views:VoiceEditorView x:Name="VoiceEditor" IsEnabled="{Binding HasEditor.Value}" />
+            <Expander x:Name="SettingsExpander" Header="生成時の設定" HorizontalAlignment="Stretch"
+                      Theme="{StaticResource ToolTabExpanderTheme}">
+                <ScrollViewer MaxHeight="240" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="8" Spacing="8">
+                        <TextBlock Text="{Binding GenerationSettings.Value}" TextWrapping="Wrap" FontSize="12" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Expander>
+            <Button x:Name="RegenerateButton" Margin="8,0" Content="再生成" Classes="accent"
+                    HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                    Command="{Binding Regenerate}" IsEnabled="{Binding HasSettings.Value}"
+                    ToolTip.Tip="この要素の音声を再生成します。配置・長さ・トリムは保持します。" />
+        </StackPanel>
+        <ProgressBar Height="2" IsIndeterminate="True" IsVisible="{Binding IsGenerating.Value}" />
+        <TextBlock Margin="8,0" Text="{Binding Message.Value}" TextWrapping="Wrap" FontSize="12"
+                   IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
     </StackPanel>
 </UserControl>

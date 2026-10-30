@@ -7,5 +7,6 @@
 
     <Application.Styles>
         <sty:FluentAvaloniaTheme />
+        <StyleInclude Source="avares://Beutl.Controls/Styles.axaml" />
     </Application.Styles>
 </Application>
