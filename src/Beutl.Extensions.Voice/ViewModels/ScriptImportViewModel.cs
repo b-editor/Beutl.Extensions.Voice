@@ -192,7 +192,9 @@ public sealed class ScriptImportViewModel : IToolContext
 
     private Request[] CaptureRequests()
     {
-        if (Lines.Count == 0) throw new InvalidOperationException("台本を一覧へ読み込んでください。");
+        // Generate the text currently shown in the input, including edits made after importing speakers.
+        SetLines(ScriptLine.Parse(RawText.Value, HasSpeakerNames.Value));
+        if (Lines.Count == 0) throw new InvalidOperationException("台本を入力してください。");
         if (!double.IsFinite(StartSeconds.Value) || StartSeconds.Value < 0 ||
             !double.IsFinite(GapSeconds.Value) || GapSeconds.Value < 0 || FirstLayer.Value < 0)
             throw new InvalidOperationException("開始位置、間隔、レイヤーには 0 以上の値を指定してください。");

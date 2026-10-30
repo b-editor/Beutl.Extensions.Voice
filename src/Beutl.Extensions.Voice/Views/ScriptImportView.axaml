@@ -32,7 +32,7 @@
                         <Grid ColumnDefinitions="*,8,*">
                             <Button x:Name="OpenScriptButton" Content="ファイルを開く…" Click="OpenFile"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
-                            <Button x:Name="ImportScriptButton" Grid.Column="2" Content="一覧へ読み込む" Command="{Binding ImportText}"
+                            <Button x:Name="ImportScriptButton" Grid.Column="2" Content="話者を読み込む" Command="{Binding ImportText}"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
                         </Grid>
                     </StackPanel>
@@ -64,19 +64,6 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-                </Expander>
-                <Expander x:Name="LinesSection" Header="セリフの確認" IsExpanded="False"
-                          Theme="{StaticResource ToolTabExpanderTheme}">
-                    <ItemsControl Margin="8" ItemsSource="{Binding Lines}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="models:ScriptLine">
-                                <StackPanel Spacing="4" Margin="0,0,0,12">
-                                    <TextBlock Text="{Binding DisplaySpeaker}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
                 </Expander>
                 <Expander x:Name="PlacementSection" Header="配置" IsExpanded="True"
                           Theme="{StaticResource ToolTabExpanderTheme}">

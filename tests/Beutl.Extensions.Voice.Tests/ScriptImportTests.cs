@@ -253,7 +253,7 @@ public class ScriptImportTests
     [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Tab_selects_presets_directly_and_previews_lines_without_editors(int width, bool light)
+    public async Task Tab_generates_current_source_text_with_selected_presets(int width, bool light)
     {
         using var editor = Editor();
         using var model = new ScriptImportViewModel(new(), editor, Wave);
@@ -265,7 +265,8 @@ public class ScriptImportTests
         {
             window.Show();
             await Settle();
-            view.FindControl<TextBox>("ScriptTextBox")!.Text = Script;
+            var input = view.FindControl<TextBox>("ScriptTextBox")!;
+            input.Text = Script;
             view.FindControl<Button>("ImportScriptButton")!.Command!.Execute(null);
             await Settle();
             var speakerSection = view.FindControl<Expander>("SpeakersSection")!;
@@ -275,6 +276,7 @@ public class ScriptImportTests
                 selectors[i].SelectedItem = model.Speakers[i].Presets.Value.Single(x => x.Id == Presets[i].Id);
             Assert.That(speakerSection.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "適用")), Is.False);
             Capture("input");
+            input.Text = Script.Replace("こんにちは。", "入力欄で変更したセリフです。");
             view.FindControl<Expander>("InputSection")!.IsExpanded = false;
             await Settle();
             Capture("speakers");
@@ -295,16 +297,6 @@ public class ScriptImportTests
             selectors[0].SelectedItem = model.Speakers[0].Presets.Value.Single(x => x.Id == updated.Id);
 
             speakerSection.IsExpanded = false;
-            var linesSection = view.FindControl<Expander>("LinesSection")!;
-            linesSection.IsExpanded = true;
-            await Settle();
-            var preview = (Control)linesSection.Content!;
-            Assert.That(preview.GetVisualDescendants().OfType<TextBox>(), Is.Empty);
-            Assert.That(preview.GetVisualDescendants().OfType<Button>(), Is.Empty);
-            Assert.That(linesSection.GetVisualDescendants().OfType<TextBlock>().Select(x => x.Text),
-                Does.Contain("こんにちは。").And.Contain("よろしくお願いします。"));
-            Capture("lines");
-            linesSection.IsExpanded = false;
             await Settle();
             view.FindControl<NumericUpDown>("GapInput")!.Value = 0.3m;
             Assert.That(model.GapSeconds.Value, Is.EqualTo(0.3));
@@ -316,7 +308,10 @@ public class ScriptImportTests
             for (int i = 0; model.IsGenerating.Value && i < 500; i++) await Task.Delay(10);
             Assert.That(model.IsGenerating.Value, Is.False);
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(3), model.Message.Value);
-            Assert.That(editor.Scene.Children[0].Objects.OfType<TtsController>().Single().Generation.Value!.Settings,
+            var generation = editor.Scene.Children[0].Objects.OfType<TtsController>().Single().Generation.Value!;
+            Assert.That(generation.Text, Is.EqualTo("入力欄で変更したセリフです。"),
+                "The source input is also the user's confirmation of what will be generated.");
+            Assert.That(generation.Settings,
                 Is.EqualTo(updated.Settings), "The ComboBox selection is the complete source of generation settings.");
 
             void Capture(string section)
