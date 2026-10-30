@@ -28,8 +28,6 @@
                                  PlaceholderText="案内役: こんにちは。&#10;ゲスト: よろしくお願いします。"
                                  AutomationProperties.Name="台本" />
                         <CheckBox Content="「話者: セリフ」形式" IsChecked="{Binding HasSpeakerNames.Value, Mode=TwoWay}" />
-                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="1行を1件のセリフとして読み込みます。話者名がない台本はチェックを外してください。" />
                         <Grid ColumnDefinitions="*,8,*">
                             <Button x:Name="OpenScriptButton" Content="ファイルを開く…" Click="OpenFile"
                                     HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
@@ -41,8 +39,6 @@
                 <Expander x:Name="SpeakersSection" Header="話者の割り当て" IsExpanded="True"
                           Theme="{StaticResource ToolTabExpanderTheme}">
                     <StackPanel Margin="8" Spacing="8">
-                        <TextBlock FontSize="11" TextWrapping="Wrap" Text="台本内の話者名ごとにプリセットを選択します。"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         <Button Content="プリセットを再読み込み" Command="{Binding RefreshPresets}" />
                         <ItemsControl ItemsSource="{Binding Speakers}">
                             <ItemsControl.ItemTemplate>
@@ -84,8 +80,6 @@
                                            Value="{Binding FirstLayer.Value, Mode=TwoWay}" AutomationProperties.Name="先頭レイヤー" />
                         </Grid>
                         <CheckBox Content="話者ごとにレイヤーを分ける" IsChecked="{Binding SeparateLayers.Value, Mode=TwoWay}" />
-                        <TextBlock FontSize="11" TextWrapping="Wrap" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="音声の長さに合わせて入力順に配置します。レイヤーを分ける場合は、話者の登場順で割り当てます。" />
                     </StackPanel>
                 </Expander>
             </StackPanel>
@@ -100,7 +94,7 @@
                 <Button x:Name="GenerateScriptButton" Content="一括生成・配置" Classes="accent" Margin="8"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                         Command="{Binding Generate}" IsVisible="{Binding !IsGenerating.Value}" />
-                <Button Content="中止（生成中のセリフの完了後）" Margin="8" Command="{Binding Cancel}"
+                <Button Content="中止" ToolTip.Tip="生成中のセリフが完了したら中止します。" Margin="8" Command="{Binding Cancel}"
                         HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsVisible="{Binding IsGenerating.Value}" />
             </StackPanel>
         </Border>

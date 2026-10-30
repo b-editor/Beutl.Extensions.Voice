@@ -95,7 +95,7 @@ public sealed class ScriptImportViewModel : IToolContext
     {
         if (_disposed || IsGenerating.Value) return;
         SetLines(ScriptLine.Parse(RawText.Value, HasSpeakerNames.Value));
-        Message.Value = Lines.Count == 0 ? "台本を入力してください。" : $"{Lines.Count} 件のセリフを読み込みました。話者を割り当ててください。";
+        Message.Value = Lines.Count == 0 ? "台本を入力してください。" : $"{Lines.Count} 件のセリフを読み込みました。";
     }
 
     private void SetLines(IEnumerable<ScriptLine> lines)
@@ -171,7 +171,7 @@ public sealed class ScriptImportViewModel : IToolContext
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            Message.Value = "生成を中止しました。台本と話者の割り当ては保持されています。";
+            Message.Value = "生成を中止しました。";
         }
         catch (Exception ex)
         {
