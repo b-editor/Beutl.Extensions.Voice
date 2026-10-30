@@ -131,8 +131,14 @@ public partial class VoiceEditorViewModel
         ConnectionMessage.Value = "接続しています…";
         try
         {
-            string? expectedUrl = Engines.Value.FirstOrDefault(x => x.Id == id)?.Url;
-            var connection = new VoiceEngineConnection { Id = id ?? Guid.NewGuid().ToString("N"), Name = name, Url = url };
+            var existing = Engines.Value.FirstOrDefault(x => x.Id == id);
+            string? expectedUrl = existing?.Url;
+            string normalizedUrl = HttpVoiceEngine.NormalizeUrl(url);
+            var seed = existing?.Url == normalizedUrl ? existing : null;
+            var connection = (seed ?? new VoiceEngineConnection()) with
+            {
+                Id = id ?? Guid.NewGuid().ToString("N"), Name = name, Url = normalizedUrl
+            };
             connection = await HttpVoiceEngine.DiscoverAsync(connection);
             if (_disposed) return false;
             VoiceEngineStore.Save(connection, allowCreate: id == null || restoreMissing, expectedUrl: expectedUrl);

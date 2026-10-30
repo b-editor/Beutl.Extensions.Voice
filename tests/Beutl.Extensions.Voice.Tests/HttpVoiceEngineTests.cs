@@ -76,6 +76,44 @@ public class HttpVoiceEngineTests
     }
 
     [AvaloniaTest]
+    [TestCase(404, false)]
+    [TestCase(404, true)]
+    [TestCase(501, false)]
+    [TestCase(501, true)]
+    public async Task Editing_connection_retains_metadata_only_for_the_same_endpoint(int optionalStatus, bool trailingSlash)
+    {
+        using var server = new EngineServer(aivis: true) { AdjustPitch = false };
+        using var editor = Editor();
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(await model.SaveConnection("Original", server.Url), Is.True, model.ConnectionMessage.Value);
+        var original = VoiceEngineStore.Load().Single();
+        server.ManifestStatus = server.VersionStatus = optionalStatus;
+
+        string url = trailingSlash ? server.Url : server.Url.TrimEnd('/');
+        Assert.That(await model.SaveConnection("Renamed", url, original.Id), Is.True, model.ConnectionMessage.Value);
+        var renamed = VoiceEngineStore.Load().Single();
+        Assert.That(renamed.Id, Is.EqualTo(original.Id));
+        Assert.That(renamed.Name, Is.EqualTo("Renamed"));
+        Assert.That(renamed.Url, Is.EqualTo(original.Url));
+        Assert.That(renamed.EngineUuid, Is.EqualTo(original.EngineUuid));
+        Assert.That(renamed.Version, Is.EqualTo(original.Version));
+        Assert.That(renamed.Capabilities, Is.EqualTo(original.Capabilities));
+        await VoiceSynthesisService.SynthesizeAsync("テスト。", Settings(renamed) with { TempoDynamicsScale = 1.6 }, null);
+        Assert.That((double?)server.LastQuery!["tempoDynamicsScale"], Is.EqualTo(1.6));
+
+        using var other = new EngineServer { ManifestStatus = optionalStatus, VersionStatus = optionalStatus };
+        Assert.That(await model.SaveConnection("Moved", other.Url, original.Id), Is.True, model.ConnectionMessage.Value);
+        var moved = VoiceEngineStore.Load().Single();
+        Assert.That(moved.Id, Is.EqualTo(original.Id));
+        Assert.That(moved.Url, Is.EqualTo(other.Url));
+        Assert.That(moved.EngineUuid, Is.Empty);
+        Assert.That(moved.Version, Is.Empty);
+        Assert.That(moved.Capabilities, Is.EqualTo(new VoiceEngineCapabilities()));
+        await VoiceSynthesisService.SynthesizeAsync("テスト。", Settings(moved), null);
+        Assert.That(other.SynthesisCount, Is.EqualTo(1));
+    }
+
+    [AvaloniaTest]
     [TestCase("delete", false)]
     [TestCase("url", false)]
     [TestCase("name", false)]

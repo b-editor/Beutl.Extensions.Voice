@@ -14,10 +14,13 @@ public static class VoiceEngineStore
     public static VoiceEngineConnection[] Load()
     {
         lock (s_lock)
-            return File.Exists(GlobalPath)
-                ? JsonSerializer.Deserialize<VoiceEngineConnection[]>(File.ReadAllText(GlobalPath))
-                    ?? throw new JsonException("接続先を読み込めませんでした。")
-                : [];
+        {
+            if (!File.Exists(GlobalPath)) return [];
+            // An atomic replacement by another process must not invalidate an open reader.
+            using var stream = new FileStream(GlobalPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            return JsonSerializer.Deserialize<VoiceEngineConnection[]>(stream)
+                ?? throw new JsonException("接続先を読み込めませんでした。");
+        }
     }
 
     public static void Save(VoiceEngineConnection connection, bool allowCreate = true, string? expectedUrl = null) => Change(connections =>
@@ -58,16 +61,32 @@ public static class VoiceEngineStore
     {
         lock (s_lock)
         {
-            var connections = Load().ToList();
-            change(connections);
-            Directory.CreateDirectory(Path.GetDirectoryName(GlobalPath)!);
-            string temporary = GlobalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            // Include other Beutl processes even when launched in separate login/shell sessions.
+            using var mutex = new Mutex(false, "Beutl.Extensions.Voice.Engines",
+                new NamedWaitHandleOptions { CurrentSessionOnly = false });
             try
             {
-                File.WriteAllText(temporary, JsonSerializer.Serialize(connections, s_options));
-                File.Move(temporary, GlobalPath, overwrite: true);
+                if (!mutex.WaitOne(TimeSpan.FromSeconds(5)))
+                    throw new IOException("別のBeutlが接続先を保存しています。少し待ってからもう一度操作してください。");
             }
-            finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            catch (AbandonedMutexException)
+            {
+                // Ownership is acquired; an interrupted writer leaves the atomically replaced JSON intact.
+            }
+            try
+            {
+                var connections = Load().ToList();
+                change(connections);
+                Directory.CreateDirectory(Path.GetDirectoryName(GlobalPath)!);
+                string temporary = GlobalPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    File.WriteAllText(temporary, JsonSerializer.Serialize(connections, s_options));
+                    File.Move(temporary, GlobalPath, overwrite: true);
+                }
+                finally { if (File.Exists(temporary)) File.Delete(temporary); }
+            }
+            finally { mutex.ReleaseMutex(); }
         }
         Changed?.Invoke();
     }
