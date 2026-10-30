@@ -14,7 +14,6 @@ public sealed class LocalEngineCandidateViewModel(LocalVoiceEngine engine)
     public ReactivePropertySlim<string> ActionText { get; } = new("接続して追加");
     public ReactivePropertySlim<bool> CanUse { get; } = new();
     internal bool IsUserSelected { get; set; }
-    internal bool ConnectionWasStored { get; set; }
     internal VoiceEngineConnection? Connection { get; set; }
 }
 
@@ -55,7 +54,8 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                     : await Task.Run(() => _findApplication(entry.Engine), cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
-                await Check(entry, cancellationToken);
+                var seed = FindStoredConnection(entry) ?? new VoiceEngineConnection { Url = entry.Engine.Url };
+                await Check(entry, seed, cancellationToken);
             }));
         }
         catch (OperationCanceledException) when (_disposed) { }
@@ -63,12 +63,13 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         finally { IsBusy.Value = false; }
     }
 
-    private async Task<bool> Check(LocalEngineCandidateViewModel entry, CancellationToken cancellationToken)
+    private static VoiceEngineConnection? FindStoredConnection(LocalEngineCandidateViewModel entry) =>
+        VoiceEngineStore.Load().FirstOrDefault(x => x.Url == entry.Engine.Url);
+
+    private async Task<bool> Check(LocalEngineCandidateViewModel entry, VoiceEngineConnection seed,
+        CancellationToken cancellationToken)
     {
         entry.Connection = null;
-        var seed = VoiceEngineStore.Load().FirstOrDefault(x => x.Url == entry.Engine.Url);
-        entry.ConnectionWasStored = seed != null;
-        seed ??= new VoiceEngineConnection { Url = entry.Engine.Url };
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -111,10 +112,13 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         Message.Value = "";
         try
         {
+            // Keep the original identity and creation permission throughout startup polling.
+            var stored = FindStoredConnection(entry);
+            var seed = stored ?? new VoiceEngineConnection { Url = entry.Engine.Url };
             using var waiting = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             waiting.CancelAfter(TimeSpan.FromSeconds(60));
             // Recheck before launch: another application may have started the same engine since the search.
-            if (!await Check(entry, waiting.Token))
+            if (!await Check(entry, seed, waiting.Token))
             {
                 if (entry.ApplicationPath.Value is not { } path)
                     throw new InvalidOperationException("アプリを起動してから再検索してください。");
@@ -123,11 +127,11 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 {
                     entry.Status.Value = "エンジンの起動を待っています…";
                     await Task.Delay(1000, waiting.Token);
-                    if (await Check(entry, waiting.Token)) break;
+                    if (await Check(entry, seed, waiting.Token)) break;
                 }
             }
             waiting.Token.ThrowIfCancellationRequested();
-            SelectedConnection = VoiceEngineStore.RegisterDiscovered(entry.Connection!, allowCreate: !entry.ConnectionWasStored);
+            SelectedConnection = VoiceEngineStore.RegisterDiscovered(entry.Connection!, allowCreate: stored == null);
             return true;
         }
         catch (OperationCanceledException)

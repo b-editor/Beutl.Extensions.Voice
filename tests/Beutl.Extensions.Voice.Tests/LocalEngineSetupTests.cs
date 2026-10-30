@@ -109,22 +109,34 @@ public class LocalEngineSetupTests
     }
 
     [AvaloniaTest]
-    [TestCase("delete")]
-    [TestCase("move")]
-    [TestCase("replace")]
-    [TestCase("create")]
-    public async Task Registration_respects_connection_changes_during_discovery(string change)
+    [TestCase("delete", false)]
+    [TestCase("move", false)]
+    [TestCase("replace", false)]
+    [TestCase("create", false)]
+    [TestCase("delete", true)]
+    [TestCase("move", true)]
+    [TestCase("replace", true)]
+    [TestCase("create", true)]
+    public async Task Registration_respects_connection_changes_during_discovery(string change, bool starting)
     {
-        using var server = new HttpVoiceEngineTests.EngineServer { PauseAt = "/tts/speakers" };
+        using var server = new HttpVoiceEngineTests.EngineServer
+        {
+            FailDiscovery = starting,
+            PauseAt = starting ? null : "/tts/speakers"
+        };
         var seed = new VoiceEngineConnection { Url = server.Url, Name = "Existing engine" };
         if (change != "create") VoiceEngineStore.Save(seed);
-        using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }], _ => null);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }],
+            _ => null, _ => started.TrySetResult());
+        model.SelectApplication(model.Engines[0], "/installed/run");
         Task<bool> registration = model.Use(model.Engines[0]);
-        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await (starting ? started.Task : server.Paused.Task).WaitAsync(TimeSpan.FromSeconds(5));
         var current = change == "move" ? seed with { Url = "http://127.0.0.1:59999/", Name = "Moved engine" }
             : seed with { Id = "replacement-engine", Name = "Renamed engine" };
         if (change is "delete" or "replace") VoiceEngineStore.Delete(seed.Id);
         if (change != "delete") VoiceEngineStore.Save(current);
+        server.FailDiscovery = false;
         server.Resume.TrySetResult();
         bool success = change is "replace" or "create";
         Assert.That(await registration, Is.EqualTo(success), model.Message.Value);
