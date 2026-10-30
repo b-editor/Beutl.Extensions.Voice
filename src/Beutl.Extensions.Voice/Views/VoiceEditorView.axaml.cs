@@ -30,6 +30,7 @@ public partial class VoiceEditorView : UserControl
         if (DataContext is not VoiceEditorViewModel model) return;
         var connection = edit ? model.SelectedEngine.Value : null;
         if (connection?.IsCore == true) return;
+        bool restoreMissing = connection != null && model.IsMissingConnection(connection.Id);
         var name = new TextBox { Name = "ConnectionNameInput", Text = connection?.Name, PlaceholderText = "表示名（省略可）" };
         var url = new TextBox { Name = "ConnectionUrlInput", Text = connection?.Url, PlaceholderText = "http://127.0.0.1:50021" };
         var save = new Button { Name = "SaveConnectionButton", Content = "接続して保存", Classes = { "accent" } };
@@ -51,7 +52,7 @@ public partial class VoiceEditorView : UserControl
         save.Click += async (_, _) =>
         {
             save.IsEnabled = false;
-            bool saved = await model.SaveConnection(name.Text ?? "", url.Text ?? "", connection?.Id);
+            bool saved = await model.SaveConnection(name.Text ?? "", url.Text ?? "", connection?.Id, restoreMissing);
             save.IsEnabled = true;
             if (saved) flyout.Hide();
         };

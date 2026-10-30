@@ -10,6 +10,7 @@ namespace Beutl.Extensions.Voice.ViewModels;
 public partial class VoiceEditorViewModel
 {
     private VoiceMetadata[] _coreVoices = [];
+    private HashSet<string> _storedEngineIds = [];
     public ReactivePropertySlim<VoiceEngineConnection[]> Engines { get; } = new([VoiceEngineConnection.Core]);
     public ReactivePropertySlim<VoiceEngineConnection?> SelectedEngine { get; } = new(VoiceEngineConnection.Core);
     public ReactivePropertySlim<VoiceEngineCapabilities> EngineCapabilities { get; } = new(new());
@@ -17,6 +18,8 @@ public partial class VoiceEditorViewModel
     public ReactivePropertySlim<bool> IsConnecting { get; } = new();
     public ReactivePropertySlim<bool> ShowCoreInstallPrompt { get; } = new();
     public ReactivePropertySlim<string> ConnectionMessage { get; } = new("");
+
+    internal bool IsMissingConnection(string id) => !_storedEngineIds.Contains(id);
 
     private void InitializeEngines()
     {
@@ -86,7 +89,7 @@ public partial class VoiceEditorViewModel
         if (engine.IsCore)
         {
             Voice.Value = _coreVoices;
-            OnLoaded();
+            LoadCoreMetadata(restoreSettings: false);
         }
         else
         {
@@ -103,7 +106,9 @@ public partial class VoiceEditorViewModel
             var settings = CaptureStoredSettings();
             var query = AudioQuery.Value;
             var selected = SelectedEngine.Value ?? VoiceEngineConnection.Core;
-            var engines = new[] { VoiceEngineConnection.Core }.Concat(VoiceEngineStore.Load()).ToArray();
+            var connections = VoiceEngineStore.Load();
+            _storedEngineIds = connections.Select(x => x.Id).ToHashSet();
+            var engines = new[] { VoiceEngineConnection.Core }.Concat(connections).ToArray();
             if (engines.All(x => x.Id != selected.Id))
                 engines = [.. engines, selected with { Url = "", Voices = [] }];
             UpdateSilently(() =>
@@ -119,7 +124,7 @@ public partial class VoiceEditorViewModel
         catch (Exception ex) { Message.Value = $"接続先を読み込めませんでした: {ex.Message}"; }
     }
 
-    public async Task<bool> SaveConnection(string name, string url, string? id = null)
+    public async Task<bool> SaveConnection(string name, string url, string? id = null, bool restoreMissing = false)
     {
         if (_disposed || IsConnecting.Value) return false;
         IsConnecting.Value = true;
@@ -129,7 +134,7 @@ public partial class VoiceEditorViewModel
             var connection = new VoiceEngineConnection { Id = id ?? Guid.NewGuid().ToString("N"), Name = name, Url = url };
             connection = await HttpVoiceEngine.DiscoverAsync(connection);
             if (_disposed) return false;
-            VoiceEngineStore.Save(connection);
+            VoiceEngineStore.Save(connection, allowCreate: id == null || restoreMissing);
             SelectedEngine.Value = Engines.Value.First(x => x.Id == connection.Id);
             ConnectionMessage.Value = $"{connection.Name} {connection.Version} に接続しました。";
             Message.Value = ConnectionMessage.Value;
@@ -151,9 +156,9 @@ public partial class VoiceEditorViewModel
             var updated = await HttpVoiceEngine.DiscoverAsync(engine);
             if (_disposed) return;
             // Refreshing metadata keeps the selection and manual query edits in every open editor.
-            VoiceEngineStore.Save(updated);
+            VoiceEngineStore.UpdateMetadata(updated);
             if (SelectedEngine.Value?.Id == engine.Id)
-                Message.Value = $"{updated.Name} {updated.Version} に接続しました。";
+                Message.Value = $"{SelectedEngine.Value.Name} {updated.Version} に接続しました。";
         }
         catch (Exception ex) { Message.Value = $"接続できませんでした: {ex.Message}"; }
         finally { IsConnecting.Value = false; }

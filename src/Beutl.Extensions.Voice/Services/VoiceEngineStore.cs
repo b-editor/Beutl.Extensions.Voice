@@ -20,12 +20,30 @@ public static class VoiceEngineStore
                 : [];
     }
 
-    public static void Save(VoiceEngineConnection connection) => Change(connections =>
+    public static void Save(VoiceEngineConnection connection, bool allowCreate = true) => Change(connections =>
     {
         if (connection.IsCore) throw new InvalidOperationException("内蔵エンジンの接続先は変更できません。");
         int index = connections.FindIndex(x => x.Id == connection.Id);
-        if (index < 0) connections.Add(connection);
+        if (index < 0)
+        {
+            if (!allowCreate) throw new InvalidOperationException("接続先が削除されています。");
+            connections.Add(connection);
+        }
         else connections[index] = connection;
+    });
+
+    internal static void UpdateMetadata(VoiceEngineConnection connection) => Change(connections =>
+    {
+        int index = connections.FindIndex(x => x.Id == connection.Id);
+        if (index < 0) throw new InvalidOperationException("接続先が削除されています。");
+        var current = connections[index];
+        if (current.Url != connection.Url)
+            throw new InvalidOperationException("接続先が変更されています。もう一度再読み込みしてください。");
+        connections[index] = current with
+        {
+            EngineUuid = connection.EngineUuid, Version = connection.Version,
+            Capabilities = connection.Capabilities, Voices = connection.Voices
+        };
     });
 
     public static void Delete(string id) => Change(connections => connections.RemoveAll(x => x.Id == id));

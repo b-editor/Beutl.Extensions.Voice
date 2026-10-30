@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -328,6 +329,18 @@ public class VoicePresetTests
             Assert.That(core.SpeedScale.Value, Is.EqualTo(1.4));
             Assert.That(http.SelectedEngine.Value!.Id, Is.EqualTo(connection.Id));
             Assert.That(http.SelectedStyle.Value!.Id, Is.EqualTo(1), "Core initialization must not replace HTTP settings.");
+
+            if (coreReadyBeforeRestore) VoiceEngineStore.Delete(connection.Id);
+            else VoiceEngineStore.Save(connection with { Voices = [] });
+            Assert.That(http.SelectedStyle.Value, Is.Null);
+            http.SelectedPreset.Value = new() { Name = "Core", Settings = settings };
+            http.ApplyPreset();
+            Assert.That(http.SelectedEngine.Value!.Id, Is.EqualTo(VoiceSettings.CoreEngineId));
+            Assert.That(http.SelectedVoice.Value?.SpeakerUuid, Is.EqualTo(voice.SpeakerUuid));
+            Assert.That(http.SelectedStyle.Value?.Id, Is.EqualTo(2));
+            var switched = new JsonObject();
+            http.WriteToJson(switched);
+            Assert.That(switched["VoiceSettings"]!.Deserialize<VoiceSettings>(), Is.EqualTo(settings));
         }
         finally
         {
@@ -441,7 +454,8 @@ public class VoicePresetTests
             await Settle();
             Capture("tuning");
             var sliders = tuning.GetVisualDescendants().OfType<Slider>().Where(x => x.IsEffectivelyVisible).ToArray();
-            Assert.That(sliders, Has.Length.EqualTo(6));
+            Assert.That(sliders.Select(AutomationProperties.GetName),
+                Is.EqualTo(new[] { "話速", "音高", "抑揚", "音量", "前無音（秒）", "後無音（秒）" }));
             foreach (var slider in sliders)
             {
                 var row = (Grid)slider.Parent!;

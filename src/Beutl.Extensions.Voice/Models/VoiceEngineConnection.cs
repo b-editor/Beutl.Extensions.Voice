@@ -36,7 +36,7 @@ public sealed record VoiceEngineCapabilities
     internal static VoiceEngineCapabilities FromManifest(JsonObject? manifest)
     {
         var features = manifest?["supported_features"] as JsonObject;
-        bool aivis = (string?)manifest?["uuid"] == AivisSpeechUuid;
+        bool aivis = string.Equals((string?)manifest?["uuid"], AivisSpeechUuid, StringComparison.OrdinalIgnoreCase);
         return new()
         {
             AdjustSpeed = Supports("adjust_speed_scale"), AdjustPitch = Supports("adjust_pitch_scale"),

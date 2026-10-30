@@ -81,7 +81,9 @@ public partial class VoiceEditorViewModel : IDisposable
 
     public void ConfirmEdit() => EditCompleted?.Invoke();
 
-    public void OnLoaded()
+    public void OnLoaded() => LoadCoreMetadata(restoreSettings: true);
+
+    private void LoadCoreMetadata(bool restoreSettings)
     {
         try
         {
@@ -90,7 +92,7 @@ public partial class VoiceEditorViewModel : IDisposable
             if (IsHttpEngine.Value) return;
             IsEnabled.Value = loader?.IsLoaded == true;
             if (loader?.IsLoaded != true) return;
-            var previous = CaptureStoredSettings();
+            var previous = restoreSettings ? CaptureStoredSettings() : null;
             var query = AudioQuery.Value;
             UpdateSilently(() =>
             {

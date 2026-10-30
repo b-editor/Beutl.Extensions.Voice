@@ -47,6 +47,63 @@ public class HttpVoiceEngineTests
 
     private TestEditor Editor() => new(Path.Combine(_directory, "scene.bescene"));
 
+    [TestCase(true, 200)]
+    [TestCase(false, 404)]
+    [TestCase(false, 501)]
+    public async Task Aivis_identity_and_tuning_survive_optional_manifest_changes(bool uppercaseUuid, int manifestStatus)
+    {
+        using var server = new EngineServer(aivis: true) { AdjustPitch = false };
+        if (uppercaseUuid) server.EngineUuid = server.EngineUuid.ToUpperInvariant();
+        var engine = await HttpVoiceEngine.DiscoverAsync(new() { Url = server.Url });
+        Assert.That(engine.Capabilities.TempoDynamics, Is.True);
+        VoiceEngineStore.Save(engine);
+        server.ManifestStatus = manifestStatus;
+
+        var refreshed = await HttpVoiceEngine.DiscoverAsync(engine);
+        Assert.That(refreshed.EngineUuid, Is.EqualTo(engine.EngineUuid));
+        Assert.That(refreshed.Capabilities, Is.EqualTo(engine.Capabilities));
+        var output = await VoiceSynthesisService.SynthesizeAsync("テスト。",
+            Settings(engine) with { PitchScale = 0.1, TempoDynamicsScale = 1.6 }, null);
+        Assert.That(output.Settings.EngineUuid, Is.EqualTo(engine.EngineUuid));
+        Assert.That(output.Settings.PitchScale, Is.Zero);
+        Assert.That((double?)server.LastQuery!["tempoDynamicsScale"], Is.EqualTo(1.6));
+        Assert.That(refreshed.Capabilities.EditAccent, Is.False);
+    }
+
+    [AvaloniaTest]
+    [TestCase("delete")]
+    [TestCase("url")]
+    [TestCase("name")]
+    public async Task Reload_preserves_concurrent_connection_changes(string change)
+    {
+        using var server = new EngineServer();
+        using var editor = Editor();
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(await model.SaveConnection("Original", server.Url), Is.True);
+        var original = model.SelectedEngine.Value!;
+        server.EngineUuid = "refreshed-engine";
+        server.PauseAt = "/tts/speakers";
+        var reload = model.ReloadEngine();
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (change == "delete") VoiceEngineStore.Delete(original.Id);
+        else VoiceEngineStore.Save(original with
+        {
+            Name = "Renamed", Url = change == "url" ? "http://localhost:50032/" : original.Url
+        });
+        server.Resume.TrySetResult();
+        await reload;
+
+        var stored = VoiceEngineStore.Load();
+        if (change == "delete") Assert.That(stored, Is.Empty);
+        else
+        {
+            Assert.That(stored.Single().Name, Is.EqualTo("Renamed"));
+            Assert.That(stored[0].Url, Is.EqualTo(change == "url" ? "http://localhost:50032/" : original.Url));
+            Assert.That(stored[0].EngineUuid, Is.EqualTo(change == "url" ? original.EngineUuid : server.EngineUuid));
+        }
+        Assert.That(model.Message.Value, Does.Contain(change == "name" ? "に接続しました" : "接続できませんでした"));
+    }
+
     [Test]
     [TestCase(false, 7L, true)]
     [TestCase(true, -2147483648L, true)]
@@ -122,8 +179,21 @@ public class HttpVoiceEngineTests
         Assert.That(File.Exists(original), Is.True);
         Assert.That(controller.Draft.Value, Is.EqualTo(draft));
         server.FailSynthesis = false;
+        server.PauseAt = "/tts/synthesis";
+        var regenerating = details.Regenerate();
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        element.IsLocked.Value = true;
+        server.Resume.TrySetResult();
+        await regenerating;
+        Assert.That(details.Message.Value, Does.Contain("ロック"));
+        Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(original));
+        Assert.That(Directory.GetFiles(Path.GetDirectoryName(original)!, "*.wav"), Is.EqualTo(new[] { original }));
+        Assert.That(controller.Draft.Value, Is.EqualTo(draft));
+        element.IsLocked.Value = false;
+        server.PauseAt = null;
         await details.Regenerate();
         Assert.That(details.Message.Value, Is.EqualTo("音声を再生成しました。"));
+        Assert.That(File.Exists(sound.Source.Value!.Uri.LocalPath), Is.True);
         Assert.That((double?)server.LastQuery!["accent_phrases"]![0]!["moras"]![0]!["pitch"], Is.EqualTo(5.9));
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(original));
@@ -132,7 +202,7 @@ public class HttpVoiceEngineTests
         VoiceEngineStore.Delete(model.SelectedEngine.Value!.Id);
         await details.Regenerate();
         Assert.That(details.Message.Value, Does.Contain("接続先").And.Contain("見つかりません"));
-        Assert.That(server.SynthesisCount, Is.EqualTo(2), "Missing connections must never fall back to a different engine.");
+        Assert.That(server.SynthesisCount, Is.EqualTo(3), "Missing connections must never fall back to a different engine.");
     }
 
     [AvaloniaTest]
@@ -187,27 +257,35 @@ public class HttpVoiceEngineTests
             var voiceView = view.FindControl<VoiceEditorView>("VoiceEditor")!;
             var menuButton = voiceView.FindControl<Button>("EngineMenuButton")!;
             var menu = (FAMenuFlyout)menuButton.Flyout!;
-            menu.ShowAt(menuButton);
-            await Settle();
-            menu.Hide();
-            menu.Items.OfType<FAMenuFlyoutItem>().Single(x => x.Text == "接続先を追加…")
-                .RaiseEvent(new RoutedEventArgs(FAMenuFlyoutItem.ClickEvent));
-            await Settle();
-            var flyout = (Flyout)FlyoutBase.GetAttachedFlyout(menuButton)!;
+            async Task<Flyout> OpenConnectionEditor(string action)
+            {
+                menu.ShowAt(menuButton);
+                await Settle();
+                menu.Hide();
+                menu.Items.OfType<FAMenuFlyoutItem>().Single(x => x.Text == action)
+                    .RaiseEvent(new RoutedEventArgs(FAMenuFlyoutItem.ClickEvent));
+                await Settle();
+                return (Flyout)FlyoutBase.GetAttachedFlyout(menuButton)!;
+            }
+            static async Task Save(Flyout target)
+            {
+                ((StackPanel)target.Content!).Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                var save = ((StackPanel)target.Content!).Children.OfType<Button>().Single();
+                for (int i = 0; !save.IsEnabled && i < 500; i++) await Task.Delay(10);
+                await Settle();
+            }
+            var flyout = await OpenConnectionEditor("接続先を追加…");
             var content = (StackPanel)flyout.Content!;
             var inputs = content.Children.OfType<TextBox>().ToArray();
             inputs[0].Text = "Aivis テスト";
             inputs[1].Text = "invalid-url";
-            content.Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await Settle();
+            await Save(flyout);
             Assert.That(flyout.IsOpen, Is.True);
             Assert.That(inputs[0].Text, Is.EqualTo("Aivis テスト"));
             Assert.That(model.ConnectionMessage.Value, Does.Contain("URL"));
             inputs[1].Text = server.Url;
             Capture(TopLevel.GetTopLevel(flyout.Popup.Child)!, $"connection-{width}");
-            content.Children.OfType<Button>().Single().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            for (int i = 0; model.IsConnecting.Value && i < 500; i++) await Task.Delay(10);
-            await Settle();
+            await Save(flyout);
             Assert.That(flyout.IsOpen, Is.False, model.ConnectionMessage.Value);
             Assert.That(model.ShowCoreInstallPrompt.Value, Is.False);
             Assert.That(model.IsEnabled.Value, Is.True);
@@ -231,6 +309,24 @@ public class HttpVoiceEngineTests
             Assert.That(voiceView.FindControl<Expander>("AccentExpander")!.IsVisible, Is.True);
             model.ApplyPreset();
             Assert.That(model.IsHttpEngine.Value, Is.True);
+            Assert.That(model.TempoDynamicsScale.Value, Is.EqualTo(1.5));
+
+            var connectionId = model.SelectedEngine.Value!.Id;
+            flyout = await OpenConnectionEditor("接続先を編集…");
+            VoiceEngineStore.Delete(connectionId);
+            await Save(flyout);
+            Assert.That(flyout.IsOpen, Is.True);
+            Assert.That(model.ConnectionMessage.Value, Does.Contain("削除"));
+            Assert.That(VoiceEngineStore.Load(), Is.Empty, "An editor opened before deletion must not recreate the connection.");
+            Capture(TopLevel.GetTopLevel(flyout.Popup.Child)!, $"connection-deleted-{width}");
+            flyout.Hide();
+
+            flyout = await OpenConnectionEditor("接続先を編集…");
+            ((StackPanel)flyout.Content!).Children.OfType<TextBox>().Last().Text = server.Url;
+            await Save(flyout);
+            Assert.That(flyout.IsOpen, Is.False, model.ConnectionMessage.Value);
+            Assert.That(VoiceEngineStore.Load().Single().Id, Is.EqualTo(connectionId));
+            Assert.That(model.SelectedStyle.Value, Is.Not.Null, "Editing a missing connection must restore its original preset identity.");
             Assert.That(model.TempoDynamicsScale.Value, Is.EqualTo(1.5));
         }
         finally { window.Close(); }
@@ -315,12 +411,19 @@ public class HttpVoiceEngineTests
         public int SynthesisCount { get; private set; }
         public bool FailSynthesis { get; set; }
         public bool AdjustPitch { get; set; } = true;
+        public string EngineUuid { get; set; }
+        public int ManifestStatus { get; set; }
+        public string? PauseAt { get; set; }
+        public TaskCompletionSource Paused { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? LastText { get; private set; }
         public string? LastStyle { get; private set; }
         public JsonNode? LastQuery { get; private set; }
 
         public EngineServer(bool aivis = false, long style = 7, bool manifest = true)
         {
+            EngineUuid = aivis ? VoiceEngineCapabilities.AivisSpeechUuid : "compatible-engine";
+            ManifestStatus = manifest ? 200 : 404;
             using var port = new TcpListener(IPAddress.Loopback, 0);
             port.Start();
             int number = ((IPEndPoint)port.LocalEndpoint).Port;
@@ -337,6 +440,11 @@ public class HttpVoiceEngineTests
                     {
                         var context = await _listener.GetContextAsync();
                         string endpoint = context.Request.Url!.AbsolutePath;
+                        if (endpoint == PauseAt)
+                        {
+                            Paused.TrySetResult();
+                            await Resume.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                        }
                         object? result = null;
                         if (endpoint == "/tts/version") result = "test-1";
                         else if (endpoint == "/tts/speakers") result = new[] { new VoiceMetadata
@@ -344,12 +452,13 @@ public class HttpVoiceEngineTests
                             Name = "テスト話者", SpeakerUuid = "same-speaker", Version = "model-1",
                             Styles = [new() { Id = style, Name = "通常", Type = aivis ? "talk" : "streaming_talk" }, new() { Id = 999, Name = "歌唱", Type = "sing" }]
                         } };
-                        else if (endpoint == "/tts/engine_manifest" && manifest) result = new
+                        else if (endpoint == "/tts/engine_manifest" && ManifestStatus == 200) result = new
                         {
                             name = aivis ? "AivisSpeech Engine" : "Compatible engine",
-                            uuid = aivis ? VoiceEngineCapabilities.AivisSpeechUuid : "compatible-engine",
+                            uuid = EngineUuid,
                             supported_features = new { adjust_mora_pitch = !aivis, adjust_pitch_scale = AdjustPitch }
                         };
+                        else if (endpoint == "/tts/engine_manifest") context.Response.StatusCode = ManifestStatus;
                         else if (endpoint == "/tts/audio_query")
                         {
                             LastText = context.Request.QueryString["text"];
@@ -397,6 +506,7 @@ public class HttpVoiceEngineTests
 
         public void Dispose()
         {
+            Resume.TrySetResult();
             _listener.Stop();
             _loop.GetAwaiter().GetResult();
             _listener.Close();

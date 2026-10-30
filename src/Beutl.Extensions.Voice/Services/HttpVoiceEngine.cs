@@ -43,8 +43,8 @@ internal static class HttpVoiceEngine
         return connection with
         {
             Name = string.IsNullOrWhiteSpace(connection.Name) ? (string?)manifest?["name"] ?? new Uri(connection.Url).Authority : connection.Name.Trim(),
-            EngineUuid = (string?)manifest?["uuid"] ?? "", Version = (string?)await versionTask ?? (string?)manifest?["version"] ?? "",
-            Capabilities = VoiceEngineCapabilities.FromManifest(manifest), Voices = voices
+            EngineUuid = (string?)manifest?["uuid"] ?? connection.EngineUuid, Version = (string?)await versionTask ?? (string?)manifest?["version"] ?? "",
+            Capabilities = manifest == null ? connection.Capabilities : VoiceEngineCapabilities.FromManifest(manifest), Voices = voices
         };
     }
 
