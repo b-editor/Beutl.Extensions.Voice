@@ -40,7 +40,7 @@
                 <Expander x:Name="SpeakersSection" Header="話者の割り当て" IsExpanded="True"
                           Theme="{StaticResource ToolTabExpanderTheme}">
                     <StackPanel Margin="8" Spacing="8">
-                        <TextBlock FontSize="11" TextWrapping="Wrap" Text="台本内の話者名ごとに、声とスタイルを選択します。"
+                        <TextBlock FontSize="11" TextWrapping="Wrap" Text="台本内の話者名ごとにプリセットを選択します。"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         <Button Content="プリセットを再読み込み" Command="{Binding RefreshPresets}" />
                         <ItemsControl ItemsSource="{Binding Speakers}">
@@ -49,42 +49,15 @@
                                     <Border Padding="0,8" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1">
                                         <StackPanel Spacing="6">
                                             <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <ComboBox HorizontalAlignment="Stretch" PlaceholderText="プリセット（任意）"
-                                                          AutomationProperties.Name="声のプリセット"
-                                                          ItemsSource="{Binding Presets.Value}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="models:VoicePreset">
-                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-                                                <Button Grid.Column="1" Margin="4,0,0,0" Content="適用" Command="{Binding ApplyPreset}" />
-                                            </Grid>
-                                            <Grid ColumnDefinitions="*,8,*" RowDefinitions="Auto,4,Auto" IsEnabled="{Binding IsEnabled.Value}">
-                                                <TextBlock Text="話者" />
-                                                <TextBlock Grid.Column="2" Text="スタイル" />
-                                                <ComboBox Grid.Row="2" HorizontalAlignment="Stretch" PlaceholderText="話者を選択"
-                                                          AutomationProperties.Name="話者"
-                                                          ItemsSource="{Binding Voice.Value}" SelectedItem="{Binding SelectedVoice.Value, Mode=TwoWay}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="models:VoiceMetadata">
-                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-                                                <ComboBox Grid.Row="2" Grid.Column="2" HorizontalAlignment="Stretch" PlaceholderText="スタイル"
-                                                          AutomationProperties.Name="スタイル"
-                                                          ItemsSource="{Binding SelectedVoice.Value.Styles}" SelectedItem="{Binding SelectedStyle.Value, Mode=TwoWay}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="models:VoiceStyle">
-                                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-                                            </Grid>
-                                            <TextBlock FontSize="11" TextWrapping="Wrap" Text="{Binding Message.Value}"
-                                                       IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                            <ComboBox HorizontalAlignment="Stretch" PlaceholderText="プリセットを選択"
+                                                      AutomationProperties.Name="声のプリセット"
+                                                      ItemsSource="{Binding Presets.Value}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="models:VoicePreset">
+                                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
@@ -92,20 +65,14 @@
                         </ItemsControl>
                     </StackPanel>
                 </Expander>
-                <Expander x:Name="LinesSection" Header="セリフの確認・編集" IsExpanded="True"
+                <Expander x:Name="LinesSection" Header="セリフの確認" IsExpanded="False"
                           Theme="{StaticResource ToolTabExpanderTheme}">
                     <ItemsControl Margin="8" ItemsSource="{Binding Lines}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:ScriptLineViewModel">
+                            <DataTemplate x:DataType="models:ScriptLine">
                                 <StackPanel Spacing="4" Margin="0,0,0,12">
-                                    <Grid ColumnDefinitions="Auto,*,Auto">
-                                        <TextBlock Margin="0,0,8,0" VerticalAlignment="Center" Text="{Binding Number.Value}" />
-                                        <TextBox Grid.Column="1" Text="{Binding Speaker.Value, Mode=TwoWay, UpdateSourceTrigger=LostFocus}"
-                                                 PlaceholderText="話者未指定" AutomationProperties.Name="台本内の話者名" />
-                                        <Button Grid.Column="2" Margin="4,0,0,0" Content="削除" Command="{Binding Remove}" />
-                                    </Grid>
-                                    <TextBox Text="{Binding Text.Value, Mode=TwoWay}" TextWrapping="Wrap" AcceptsReturn="True"
-                                             MinHeight="64" MaxHeight="160" VerticalContentAlignment="Top" AutomationProperties.Name="セリフ" />
+                                    <TextBlock Text="{Binding DisplaySpeaker}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap" />
                                 </StackPanel>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

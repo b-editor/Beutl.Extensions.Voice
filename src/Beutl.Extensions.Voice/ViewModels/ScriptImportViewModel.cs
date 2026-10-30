@@ -23,11 +23,10 @@ public sealed class ScriptImportViewModel : IToolContext
     private readonly Func<string, VoiceSettings, VoiceSynthesisResult> _synthesize;
     private readonly ILogger _logger = Log.CreateLogger<ScriptImportViewModel>();
     private readonly IDisposable _loaderSubscription;
-    // Keep assignments when an alias is temporarily removed or corrected in the preview.
+    // Keep assignments when the source script is edited and imported again.
     private readonly Dictionary<string, ScriptSpeakerViewModel> _assignments = new(StringComparer.Ordinal);
     private VoicePreset[] _presets = [];
     private CancellationTokenSource? _cancellation;
-    private bool _resetting;
     private bool _disposed;
 
     public ScriptImportViewModel(ScriptTabExtension extension, IEditorContext editor)
@@ -61,7 +60,7 @@ public sealed class ScriptImportViewModel : IToolContext
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("台本読み込み");
     public ReactivePropertySlim<string> RawText { get; } = new("");
     public ReactivePropertySlim<bool> HasSpeakerNames { get; } = new(true);
-    public ObservableCollection<ScriptLineViewModel> Lines { get; } = [];
+    public ObservableCollection<ScriptLine> Lines { get; } = [];
     public ObservableCollection<ScriptSpeakerViewModel> Speakers { get; } = [];
     public ReactivePropertySlim<double> StartSeconds { get; } = new();
     public ReactivePropertySlim<double> GapSeconds { get; } = new(0.2);
@@ -101,30 +100,9 @@ public sealed class ScriptImportViewModel : IToolContext
 
     private void SetLines(IEnumerable<ScriptLine> lines)
     {
-        _resetting = true;
-        try
-        {
-            foreach (var row in Lines) row.Dispose();
-            Lines.Clear();
-            foreach (var line in lines)
-                Lines.Add(new ScriptLineViewModel(line, SynchronizeSpeakers, RemoveLine));
-        }
-        finally { _resetting = false; }
-        SynchronizeSpeakers();
-    }
-
-    private void RemoveLine(ScriptLineViewModel line)
-    {
-        if (IsGenerating.Value || !Lines.Remove(line)) return;
-        line.Dispose();
-        SynchronizeSpeakers();
-    }
-
-    private void SynchronizeSpeakers()
-    {
-        if (_resetting) return;
-        for (int i = 0; i < Lines.Count; i++) Lines[i].Number.Value = i + 1;
-        string[] names = Lines.Select(x => x.Speaker.Value.Trim()).Distinct(StringComparer.Ordinal).ToArray();
+        Lines.Clear();
+        foreach (var line in lines) Lines.Add(line);
+        string[] names = Lines.Select(x => x.Speaker).Distinct(StringComparer.Ordinal).ToArray();
         if (Speakers.Select(x => x.Name).SequenceEqual(names)) return;
         Speakers.Clear();
         foreach (string name in names)
@@ -164,7 +142,7 @@ public sealed class ScriptImportViewModel : IToolContext
                 var request = requests[i];
                 Message.Value = $"音声を生成中… {i + 1} / {requests.Length}（{request.Speaker}）";
                 failureContext = $"{i + 1} 件目（{request.Speaker}）の音声生成を確認してください。";
-                var output = await Task.Run(() => _synthesize(request.Text, request.Settings), token);
+                var output = await Task.Run(() => _synthesize(request.Text, request.Preset.Settings), token);
                 token.ThrowIfCancellationRequested();
                 string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
                 paths.Add(path);
@@ -173,7 +151,7 @@ public sealed class ScriptImportViewModel : IToolContext
                 var generation = new VoiceGeneration
                 {
                     Text = request.Text, Settings = output.Settings, AudioQueryJson = output.Json,
-                    PresetId = request.Preset?.Id, PresetName = request.Preset?.Name
+                    PresetId = request.Preset.Id, PresetName = request.Preset.Name
                 };
                 var element = VoiceElementFactory.Create(_scene, path, generation, start, request.Layer);
                 elements.Add(element);
@@ -218,16 +196,15 @@ public sealed class ScriptImportViewModel : IToolContext
         if (!double.IsFinite(StartSeconds.Value) || StartSeconds.Value < 0 ||
             !double.IsFinite(GapSeconds.Value) || GapSeconds.Value < 0 || FirstLayer.Value < 0)
             throw new InvalidOperationException("開始位置、間隔、レイヤーには 0 以上の値を指定してください。");
-        SynchronizeSpeakers();
         var requests = Lines.Select((line, i) =>
         {
-            if (string.IsNullOrWhiteSpace(line.Text.Value))
+            if (string.IsNullOrWhiteSpace(line.Text))
                 throw new InvalidOperationException($"{i + 1} 件目のセリフを入力してください。");
-            var speaker = _assignments[line.Speaker.Value.Trim()];
-            var settings = speaker.AvailableSettings
-                ?? throw new InvalidOperationException($"「{speaker.DisplayName}」の話者とスタイルを選択してください。");
+            var speaker = _assignments[line.Speaker];
+            var preset = speaker.SelectedPreset.Value
+                ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
             int layer = checked(FirstLayer.Value + (SeparateLayers.Value ? Speakers.IndexOf(speaker) : 0));
-            return new Request(line.Text.Value, speaker.DisplayName, settings, speaker.AppliedPreset, layer);
+            return new Request(line.Text, speaker.DisplayName, preset, layer);
         }).ToArray();
         CheckLayers(requests);
         return requests;
@@ -244,8 +221,8 @@ public sealed class ScriptImportViewModel : IToolContext
         json["Script"] = JsonSerializer.SerializeToNode(new State
         {
             RawText = RawText.Value, HasSpeakerNames = HasSpeakerNames.Value,
-            Lines = Lines.Select(x => x.Capture()).ToArray(),
-            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.Settings, x.AppliedPreset)).ToArray(),
+            Lines = Lines.ToArray(),
+            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.SelectedPreset.Value)).ToArray(),
             StartSeconds = StartSeconds.Value, GapSeconds = GapSeconds.Value,
             FirstLayer = FirstLayer.Value, SeparateLayers = SeparateLayers.Value
         });
@@ -260,13 +237,12 @@ public sealed class ScriptImportViewModel : IToolContext
         GapSeconds.Value = state.GapSeconds;
         FirstLayer.Value = state.FirstLayer;
         SeparateLayers.Value = state.SeparateLayers;
-        foreach (var speaker in _assignments.Values) speaker.Dispose();
         _assignments.Clear();
         Speakers.Clear();
         foreach (var saved in state.Speakers)
         {
             var speaker = new ScriptSpeakerViewModel(saved.Name, _presets);
-            speaker.Restore(saved.Settings, saved.Preset);
+            speaker.SelectedPreset.Value = _presets.FirstOrDefault(x => x.Id == saved.Preset?.Id);
             _assignments.Add(saved.Name, speaker);
         }
         SetLines(state.Lines);
@@ -279,12 +255,10 @@ public sealed class ScriptImportViewModel : IToolContext
         _disposed = true;
         Cancel();
         _loaderSubscription.Dispose();
-        foreach (var row in Lines) row.Dispose();
-        foreach (var speaker in _assignments.Values) speaker.Dispose();
     }
 
-    private sealed record Request(string Text, string Speaker, VoiceSettings Settings, VoicePreset? Preset, int Layer);
-    private sealed record SpeakerState(string Name, VoiceSettings? Settings, VoicePreset? Preset);
+    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);
+    private sealed record SpeakerState(string Name, VoicePreset? Preset);
     private sealed record State
     {
         public string RawText { get; init; } = "";

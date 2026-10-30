@@ -25,10 +25,18 @@ public class ScriptImportTests
     private const string Script = "案内役: こんにちは。\nゲスト： よろしくお願いします。\n案内役: 始めましょう。";
     private string _directory = null!;
     private string? _previousHome;
-    private static readonly VoiceMetadata[] Voices =
+    private static readonly VoicePreset[] Presets =
     [
-        new() { Name = "テスト話者A", SpeakerUuid = "a", Version = "1", Styles = [new() { Id = 1, Name = "通常" }, new() { Id = 2, Name = "ささやき" }] },
-        new() { Name = "テスト話者B", SpeakerUuid = "b", Version = "1", Styles = [new() { Id = 3, Name = "通常" }] }
+        new() { Name = "案内役の声", Settings = new()
+        {
+            SpeakerUuid = "a", SpeakerName = "テスト話者A", StyleId = 2, StyleName = "ささやき", ModelVersion = "1",
+            SpeedScale = 1.25, PitchScale = -0.05, IntonationScale = 0.8, VolumeScale = 0.6,
+            PrePhonemeLength = 0.3, PostPhonemeLength = 0.4
+        } },
+        new() { Name = "ゲストの声", Settings = new()
+        {
+            SpeakerUuid = "b", SpeakerName = "テスト話者B", StyleId = 3, StyleName = "通常", ModelVersion = "1"
+        } }
     ];
 
     [SetUp]
@@ -38,6 +46,7 @@ public class ScriptImportTests
         Directory.CreateDirectory(_directory);
         _previousHome = Environment.GetEnvironmentVariable("BEUTL_HOME");
         Environment.SetEnvironmentVariable("BEUTL_HOME", _directory);
+        foreach (var preset in Presets) VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
     }
 
     [TearDown]
@@ -49,14 +58,12 @@ public class ScriptImportTests
 
     private TestEditor Editor() => new(Path.Combine(_directory, "scene.bescene"));
 
-    private static void AssignVoices(ScriptImportViewModel model)
+    private static void AssignPresets(ScriptImportViewModel model)
     {
         for (int i = 0; i < model.Speakers.Count; i++)
         {
             var speaker = model.Speakers[i];
-            speaker.Voice.Value = Voices;
-            speaker.SelectedVoice.Value = Voices[i % Voices.Length];
-            speaker.IsEnabled.Value = true;
+            speaker.SelectedPreset.Value = speaker.Presets.Value.Single(x => x.Id == Presets[i % Presets.Length].Id);
         }
         model.IsVoiceVoxInstalled.Value = true;
     }
@@ -94,7 +101,7 @@ public class ScriptImportTests
     }
 
     [AvaloniaTest]
-    public async Task Unknown_speakers_keep_edits_and_assignments_across_retry_and_tab_restore()
+    public async Task Reimport_and_tab_restore_keep_source_script_and_preset_assignments()
     {
         using var editor = Editor();
         using var model = new ScriptImportViewModel(new(), editor, Wave);
@@ -104,23 +111,15 @@ public class ScriptImportTests
         await model.Generate();
         Assert.That(model.Message.Value, Does.Contain("案内役").And.Contain("選択してください"));
         Assert.That(model.Lines, Has.Count.EqualTo(3));
-        AssignVoices(model);
+        AssignPresets(model);
         var first = model.Speakers[0];
-        first.SpeedScale.Value = 1.3;
-        var preset = new VoicePreset { Name = "追加したプリセット", Settings = first.Settings! };
-        VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
-        model.RefreshPresets();
-        first.SelectedPreset.Value = first.Presets.Value.Single();
-        first.ApplyPreset();
-        VoicePresetStore.Delete(VoicePresetStore.GlobalPath, preset.Id);
-        model.RefreshPresets();
-        Assert.That(first.SelectedPreset.Value, Is.Null);
-        Assert.That(first.AppliedPreset, Is.EqualTo(preset), "Refreshing the list must retain the applied settings snapshot.");
-        model.Lines[0].Text.Value = "編集済みのセリフ";
-        model.Lines[0].Speaker.Value = "新しい話者";
-        Assert.That(model.Speakers.Select(x => x.Name), Is.EqualTo(new[] { "新しい話者", "ゲスト", "案内役" }));
-        model.Lines[0].Speaker.Value = "案内役";
+        model.RawText.Value = Script.Replace("案内役", "新しい話者");
+        model.ImportText();
+        Assert.That(model.Speakers[0].SelectedPreset.Value, Is.Null);
+        model.RawText.Value = Script.Replace("こんにちは。", "元の台本で修正したセリフ");
+        model.ImportText();
         Assert.That(model.Speakers[0], Is.SameAs(first));
+        Assert.That(first.SelectedPreset.Value, Is.EqualTo(Presets[0]));
         model.StartSeconds.Value = 2.5;
         model.GapSeconds.Value = 0.35;
         model.FirstLayer.Value = 4;
@@ -129,17 +128,17 @@ public class ScriptImportTests
         model.WriteToJson(state);
         using var restored = new ScriptImportViewModel(new(), editor, Wave);
         restored.ReadFromJson(state);
-        Assert.That(restored.RawText.Value, Is.EqualTo(Script));
-        Assert.That(restored.Lines[0].Text.Value, Is.EqualTo("編集済みのセリフ"));
-        Assert.That(restored.Speakers[0].Settings, Is.EqualTo(first.Settings));
-        Assert.That(restored.Speakers[0].AppliedPreset, Is.EqualTo(preset));
+        Assert.That(restored.RawText.Value, Is.EqualTo(model.RawText.Value));
+        Assert.That(restored.Lines[0].Text, Is.EqualTo("元の台本で修正したセリフ"));
+        Assert.That(restored.Speakers[0].SelectedPreset.Value, Is.EqualTo(first.SelectedPreset.Value));
         Assert.That(restored.StartSeconds.Value, Is.EqualTo(2.5));
         Assert.That(restored.GapSeconds.Value, Is.EqualTo(0.35));
         Assert.That(restored.FirstLayer.Value, Is.EqualTo(4));
         Assert.That(restored.SeparateLayers.Value, Is.True);
-        model.Lines[1].Remove();
+        model.RawText.Value = string.Join('\n', model.RawText.Value.Split('\n').Where(x => x.StartsWith("案内役")));
+        model.ImportText();
         Assert.That(model.Speakers.Single(), Is.SameAs(first));
-        Assert.That(model.Lines.Select(x => x.Number.Value), Is.EqualTo(new[] { 1, 2 }));
+        Assert.That(model.Lines, Has.Count.EqualTo(2));
         await model.Generate();
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(2), model.Message.Value);
     }
@@ -149,20 +148,13 @@ public class ScriptImportTests
     [TestCase(true)]
     public async Task Batch_uses_wav_durations_order_and_settings_and_is_one_undo(bool separateLayers)
     {
-        var preset = new VoicePreset { Name = "案内用", Settings = new()
-        {
-            SpeakerUuid = "a", SpeakerName = Voices[0].Name, StyleId = 2, StyleName = "ささやき", ModelVersion = "1", SpeedScale = 1.25
-        } };
-        VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         using var editor = Editor();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         using var model = new ScriptImportViewModel(new(), editor, Wave);
         model.RawText.Value = Script;
         model.ImportText();
-        AssignVoices(model);
-        model.Speakers[0].SelectedPreset.Value = model.Speakers[0].Presets.Value.Single();
-        model.Speakers[0].ApplyPreset();
+        AssignPresets(model);
         model.StartSeconds.Value = 2.25;
         model.GapSeconds.Value = 0.15;
         model.FirstLayer.Value = 4;
@@ -175,14 +167,17 @@ public class ScriptImportTests
         {
             var element = elements[i];
             var generation = element.Objects.OfType<TtsController>().Single().Generation.Value!;
-            Assert.That(generation.Text, Is.EqualTo(model.Lines[i].Text.Value));
-            Assert.That(generation.Settings.SpeakerUuid, Is.EqualTo(i == 1 ? "b" : "a"));
-            Assert.That(generation.Settings.StyleId, Is.EqualTo(i == 1 ? 3 : 2));
-            if (i != 1)
+            var preset = Presets[i == 1 ? 1 : 0];
+            Assert.That(generation.Text, Is.EqualTo(model.Lines[i].Text));
+            Assert.That(generation.PresetId, Is.EqualTo(preset.Id));
+            Assert.That(generation.Settings, Is.EqualTo(preset.Settings));
+            var query = JsonSerializer.Deserialize<AudioQueryModel>(generation.AudioQueryJson)!;
+            Assert.That(new[] { query.SpeedScale, query.PitchScale, query.IntonationScale, query.VolumeScale,
+                query.PrePhonemeLength, query.PostPhonemeLength }, Is.EqualTo(new[]
             {
-                Assert.That(generation.PresetId, Is.EqualTo(preset.Id));
-                Assert.That(generation.Settings.SpeedScale, Is.EqualTo(1.25));
-            }
+                preset.Settings.SpeedScale, preset.Settings.PitchScale, preset.Settings.IntonationScale,
+                preset.Settings.VolumeScale, preset.Settings.PrePhonemeLength, preset.Settings.PostPhonemeLength
+            }));
             Assert.That(element.Start.Value, Is.EqualTo(start));
             Assert.That(element.ZIndex.Value, Is.EqualTo(separateLayers && i == 1 ? 5 : 4));
             Assert.That(element.TryGetOriginalDuration(out var actualDuration), Is.True);
@@ -231,7 +226,7 @@ public class ScriptImportTests
         });
         model.RawText.Value = Script;
         model.ImportText();
-        AssignVoices(model);
+        AssignPresets(model);
         var generationTask = model.Generate();
         try
         {
@@ -248,7 +243,7 @@ public class ScriptImportTests
         Assert.That(Directory.GetFiles(Path.Combine(_directory, "resources", "tts")), Is.Empty);
         Assert.That(model.RawText.Value, Is.EqualTo(Script));
         Assert.That(model.Lines, Has.Count.EqualTo(3));
-        Assert.That(model.Speakers[0].AvailableSettings, Is.Not.Null);
+        Assert.That(model.Speakers[0].SelectedPreset.Value, Is.Not.Null);
         model.FirstLayer.Value = 3;
         await model.Generate();
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(4), model.Message.Value);
@@ -258,7 +253,7 @@ public class ScriptImportTests
     [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Tab_supports_editing_and_keeps_controls_inside_narrow_layout(int width, bool light)
+    public async Task Tab_selects_presets_directly_and_previews_lines_without_editors(int width, bool light)
     {
         using var editor = Editor();
         using var model = new ScriptImportViewModel(new(), editor, Wave);
@@ -272,53 +267,44 @@ public class ScriptImportTests
             await Settle();
             view.FindControl<TextBox>("ScriptTextBox")!.Text = Script;
             view.FindControl<Button>("ImportScriptButton")!.Command!.Execute(null);
-            AssignVoices(model);
             await Settle();
+            var speakerSection = view.FindControl<Expander>("SpeakersSection")!;
+            var selectors = speakerSection.GetVisualDescendants().OfType<ComboBox>().ToArray();
+            Assert.That(selectors, Has.Length.EqualTo(2), "Each script speaker has only a preset selector.");
+            for (int i = 0; i < selectors.Length; i++)
+                selectors[i].SelectedItem = model.Speakers[i].Presets.Value.Single(x => x.Id == Presets[i].Id);
+            Assert.That(speakerSection.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "適用")), Is.False);
             Capture("input");
             view.FindControl<Expander>("InputSection")!.IsExpanded = false;
             await Settle();
-            var speakerSection = view.FindControl<Expander>("SpeakersSection")!;
-            var voiceSelector = speakerSection.GetVisualDescendants().OfType<ComboBox>()
-                .First(x => ReferenceEquals(x.ItemsSource, model.Speakers[0].Voice.Value));
-            voiceSelector.SelectedItem = Voices[1];
-            var styleSelector = speakerSection.GetVisualDescendants().OfType<ComboBox>()
-                .First(x => ReferenceEquals(x.DataContext, model.Speakers[0]) && ReferenceEquals(x.ItemsSource, Voices[1].Styles));
-            styleSelector.SelectedItem = Voices[1].Styles[0];
-            Assert.That(model.Speakers[0].AvailableSettings!.SpeakerUuid, Is.EqualTo("b"));
-            var preset = new VoicePreset { Name = "案内役の声", Settings = new()
-            {
-                SpeakerUuid = "a", SpeakerName = Voices[0].Name, StyleId = 2, StyleName = "ささやき", ModelVersion = "1", SpeedScale = 1.2
-            } };
-            VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
-            model.RefreshPresets();
-            var presetSelector = speakerSection.GetVisualDescendants().OfType<ComboBox>()
-                .First(x => ReferenceEquals(x.ItemsSource, model.Speakers[0].Presets.Value));
-            presetSelector.SelectedItem = model.Speakers[0].Presets.Value.Single();
-            speakerSection.GetVisualDescendants().OfType<Button>()
-                .First(x => Equals(x.Content, "適用") && ReferenceEquals(x.DataContext, model.Speakers[0])).Command!.Execute(null);
-            Assert.That(model.Speakers[0].AvailableSettings, Is.EqualTo(preset.Settings));
             Capture("speakers");
+
+            // Replacing a saved preset keeps its ID selected and immediately uses its updated tuning.
+            var updated = Presets[0] with { Settings = Presets[0].Settings with { SpeedScale = 1.4 } };
+            VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
+            model.RefreshPresets();
+            Assert.That(selectors[0].SelectedItem, Is.EqualTo(updated));
+            VoicePresetStore.Delete(VoicePresetStore.GlobalPath, updated.Id);
+            model.RefreshPresets();
+            Assert.That(selectors[0].SelectedItem, Is.Null);
+            await model.Generate();
+            Assert.That(editor.Scene.Children, Is.Empty);
+            Assert.That(model.Message.Value, Does.Contain("案内役").And.Contain("プリセットを選択"));
+            VoicePresetStore.Save(VoicePresetStore.GlobalPath, updated);
+            model.RefreshPresets();
+            selectors[0].SelectedItem = model.Speakers[0].Presets.Value.Single(x => x.Id == updated.Id);
+
             speakerSection.IsExpanded = false;
+            var linesSection = view.FindControl<Expander>("LinesSection")!;
+            linesSection.IsExpanded = true;
             await Settle();
-            var firstText = view.FindControl<Expander>("LinesSection")!.GetVisualDescendants().OfType<TextBox>()
-                .First(x => x.AcceptsReturn);
-            firstText.Text = "画面から編集したセリフです。";
-            Assert.That(model.Lines[0].Text.Value, Is.EqualTo(firstText.Text));
-            var firstAlias = view.FindControl<Expander>("LinesSection")!.GetVisualDescendants().OfType<TextBox>()
-                .First(x => !x.AcceptsReturn);
-            firstAlias.Focus();
-            firstAlias.Text = "未割り当て";
-            firstText.Focus();
-            await Settle();
-            Assert.That(model.Lines[0].Speaker.Value, Is.EqualTo("未割り当て"));
-            Assert.That(model.Speakers.Single(x => x.Name == "案内役").AvailableSettings, Is.EqualTo(preset.Settings));
-            firstAlias.Focus();
-            firstAlias.Text = "案内役";
-            firstText.Focus();
-            await Settle();
-            Assert.That(model.Speakers[0].AvailableSettings, Is.EqualTo(preset.Settings));
+            var preview = (Control)linesSection.Content!;
+            Assert.That(preview.GetVisualDescendants().OfType<TextBox>(), Is.Empty);
+            Assert.That(preview.GetVisualDescendants().OfType<Button>(), Is.Empty);
+            Assert.That(linesSection.GetVisualDescendants().OfType<TextBlock>().Select(x => x.Text),
+                Does.Contain("こんにちは。").And.Contain("よろしくお願いします。"));
             Capture("lines");
-            view.FindControl<Expander>("LinesSection")!.IsExpanded = false;
+            linesSection.IsExpanded = false;
             await Settle();
             view.FindControl<NumericUpDown>("GapInput")!.Value = 0.3m;
             Assert.That(model.GapSeconds.Value, Is.EqualTo(0.3));
@@ -330,6 +316,8 @@ public class ScriptImportTests
             for (int i = 0; model.IsGenerating.Value && i < 500; i++) await Task.Delay(10);
             Assert.That(model.IsGenerating.Value, Is.False);
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(3), model.Message.Value);
+            Assert.That(editor.Scene.Children[0].Objects.OfType<TtsController>().Single().Generation.Value!.Settings,
+                Is.EqualTo(updated.Settings), "The ComboBox selection is the complete source of generation settings.");
 
             void Capture(string section)
             {
@@ -364,7 +352,20 @@ public class ScriptImportTests
             using var model = new ScriptImportViewModel(new(), editor);
             model.RawText.Value = "A:こんにちは。\nB:ありがとう。";
             model.ImportText();
-            for (int i = 0; i < 2; i++) model.Speakers[i].SelectedVoice.Value = model.Speakers[i].Voice.Value[i];
+            var voices = loader.VoiceSets.SelectMany(x => x.Metadata).DistinctBy(x => x.SpeakerUuid).Take(2).ToArray();
+            for (int i = 0; i < voices.Length; i++)
+            {
+                var voice = voices[i];
+                var style = voice.Styles[0];
+                var preset = new VoicePreset { Name = voice.Name, Settings = new()
+                {
+                    SpeakerUuid = voice.SpeakerUuid, SpeakerName = voice.Name, StyleId = style.Id,
+                    StyleName = style.Name, ModelVersion = voice.Version
+                } };
+                VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
+                model.RefreshPresets();
+                model.Speakers[i].SelectedPreset.Value = model.Speakers[i].Presets.Value.Single(x => x.Id == preset.Id);
+            }
             await model.Generate();
             Assert.That(editor.Scene.Children, Has.Count.EqualTo(2), model.Message.Value);
             var elements = editor.Scene.Children.ToArray();

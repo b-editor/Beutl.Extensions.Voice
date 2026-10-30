@@ -1,7 +1,12 @@
+using System.Text.Json.Serialization;
+
 namespace Beutl.Extensions.Voice.Models;
 
 public sealed record ScriptLine(string Speaker, string Text)
 {
+    [JsonIgnore]
+    public string DisplaySpeaker => Speaker.Length == 0 ? "話者未指定" : Speaker;
+
     public static ScriptLine[] Parse(string text, bool hasSpeakerNames)
     {
         var lines = new List<ScriptLine>();
