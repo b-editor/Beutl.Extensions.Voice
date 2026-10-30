@@ -1,0 +1,41 @@
+<UserControl x:Class="Beutl.Extensions.Voice.Views.LocalEngineSetupView"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
+             xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
+             x:CompileBindings="True" x:DataType="vm:LocalEngineSetupViewModel">
+    <StackPanel Spacing="8">
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="音声エンジンを探す" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button x:Name="CloseSetupButton" Grid.Column="1" Click="CloseClick"
+                    Theme="{StaticResource ToolTabBarIconButtonTheme}" ToolTip.Tip="閉じる" AutomationProperties.Name="セットアップを閉じる">
+                <icons:FluentIcon Icon="Dismiss" FontSize="16" />
+            </Button>
+        </Grid>
+        <Button x:Name="SearchEnginesButton" Content="再検索" Command="{Binding Refresh}" IsEnabled="{Binding !IsBusy.Value}" />
+        <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy.Value}" />
+        <TextBlock Text="{Binding Message.Value}" TextWrapping="Wrap" FontSize="12"
+                   IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <ItemsControl ItemsSource="{Binding Engines}" IsEnabled="{Binding !IsBusy.Value}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LocalEngineCandidateViewModel">
+                    <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="12" Margin="0,0,0,8">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding Engine.Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Engine.Url}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{Binding Status.Value}" FontSize="12" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding ApplicationPath.Value}" FontSize="12" TextTrimming="CharacterEllipsis"
+                                       ToolTip.Tip="{Binding ApplicationPath.Value}" IsVisible="{Binding ApplicationPath.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <WrapPanel Orientation="Horizontal">
+                                <Button x:Name="UseEngineButton" Content="{Binding ActionText.Value}" IsEnabled="{Binding CanUse.Value}"
+                                        Click="UseEngineClick" Classes="accent" Margin="0,0,8,4" />
+                                <Button x:Name="SelectApplicationButton" Content="アプリを選択…" Click="SelectApplicationClick" Margin="0,0,0,4" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>

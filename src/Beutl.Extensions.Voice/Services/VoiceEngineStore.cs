@@ -49,6 +49,21 @@ public static class VoiceEngineStore
 
     public static void Delete(string id) => Change(connections => connections.RemoveAll(x => x.Id == id));
 
+    internal static VoiceEngineConnection RegisterDiscovered(VoiceEngineConnection connection)
+    {
+        Change(connections =>
+        {
+            int index = connections.FindIndex(x => x.Url == connection.Url);
+            if (index < 0) connections.Add(connection);
+            else
+            {
+                connection = connection with { Id = connections[index].Id, Name = connections[index].Name };
+                connections[index] = connection;
+            }
+        });
+        return connection;
+    }
+
     private static int FindConnection(List<VoiceEngineConnection> connections, string id, string? expectedUrl)
     {
         int index = connections.FindIndex(x => x.Id == id);

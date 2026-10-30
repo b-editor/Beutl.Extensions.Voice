@@ -56,7 +56,7 @@ public class TtsLoader : Extension
     {
         if (!Preferences.ShouldPrompt || VoiceVoxLoader.Value?.IsInstalled == true)
             return null;
-        string message = "外部エンジンだけを使う場合は不要です。";
+        string message = "テキスト読み上げタブの「設定」から、インストール済みの音声エンジンを接続できます。VOICEVOX Coreのインストールは任意です。";
         try
         {
             if (VoiceEngineStore.Load().Length > 0) return null;
@@ -66,7 +66,7 @@ public class TtsLoader : Extension
             Log.CreateLogger<TtsLoader>().LogError(ex, "Failed to load voice engine connections");
             message = "外部エンジンの接続設定を読み込めませんでした。VOICEVOX Coreは必要な場合だけインストールしてください。";
         }
-        return new Notification("VOICEVOX Coreのセットアップ", message,
+        return new Notification("音声エンジンのセットアップ", message,
             OnClose: () => Preferences.Skip(false),
             Actions:
             [

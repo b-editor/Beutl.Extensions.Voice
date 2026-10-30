@@ -454,13 +454,14 @@ public class HttpVoiceEngineTests
         frame.Save(Path.Combine(directory, name + ".png"), new PngBitmapEncoderOptions());
     }
 
-    private sealed class EngineServer : IDisposable
+    internal sealed class EngineServer : IDisposable
     {
         private readonly HttpListener _listener = new();
         private readonly Task _loop;
         public string Url { get; }
         public int SynthesisCount { get; private set; }
         public bool FailSynthesis { get; set; }
+        public bool FailDiscovery { get; set; }
         public bool AdjustPitch { get; set; } = true;
         public string EngineUuid { get; set; }
         public int ManifestStatus { get; set; }
@@ -493,6 +494,12 @@ public class HttpVoiceEngineTests
                     {
                         var context = await _listener.GetContextAsync();
                         string endpoint = context.Request.Url!.AbsolutePath;
+                        if (endpoint == "/tts/speakers" && FailDiscovery)
+                        {
+                            context.Response.StatusCode = 503;
+                            context.Response.Close();
+                            continue;
+                        }
                         if (endpoint == PauseAt)
                         {
                             Paused.TrySetResult();

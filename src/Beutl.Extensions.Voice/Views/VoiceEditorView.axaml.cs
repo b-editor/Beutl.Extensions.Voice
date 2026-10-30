@@ -2,6 +2,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Interactivity;
+using Avalonia.VisualTree;
 using Beutl.Extensions.Voice.ViewModels;
 
 namespace Beutl.Extensions.Voice.Views;
@@ -22,6 +23,11 @@ public partial class VoiceEditorView : UserControl
         (DataContext as VoiceEditorViewModel)?.OnAccentPhrasesUpdated();
 
     private void AddConnectionClick(object? sender, RoutedEventArgs e) => ShowConnectionEditor(edit: false);
+    private void FindLocalEnginesClick(object? sender, RoutedEventArgs e)
+    {
+        if (this.FindAncestorOfType<TtsTabView>() is { } tab) tab.ShowSettings();
+        else LocalEngineSetupView.ShowIn(LocalEngineSetupHost, DataContext as VoiceEditorViewModel);
+    }
     private void EditConnectionClick(object? sender, RoutedEventArgs e) => ShowConnectionEditor(edit: true);
     private async void InstallCoreClick(object? sender, RoutedEventArgs e) => await VoiceVoxInstallDialog.ShowFor(this);
 
