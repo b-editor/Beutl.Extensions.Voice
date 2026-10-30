@@ -40,11 +40,12 @@ internal static class HttpVoiceEngine
             Styles = voice.Styles.Where(style => style.Type is not ("sing" or "singing_teacher" or "frame_decode")).ToArray()
         }).Where(voice => voice.Styles.Length > 0).ToArray();
         var manifest = await manifestTask as JsonObject;
+        string engineUuid = (string?)manifest?["uuid"] ?? connection.EngineUuid;
         return connection with
         {
             Name = string.IsNullOrWhiteSpace(connection.Name) ? (string?)manifest?["name"] ?? new Uri(connection.Url).Authority : connection.Name.Trim(),
-            EngineUuid = (string?)manifest?["uuid"] ?? connection.EngineUuid, Version = (string?)await versionTask ?? (string?)manifest?["version"] ?? "",
-            Capabilities = manifest == null ? connection.Capabilities : VoiceEngineCapabilities.FromManifest(manifest), Voices = voices
+            EngineUuid = engineUuid, Version = (string?)await versionTask ?? (string?)manifest?["version"] ?? connection.Version,
+            Capabilities = manifest == null ? connection.Capabilities : VoiceEngineCapabilities.FromManifest(manifest, engineUuid), Voices = voices
         };
     }
 

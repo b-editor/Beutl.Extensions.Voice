@@ -78,13 +78,14 @@ public class CoreSetupTests
     }
 
     [AvaloniaTest]
-    [TestCase(false)]
-    [TestCase(true)]
-    public void Startup_notification_respects_skip_and_persistent_opt_out(bool permanent)
+    [TestCase("今はスキップ", false)]
+    [TestCase("今後表示しない", true)]
+    [TestCase(null, false)]
+    public void Startup_notification_respects_skip_and_persistent_opt_out(string? action, bool permanent)
     {
         var notification = TtsLoader.CreateInstallNotification()!;
         Assert.That(notification.Type, Is.EqualTo(NotificationType.Information));
-        notification.Actions!.Single(x => x.Text == (permanent ? "今後表示しない" : "今はスキップ")).Callback();
+        if (action != null) notification.Actions!.Single(x => x.Text == action).Callback();
         notification.OnClose!();
         Assert.That(TtsLoader.CreateInstallNotification(), Is.Null);
         Assert.That(TtsLoader.Preferences.HideCoreInstallPrompt.Value, Is.EqualTo(permanent));
@@ -92,6 +93,111 @@ public class CoreSetupTests
         Assert.That(TtsLoader.CreateInstallNotification() != null, Is.EqualTo(!permanent));
         VoiceEngineStore.Save(new VoiceEngineConnection { Name = "外部エンジン", Url = "http://localhost:50021/" });
         Assert.That(TtsLoader.CreateInstallNotification(), Is.Null);
+    }
+
+    [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
+    public void Unreadable_connections_keep_optional_setup_available_and_respect_opt_out(bool malformed)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(VoiceEngineStore.GlobalPath)!);
+        string contents = malformed ? "{" : "[]";
+        File.WriteAllText(VoiceEngineStore.GlobalPath, contents);
+        Notification? notification;
+        using (var fileLock = malformed ? null : new FileStream(VoiceEngineStore.GlobalPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            notification = TtsLoader.CreateInstallNotification();
+        Assert.That(notification, Is.Not.Null);
+        Assert.That(notification!.Message, Does.Contain("接続設定を読み込めませんでした"));
+        Assert.That(notification.Message, Does.Contain("必要な場合"));
+        Assert.That(File.ReadAllText(VoiceEngineStore.GlobalPath), Is.EqualTo(contents));
+        notification.OnClose!();
+        Assert.That(TtsLoader.CreateInstallNotification(), Is.Null);
+        TtsLoader.Preferences.BeginSession();
+        TtsLoader.Preferences.HideCoreInstallPrompt.Value = true;
+        Assert.That(TtsLoader.CreateInstallNotification(), Is.Null);
+    }
+
+    [AvaloniaTest]
+    [TestCase(320, false)]
+    [TestCase(460, true)]
+    public async Task Script_core_assignments_offer_installation_and_retry_after_failure(int width, bool permanent)
+    {
+        var connection = new VoiceEngineConnection { Name = "HTTP", Url = "http://localhost:50021/" };
+        VoiceEngineStore.Save(connection);
+        var core = new VoicePreset { Name = "Core", Settings = new() };
+        var http = new VoicePreset { Name = "HTTP", Settings = new() { EngineId = connection.Id } };
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, core);
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, http);
+        using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
+        using var model = new ScriptImportViewModel(new(), editor);
+        model.RawText.Value = "A: おはよう。\nB: こんにちは。";
+        model.ImportText();
+        model.Speakers[0].SelectedPreset.Value = http;
+        model.Speakers[1].SelectedPreset.Value = http;
+        Assert.That(model.ShowCoreInstallPrompt.Value, Is.False);
+        model.Speakers[0].SelectedPreset.Value = core;
+        Assert.That(model.ShowCoreInstallPrompt.Value, Is.True);
+        var state = new JsonObject();
+        model.WriteToJson(state);
+        model.RawText.Value = "B: こんにちは。";
+        model.ImportText();
+        Assert.That(model.ShowCoreInstallPrompt.Value, Is.False, "Inactive assignments do not require Core.");
+        model.ReadFromJson(state);
+        Assert.That(model.ShowCoreInstallPrompt.Value, Is.True);
+        model.Speakers[0].SelectedPreset.Value = http;
+        Assert.That(model.ShowCoreInstallPrompt.Value, Is.False);
+        model.Speakers[0].SelectedPreset.Value = core;
+
+        var view = new ScriptImportView { DataContext = model };
+        var window = new Window { Width = width, Height = 600, Content = view,
+            RequestedThemeVariant = permanent ? ThemeVariant.Light : ThemeVariant.Dark };
+        try
+        {
+            window.Show();
+            await Settle();
+            var prompt = view.FindControl<CoreInstallPromptView>("CoreInstallPrompt")!;
+            Assert.That(prompt.IsEffectivelyVisible, Is.True);
+            Capture(window, $"script-core-preset-{width}");
+            prompt.FindControl<CheckBox>("NeverShowAgainCheckBox")!.IsChecked = permanent;
+            prompt.FindControl<Button>("InstallCoreButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Settle();
+            var dialog = window.GetVisualDescendants().OfType<VoiceVoxInstallDialog>().Single();
+            var installer = (VoiceVoxInstallDialogViewModel)dialog.DataContext!;
+            Assert.That(installer.DoNotShowAgain.Value, Is.EqualTo(permanent));
+            // The startup notification can already have dismissed itself after opening the installer.
+            TtsLoader.Preferences.Skip(false);
+            var primary = dialog.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "PrimaryButton");
+            primary.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Settle();
+            Assert.That(dialog.PrimaryButtonText, Is.EqualTo("インストール"));
+            // Publish the installer's failure state without starting downloads.
+            installer.Error.Value = "ダウンロード先に接続できませんでした。";
+            installer.IsCompleted.Value = true;
+            dialog.IsPrimaryButtonEnabled = false;
+            dialog.CloseButtonText = "閉じる";
+            await Settle();
+            Capture(window, $"setup-failed-{width}");
+            dialog.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "CloseButton")
+                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Settle();
+            Assert.That(model.ShowCoreInstallPrompt.Value, Is.EqualTo(!permanent));
+            Assert.That(TtsLoader.Preferences.HideCoreInstallPrompt.Value, Is.EqualTo(permanent));
+            if (!permanent)
+            {
+                prompt.FindControl<Button>("InstallCoreButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                await Settle();
+                var retry = window.GetVisualDescendants().OfType<VoiceVoxInstallDialog>().Single();
+                Assert.That(((VoiceVoxInstallDialogViewModel)retry.DataContext!).Error.Value, Is.Null.Or.Empty);
+                retry.Hide();
+                await Settle();
+            }
+        }
+        finally
+        {
+            foreach (var dialog in window.GetVisualDescendants().OfType<VoiceVoxInstallDialog>().ToArray()) dialog.Hide();
+            await Settle();
+            window.Close();
+        }
     }
 
     [AvaloniaTest]

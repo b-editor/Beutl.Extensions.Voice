@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Reactive.Disposables;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
@@ -24,6 +25,7 @@ public sealed class ScriptImportViewModel : IToolContext
     private readonly ILogger _logger = Log.CreateLogger<ScriptImportViewModel>();
     private readonly IDisposable _loaderSubscription;
     private readonly IDisposable _connectionSubscription;
+    private readonly CompositeDisposable _speakerSubscriptions = new();
     // Keep assignments when the source script is edited and imported again.
     private readonly Dictionary<string, ScriptSpeakerViewModel> _assignments = new(StringComparer.Ordinal);
     private VoicePreset[] _presets = [];
@@ -108,7 +110,12 @@ public sealed class ScriptImportViewModel : IToolContext
         Lines.Clear();
         foreach (var line in lines) Lines.Add(line);
         string[] names = Lines.Select(x => x.Speaker).Distinct(StringComparer.Ordinal).ToArray();
-        if (Speakers.Select(x => x.Name).SequenceEqual(names)) return;
+        if (Speakers.Select(x => x.Name).SequenceEqual(names))
+        {
+            UpdateInstallPrompt();
+            return;
+        }
+        _speakerSubscriptions.Clear();
         Speakers.Clear();
         foreach (string name in names)
         {
@@ -118,7 +125,9 @@ public sealed class ScriptImportViewModel : IToolContext
                 _assignments.Add(name, speaker);
             }
             Speakers.Add(speaker);
+            _speakerSubscriptions.Add(speaker.SelectedPreset.Subscribe(_ => UpdateInstallPrompt()));
         }
+        UpdateInstallPrompt();
     }
 
     public void Cancel() => _cancellation?.Cancel();
@@ -244,6 +253,7 @@ public sealed class ScriptImportViewModel : IToolContext
         GapSeconds.Value = state.GapSeconds;
         FirstLayer.Value = state.FirstLayer;
         SeparateLayers.Value = state.SeparateLayers;
+        _speakerSubscriptions.Clear();
         _assignments.Clear();
         Speakers.Clear();
         foreach (var saved in state.Speakers)
@@ -258,8 +268,18 @@ public sealed class ScriptImportViewModel : IToolContext
 
     private void UpdateInstallPrompt()
     {
-        try { ShowCoreInstallPrompt.Value = TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value && VoiceEngineStore.Load().Length == 0; }
-        catch (Exception ex) { Message.Value = $"接続先を読み込めませんでした: {ex.Message}"; }
+        bool canPrompt = TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value;
+        try
+        {
+            ShowCoreInstallPrompt.Value = canPrompt &&
+                (Speakers.Any(x => x.SelectedPreset.Value?.Settings.EngineId == VoiceSettings.CoreEngineId)
+                    || VoiceEngineStore.Load().Length == 0);
+        }
+        catch (Exception ex)
+        {
+            ShowCoreInstallPrompt.Value = canPrompt;
+            Message.Value = $"接続先を読み込めませんでした: {ex.Message}";
+        }
     }
 
     private void OnConnectionsChanged()
@@ -274,6 +294,7 @@ public sealed class ScriptImportViewModel : IToolContext
         Cancel();
         _loaderSubscription.Dispose();
         _connectionSubscription.Dispose();
+        _speakerSubscriptions.Dispose();
         VoiceEngineStore.Changed -= OnConnectionsChanged;
         TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }

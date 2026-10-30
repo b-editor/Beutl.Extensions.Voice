@@ -33,10 +33,10 @@ public sealed record VoiceEngineCapabilities
     [JsonIgnore]
     public string IntonationLabel => TempoDynamics ? "感情" : "抑揚";
 
-    internal static VoiceEngineCapabilities FromManifest(JsonObject? manifest)
+    internal static VoiceEngineCapabilities FromManifest(JsonObject? manifest, string engineUuid)
     {
         var features = manifest?["supported_features"] as JsonObject;
-        bool aivis = string.Equals((string?)manifest?["uuid"], AivisSpeechUuid, StringComparison.OrdinalIgnoreCase);
+        bool aivis = string.Equals(engineUuid, AivisSpeechUuid, StringComparison.OrdinalIgnoreCase);
         return new()
         {
             AdjustSpeed = Supports("adjust_speed_scale"), AdjustPitch = Supports("adjust_pitch_scale"),

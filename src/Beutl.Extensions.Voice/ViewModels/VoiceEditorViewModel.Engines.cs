@@ -131,10 +131,11 @@ public partial class VoiceEditorViewModel
         ConnectionMessage.Value = "接続しています…";
         try
         {
+            string? expectedUrl = Engines.Value.FirstOrDefault(x => x.Id == id)?.Url;
             var connection = new VoiceEngineConnection { Id = id ?? Guid.NewGuid().ToString("N"), Name = name, Url = url };
             connection = await HttpVoiceEngine.DiscoverAsync(connection);
             if (_disposed) return false;
-            VoiceEngineStore.Save(connection, allowCreate: id == null || restoreMissing);
+            VoiceEngineStore.Save(connection, allowCreate: id == null || restoreMissing, expectedUrl: expectedUrl);
             SelectedEngine.Value = Engines.Value.First(x => x.Id == connection.Id);
             ConnectionMessage.Value = $"{connection.Name} {connection.Version} に接続しました。";
             Message.Value = ConnectionMessage.Value;

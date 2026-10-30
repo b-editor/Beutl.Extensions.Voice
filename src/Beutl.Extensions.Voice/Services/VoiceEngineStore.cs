@@ -20,10 +20,10 @@ public static class VoiceEngineStore
                 : [];
     }
 
-    public static void Save(VoiceEngineConnection connection, bool allowCreate = true) => Change(connections =>
+    public static void Save(VoiceEngineConnection connection, bool allowCreate = true, string? expectedUrl = null) => Change(connections =>
     {
         if (connection.IsCore) throw new InvalidOperationException("内蔵エンジンの接続先は変更できません。");
-        int index = connections.FindIndex(x => x.Id == connection.Id);
+        int index = FindConnection(connections, connection.Id, expectedUrl);
         if (index < 0)
         {
             if (!allowCreate) throw new InvalidOperationException("接続先が削除されています。");
@@ -34,11 +34,9 @@ public static class VoiceEngineStore
 
     internal static void UpdateMetadata(VoiceEngineConnection connection) => Change(connections =>
     {
-        int index = connections.FindIndex(x => x.Id == connection.Id);
+        int index = FindConnection(connections, connection.Id, connection.Url);
         if (index < 0) throw new InvalidOperationException("接続先が削除されています。");
         var current = connections[index];
-        if (current.Url != connection.Url)
-            throw new InvalidOperationException("接続先が変更されています。もう一度再読み込みしてください。");
         connections[index] = current with
         {
             EngineUuid = connection.EngineUuid, Version = connection.Version,
@@ -47,6 +45,14 @@ public static class VoiceEngineStore
     });
 
     public static void Delete(string id) => Change(connections => connections.RemoveAll(x => x.Id == id));
+
+    private static int FindConnection(List<VoiceEngineConnection> connections, string id, string? expectedUrl)
+    {
+        int index = connections.FindIndex(x => x.Id == id);
+        if (index >= 0 && expectedUrl != null && connections[index].Url != expectedUrl)
+            throw new InvalidOperationException("接続先が変更されています。もう一度操作してください。");
+        return index;
+    }
 
     private static void Change(Action<List<VoiceEngineConnection>> change)
     {

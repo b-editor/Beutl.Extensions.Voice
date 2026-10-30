@@ -47,10 +47,11 @@ public class HttpVoiceEngineTests
 
     private TestEditor Editor() => new(Path.Combine(_directory, "scene.bescene"));
 
-    [TestCase(true, 200)]
-    [TestCase(false, 404)]
-    [TestCase(false, 501)]
-    public async Task Aivis_identity_and_tuning_survive_optional_manifest_changes(bool uppercaseUuid, int manifestStatus)
+    [TestCase(true, 200, false)]
+    [TestCase(false, 404, false)]
+    [TestCase(false, 501, false)]
+    [TestCase(false, 200, true)]
+    public async Task Aivis_identity_and_tuning_survive_optional_manifest_changes(bool uppercaseUuid, int manifestStatus, bool omitUuid)
     {
         using var server = new EngineServer(aivis: true) { AdjustPitch = false };
         if (uppercaseUuid) server.EngineUuid = server.EngineUuid.ToUpperInvariant();
@@ -58,23 +59,29 @@ public class HttpVoiceEngineTests
         Assert.That(engine.Capabilities.TempoDynamics, Is.True);
         VoiceEngineStore.Save(engine);
         server.ManifestStatus = manifestStatus;
+        server.VersionStatus = 404;
+        server.OmitUuid = omitUuid;
 
         var refreshed = await HttpVoiceEngine.DiscoverAsync(engine);
         Assert.That(refreshed.EngineUuid, Is.EqualTo(engine.EngineUuid));
         Assert.That(refreshed.Capabilities, Is.EqualTo(engine.Capabilities));
+        Assert.That(refreshed.Version, Is.EqualTo(engine.Version));
         var output = await VoiceSynthesisService.SynthesizeAsync("テスト。",
             Settings(engine) with { PitchScale = 0.1, TempoDynamicsScale = 1.6 }, null);
         Assert.That(output.Settings.EngineUuid, Is.EqualTo(engine.EngineUuid));
+        Assert.That(output.Settings.EngineVersion, Is.EqualTo(engine.Version));
         Assert.That(output.Settings.PitchScale, Is.Zero);
         Assert.That((double?)server.LastQuery!["tempoDynamicsScale"], Is.EqualTo(1.6));
         Assert.That(refreshed.Capabilities.EditAccent, Is.False);
     }
 
     [AvaloniaTest]
-    [TestCase("delete")]
-    [TestCase("url")]
-    [TestCase("name")]
-    public async Task Reload_preserves_concurrent_connection_changes(string change)
+    [TestCase("delete", false)]
+    [TestCase("url", false)]
+    [TestCase("name", false)]
+    [TestCase("delete", true)]
+    [TestCase("url", true)]
+    public async Task Connection_updates_preserve_concurrent_changes(string change, bool save)
     {
         using var server = new EngineServer();
         using var editor = Editor();
@@ -83,7 +90,7 @@ public class HttpVoiceEngineTests
         var original = model.SelectedEngine.Value!;
         server.EngineUuid = "refreshed-engine";
         server.PauseAt = "/tts/speakers";
-        var reload = model.ReloadEngine();
+        Task update = save ? model.SaveConnection("Edited", server.Url, original.Id) : model.ReloadEngine();
         await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
         if (change == "delete") VoiceEngineStore.Delete(original.Id);
         else VoiceEngineStore.Save(original with
@@ -91,7 +98,7 @@ public class HttpVoiceEngineTests
             Name = "Renamed", Url = change == "url" ? "http://localhost:50032/" : original.Url
         });
         server.Resume.TrySetResult();
-        await reload;
+        await update;
 
         var stored = VoiceEngineStore.Load();
         if (change == "delete") Assert.That(stored, Is.Empty);
@@ -101,7 +108,13 @@ public class HttpVoiceEngineTests
             Assert.That(stored[0].Url, Is.EqualTo(change == "url" ? "http://localhost:50032/" : original.Url));
             Assert.That(stored[0].EngineUuid, Is.EqualTo(change == "url" ? original.EngineUuid : server.EngineUuid));
         }
-        Assert.That(model.Message.Value, Does.Contain(change == "name" ? "に接続しました" : "接続できませんでした"));
+        Assert.That(save ? model.ConnectionMessage.Value : model.Message.Value,
+            Does.Contain(change == "name" ? "に接続しました" : "接続できませんでした"));
+        if (save && change == "url")
+        {
+            Assert.That(await model.SaveConnection("Retried", server.Url, original.Id), Is.True);
+            Assert.That(VoiceEngineStore.Load().Single().Url, Is.EqualTo(server.Url), "A fresh explicit edit can still change the URL.");
+        }
     }
 
     [Test]
@@ -413,6 +426,8 @@ public class HttpVoiceEngineTests
         public bool AdjustPitch { get; set; } = true;
         public string EngineUuid { get; set; }
         public int ManifestStatus { get; set; }
+        public int VersionStatus { get; set; } = 200;
+        public bool OmitUuid { get; set; }
         public string? PauseAt { get; set; }
         public TaskCompletionSource Paused { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -446,7 +461,11 @@ public class HttpVoiceEngineTests
                             await Resume.Task.WaitAsync(TimeSpan.FromSeconds(10));
                         }
                         object? result = null;
-                        if (endpoint == "/tts/version") result = "test-1";
+                        if (endpoint == "/tts/version")
+                        {
+                            context.Response.StatusCode = VersionStatus;
+                            if (VersionStatus == 200) result = "test-1";
+                        }
                         else if (endpoint == "/tts/speakers") result = new[] { new VoiceMetadata
                         {
                             Name = "テスト話者", SpeakerUuid = "same-speaker", Version = "model-1",
@@ -480,6 +499,12 @@ public class HttpVoiceEngineTests
                             else { SynthesisCount++; result = Wave(); }
                         }
                         else context.Response.StatusCode = 404;
+                        if (endpoint == "/tts/engine_manifest" && result != null && OmitUuid)
+                        {
+                            var manifestJson = JsonSerializer.SerializeToNode(result)!.AsObject();
+                            manifestJson.Remove("uuid");
+                            result = manifestJson;
+                        }
                         byte[] bytes = result as byte[] ?? JsonSerializer.SerializeToUtf8Bytes(result);
                         context.Response.ContentType = result is byte[] ? "audio/wav" : "application/json";
                         context.Response.ContentLength64 = bytes.Length;

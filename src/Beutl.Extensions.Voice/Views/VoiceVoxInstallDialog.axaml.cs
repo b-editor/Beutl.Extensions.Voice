@@ -50,7 +50,9 @@ public partial class VoiceVoxInstallDialog : FAContentDialog
         base.OnClosing(args);
         if (args.Cancel || DataContext is not VoiceVoxInstallDialogViewModel viewModel) return;
         TtsLoader.Preferences.HideCoreInstallPrompt.Value = viewModel.DoNotShowAgain.Value;
-        TtsLoader.Preferences.Skip(false);
+        // A failed attempt must allow retry, including after the startup notification was dismissed.
+        if (!string.IsNullOrEmpty(viewModel.Error.Value)) TtsLoader.Preferences.BeginSession();
+        else TtsLoader.Preferences.Skip(false);
         viewModel.Cancel();
     }
 }

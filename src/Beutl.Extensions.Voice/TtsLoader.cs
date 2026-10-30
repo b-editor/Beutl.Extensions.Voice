@@ -54,9 +54,19 @@ public class TtsLoader : Extension
 
     internal static Notification? CreateInstallNotification(CancellationToken cancellationToken = default)
     {
-        if (!Preferences.ShouldPrompt || VoiceVoxLoader.Value?.IsInstalled == true || VoiceEngineStore.Load().Length > 0)
+        if (!Preferences.ShouldPrompt || VoiceVoxLoader.Value?.IsInstalled == true)
             return null;
-        return new Notification("VOICEVOX Coreのセットアップ", "外部エンジンだけを使う場合は不要です。",
+        string message = "外部エンジンだけを使う場合は不要です。";
+        try
+        {
+            if (VoiceEngineStore.Load().Length > 0) return null;
+        }
+        catch (Exception ex)
+        {
+            Log.CreateLogger<TtsLoader>().LogError(ex, "Failed to load voice engine connections");
+            message = "外部エンジンの接続設定を読み込めませんでした。VOICEVOX Coreは必要な場合だけインストールしてください。";
+        }
+        return new Notification("VOICEVOX Coreのセットアップ", message,
             OnClose: () => Preferences.Skip(false),
             Actions:
             [
