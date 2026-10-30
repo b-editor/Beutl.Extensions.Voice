@@ -5,6 +5,8 @@ using Beutl.Collections;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
+using Beutl.Media.Decoding;
+using Beutl.Media.Wave;
 using Beutl.ProjectSystem;
 using FluentAvalonia.Styling;
 using Reactive.Bindings;
@@ -19,6 +21,7 @@ public class TestApp : Application
 {
     public override void Initialize()
     {
+        DecoderRegistry.Register(new WaveDecoderInfo());
         Styles.Add(new FluentAvaloniaTheme());
         Styles.Add(new StyleInclude(new Uri("avares://Beutl.Controls/"))
         {

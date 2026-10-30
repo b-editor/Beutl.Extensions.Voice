@@ -1,15 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
-using Beutl.Audio;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
-using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
-using Beutl.Media.Source;
 using Beutl.ProjectSystem;
-using Beutl.Utilities;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Services;
@@ -63,19 +59,9 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
-            var source = SoundSource.Open(path);
+            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1);
             _historyManager.ExecuteInTransaction(() =>
             {
-                var element = new Element
-                {
-                    Start = { Value = start }, ZIndex = { Value = 1 },
-                    Uri = RandomFileNameGenerator.GenerateUri(_scene.Uri!, "belm"),
-                    Name = { Value = request.Text.ReplaceLineEndings(" ") },
-                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
-                };
-                element.AddObject(new SourceSound { Source = { Value = source } });
-                element.AddObject(new TtsController { Text = { Value = request.Text }, Generation = { Value = generation } });
-                if (element.TryGetOriginalDuration(out var duration)) element.Length.Value = duration;
                 _scene.AddChild(element, ElementOverlapHandling.ZIndex);
             });
             PublishQuery(request.Text, request.Settings, output.Query);
