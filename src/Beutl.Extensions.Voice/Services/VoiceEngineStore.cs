@@ -49,12 +49,17 @@ public static class VoiceEngineStore
 
     public static void Delete(string id) => Change(connections => connections.RemoveAll(x => x.Id == id));
 
-    internal static VoiceEngineConnection RegisterDiscovered(VoiceEngineConnection connection)
+    internal static VoiceEngineConnection RegisterDiscovered(VoiceEngineConnection connection, bool allowCreate)
     {
         Change(connections =>
         {
-            int index = connections.FindIndex(x => x.Url == connection.Url);
-            if (index < 0) connections.Add(connection);
+            int index = FindConnection(connections, connection.Id, connection.Url);
+            if (index < 0) index = connections.FindIndex(x => x.Url == connection.Url);
+            if (index < 0)
+            {
+                if (!allowCreate) throw new InvalidOperationException("接続先が削除されています。");
+                connections.Add(connection);
+            }
             else
             {
                 connection = connection with { Id = connections[index].Id, Name = connections[index].Name };

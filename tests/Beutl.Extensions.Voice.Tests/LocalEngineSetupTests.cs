@@ -9,6 +9,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using System.Text.Json.Nodes;
+using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
@@ -54,7 +55,96 @@ public class LocalEngineSetupTests
             Directory.CreateDirectory(Path.GetDirectoryName(marker)!);
             Assert.That(LocalVoiceEngines.FindApplication(engine, [_directory], platform), Is.Null);
             File.WriteAllText(marker, "");
+            if (platform == "macos")
+            {
+                Assert.That(LocalVoiceEngines.FindApplication(engine, [_directory], platform), Is.Null);
+                Directory.CreateDirectory(Path.Combine(path, "Contents", "MacOS"));
+                File.WriteAllText(Path.Combine(path, "Contents", "MacOS", engine.ApplicationName), "");
+            }
             Assert.That(LocalVoiceEngines.FindApplication(engine, [_directory], platform), Is.EqualTo(path));
+        }
+    }
+
+    [Test]
+    public void Incomplete_mac_bundle_does_not_hide_an_installed_application()
+    {
+        string[] roots = [Path.Combine(_directory, "system"), Path.Combine(_directory, "user")];
+        foreach (var engine in LocalVoiceEngines.Known)
+        {
+            string[] bundles = roots.Select(root => Path.Combine(root, engine.ApplicationName + ".app")).ToArray();
+            foreach (string bundle in bundles)
+            {
+                Directory.CreateDirectory(Path.Combine(bundle, "Contents", "MacOS"));
+                File.WriteAllText(Path.Combine(bundle, "Contents", "Info.plist"), "");
+            }
+            string executable = Path.Combine("Contents", "MacOS", engine.ApplicationName);
+            File.WriteAllText(Path.Combine(bundles[1], executable), "");
+            Assert.That(LocalVoiceEngines.FindApplication(engine, roots, "macos"), Is.EqualTo(bundles[1]));
+            File.WriteAllText(Path.Combine(bundles[0], executable), "");
+            Assert.That(LocalVoiceEngines.FindApplication(engine, roots, "macos"), Is.EqualTo(bundles[0]));
+        }
+    }
+
+    [AvaloniaTest]
+    public async Task Refresh_rediscovers_moved_or_removed_applications_but_keeps_user_selection()
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer { FailDiscovery = true };
+        string? installedPath = "/original/app";
+        using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }], _ => installedPath);
+        var entry = model.Engines[0];
+        await model.Refresh();
+        Assert.That(entry.ApplicationPath.Value, Is.EqualTo(installedPath));
+        installedPath = "/moved/app";
+        await model.Refresh();
+        Assert.That(entry.ApplicationPath.Value, Is.EqualTo(installedPath));
+        installedPath = null;
+        await model.Refresh();
+        Assert.That(entry.ApplicationPath.Value, Is.Null);
+        Assert.That(entry.CanUse.Value, Is.False);
+        model.SelectApplication(entry, "/chosen/app");
+        installedPath = "/newly/installed/app";
+        await model.Refresh();
+        Assert.That(entry.ApplicationPath.Value, Is.EqualTo("/chosen/app"));
+        Assert.That(entry.CanUse.Value, Is.True);
+    }
+
+    [AvaloniaTest]
+    [TestCase("delete")]
+    [TestCase("move")]
+    [TestCase("replace")]
+    [TestCase("create")]
+    public async Task Registration_respects_connection_changes_during_discovery(string change)
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer { PauseAt = "/tts/speakers" };
+        var seed = new VoiceEngineConnection { Url = server.Url, Name = "Existing engine" };
+        if (change != "create") VoiceEngineStore.Save(seed);
+        using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }], _ => null);
+        Task<bool> registration = model.Use(model.Engines[0]);
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var current = change == "move" ? seed with { Url = "http://127.0.0.1:59999/", Name = "Moved engine" }
+            : seed with { Id = "replacement-engine", Name = "Renamed engine" };
+        if (change is "delete" or "replace") VoiceEngineStore.Delete(seed.Id);
+        if (change != "delete") VoiceEngineStore.Save(current);
+        server.Resume.TrySetResult();
+        bool success = change is "replace" or "create";
+        Assert.That(await registration, Is.EqualTo(success), model.Message.Value);
+        var saved = VoiceEngineStore.Load();
+        if (change == "delete")
+        {
+            Assert.That(saved, Is.Empty);
+            Assert.That(model.Message.Value, Does.Contain("削除"));
+            Assert.That(await model.Use(model.Engines[0]), Is.True, "Explicitly retrying can add a fresh connection.");
+            Assert.That(model.SelectedConnection!.Id, Is.Not.EqualTo(seed.Id));
+            Assert.That(VoiceEngineStore.Load(), Has.Length.EqualTo(1));
+        }
+        else
+        {
+            Assert.That(saved, Has.Length.EqualTo(1));
+            Assert.That(saved[0].Id, Is.EqualTo(current.Id));
+            Assert.That(saved[0].Url, Is.EqualTo(current.Url));
+            Assert.That(saved[0].Name, Is.EqualTo(current.Name));
+            if (success) Assert.That(model.SelectedConnection!.Id, Is.EqualTo(current.Id));
+            else Assert.That(model.Message.Value, Does.Contain("変更"));
         }
     }
 

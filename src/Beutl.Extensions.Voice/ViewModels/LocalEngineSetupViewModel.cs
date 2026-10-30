@@ -13,6 +13,8 @@ public sealed class LocalEngineCandidateViewModel(LocalVoiceEngine engine)
     public ReactivePropertySlim<string> Status { get; } = new("確認前");
     public ReactivePropertySlim<string> ActionText { get; } = new("接続して追加");
     public ReactivePropertySlim<bool> CanUse { get; } = new();
+    internal bool IsUserSelected { get; set; }
+    internal bool ConnectionWasStored { get; set; }
     internal VoiceEngineConnection? Connection { get; set; }
 }
 
@@ -49,7 +51,8 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             await Task.WhenAll(Engines.Select(async entry =>
             {
                 entry.Status.Value = "確認中…";
-                string? path = entry.ApplicationPath.Value ?? await Task.Run(() => _findApplication(entry.Engine), cancellationToken);
+                string? path = entry.IsUserSelected ? entry.ApplicationPath.Value
+                    : await Task.Run(() => _findApplication(entry.Engine), cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
                 await Check(entry, cancellationToken);
@@ -63,8 +66,9 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     private async Task<bool> Check(LocalEngineCandidateViewModel entry, CancellationToken cancellationToken)
     {
         entry.Connection = null;
-        var seed = VoiceEngineStore.Load().FirstOrDefault(x => x.Url == entry.Engine.Url)
-            ?? new VoiceEngineConnection { Url = entry.Engine.Url };
+        var seed = VoiceEngineStore.Load().FirstOrDefault(x => x.Url == entry.Engine.Url);
+        entry.ConnectionWasStored = seed != null;
+        seed ??= new VoiceEngineConnection { Url = entry.Engine.Url };
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -91,6 +95,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     {
         if (_disposed || IsBusy.Value) return;
         entry.ApplicationPath.Value = path;
+        entry.IsUserSelected = true;
         if (entry.Connection == null)
         {
             entry.Status.Value = "アプリを選択しました。";
@@ -122,7 +127,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 }
             }
             waiting.Token.ThrowIfCancellationRequested();
-            SelectedConnection = VoiceEngineStore.RegisterDiscovered(entry.Connection!);
+            SelectedConnection = VoiceEngineStore.RegisterDiscovered(entry.Connection!, allowCreate: !entry.ConnectionWasStored);
             return true;
         }
         catch (OperationCanceledException)

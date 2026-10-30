@@ -46,7 +46,8 @@ internal static class LocalVoiceEngines
         return roots.Where(x => !string.IsNullOrWhiteSpace(x))
             .SelectMany(root => relativePaths.Select(path => Path.Combine(root, path)))
             .FirstOrDefault(path => platform == "macos"
-                ? Directory.Exists(path) && File.Exists(Path.Combine(path, "Contents", "Info.plist"))
+                ? File.Exists(Path.Combine(path, "Contents", "Info.plist"))
+                    && File.Exists(Path.Combine(path, "Contents", "MacOS", name))
                 : File.Exists(path));
     }
 
