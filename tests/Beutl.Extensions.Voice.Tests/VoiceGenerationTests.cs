@@ -9,6 +9,7 @@ using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
+using Beutl.Serialization;
 
 namespace Beutl.Extensions.Voice.Tests;
 
@@ -188,7 +189,25 @@ public class VoiceGenerationTests
             controller.Generation.Value = null;
             controller.AppliedPreset.Value = null;
             controller.Draft.Value = null;
-            controllerModel.SelectedVoice.Value = controllerModel.Voice.Value.First();
+            controllerModel.SpeedScale.Value = 1.5;
+            controllerModel.PitchScale.Value = 0.05;
+            controllerModel.ConfirmEdit();
+            var chosenVoice = controllerModel.Voice.Value.First(x => x.Styles.Length > 1);
+            controllerModel.SelectedVoice.Value = chosenVoice;
+            controllerModel.SelectedStyle.Value = chosenVoice.Styles.Last();
+            var pending = controller.Draft.Value!;
+            var restored = (TtsController)CoreSerializer.DeserializeFromJsonObject(CoreSerializer.SerializeToJsonObject(controller), typeof(TtsController));
+            using (var reopened = TtsControllerTests.CreateModel(editor, restored))
+            {
+                reopened.OnLoaded();
+                Assert.That(reopened.SelectedVoice.Value!.SpeakerUuid, Is.EqualTo(chosenVoice.SpeakerUuid));
+                Assert.That(reopened.SelectedStyle.Value!.Id, Is.EqualTo(chosenVoice.Styles.Last().Id));
+                Assert.That(reopened.HasSettings.Value, Is.True);
+                Assert.That(reopened.SpeedScale.Value, Is.EqualTo(1.5));
+                Assert.That(reopened.PitchScale.Value, Is.EqualTo(0.05));
+                Assert.That(restored.Draft.Value, Is.EqualTo(pending), "Refreshing metadata preserves the reopened draft.");
+                Assert.That(restored.Generation.Value, Is.Null);
+            }
             await controllerModel.Regenerate();
             Assert.That(controllerModel.Message.Value, Is.EqualTo("音声を再生成しました。"));
             Assert.That(controller.Generation.Value!.Text, Is.EqualTo(controller.Text.Value));

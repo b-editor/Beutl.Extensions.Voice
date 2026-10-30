@@ -289,9 +289,15 @@ public class TtsControllerTests
             var speedSlider = tuning.GetVisualDescendants().OfType<Slider>().First();
             speedSlider.Value = 1.5;
             model.ConfirmEdit();
-            inner.PreviewEdit("話者未選択のまま本文を変更します。");
+            const string changedText = "話者未選択のまま本文を変更します。";
+            var input = textEditor.GetVisualDescendants().OfType<TextBox>().Single(x => x.Name == "PART_InnerTextBox");
+            Assert.That(input.Focus(), Is.True);
+            input.SelectAll();
+            window.KeyTextInput(changedText);
+            speedSlider.Focus();
             editor.History.Commit();
             await Settle();
+            Assert.That(controller.Text.Value, Is.EqualTo(changedText));
             Assert.That(speedSlider.Value, Is.EqualTo(1.5));
             Assert.That(regenerate.IsEffectivelyEnabled, Is.False);
             if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is { } pendingDirectory)
