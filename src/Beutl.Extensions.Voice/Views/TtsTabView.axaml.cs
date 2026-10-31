@@ -15,6 +15,29 @@ public partial class TtsTabView : UserControl
         InitializeComponent();
     }
 
+    internal void ShowSettings() => PageTabs.SelectedIndex = 2;
+
+    private async void PageChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not TabStrip tabs || DataContext is not TtsTabViewModel model) return;
+        if (tabs.SelectedIndex == 1) model.Script.RefreshPresets();
+        // Carousel caches its controls; leaving a page does not detach it from the visual tree.
+        if (this.FindControl<LocalEngineSetupView>("EngineSetup") is not { } setup) return;
+        if (tabs.SelectedIndex != 2) setup.CloseSession();
+        else if (TopLevel.GetTopLevel(setup) != null) await setup.RefreshSession();
+    }
+
+    private void EngineConnected(object? sender, EventArgs e)
+    {
+        if (DataContext is TtsTabViewModel model && sender is LocalEngineSetupView
+            { DataContext: LocalEngineSetupViewModel { SelectedConnection: { } selected } })
+        {
+            model.RefreshEngines();
+            model.SelectedEngine.Value = model.Engines.Value.FirstOrDefault(x => x.Id == selected.Id);
+            PageTabs.SelectedIndex = 0;
+        }
+    }
+
     private void SavePresetClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not TtsTabViewModel vm) return;

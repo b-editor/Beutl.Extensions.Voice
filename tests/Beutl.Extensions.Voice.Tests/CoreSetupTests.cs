@@ -54,6 +54,33 @@ public class CoreSetupTests
     }
 
     [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
+    public void Installed_engine_prompt_opens_settings_in_the_tab(bool permanent)
+    {
+        using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
+        using var speech = new TtsTabViewModel(new(), editor);
+        using var setup = new LocalEngineSetupViewModel([]);
+        var view = new TtsTabView { DataContext = speech };
+        var settings = view.FindControl<LocalEngineSetupView>("EngineSetup")!;
+        (settings.DataContext as LocalEngineSetupViewModel)?.Dispose();
+        settings.DataContext = setup;
+        var window = new Window { Width = 320, Height = 600, Content = view };
+        window.Show();
+        try
+        {
+            var prompt = view.FindControl<CoreInstallPromptView>("CoreInstallPrompt")!;
+            prompt.FindControl<CheckBox>("NeverShowAgainCheckBox")!.IsChecked = permanent;
+            prompt.FindControl<Button>("FindLocalEnginesButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            window.UpdateLayout();
+            Assert.That(speech.SelectedPage.Value, Is.EqualTo(2));
+            Assert.That(window.GetVisualDescendants().OfType<FAContentDialog>(), Is.Empty);
+            Assert.That(TtsLoader.Preferences.HideCoreInstallPrompt.Value, Is.EqualTo(permanent));
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTest]
     public void Only_permanent_opt_out_is_saved_in_extension_settings()
     {
         Assert.That(new TtsLoader().Settings, Is.SameAs(TtsLoader.Preferences));
@@ -129,7 +156,7 @@ public class CoreSetupTests
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, core);
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, http);
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
-        using var model = new ScriptImportViewModel(new(), editor);
+        using var model = new ScriptImportViewModel(editor);
         model.RawText.Value = "A: おはよう。\nB: こんにちは。";
         model.ImportText();
         model.Speakers[0].SelectedPreset.Value = http;
@@ -207,7 +234,7 @@ public class CoreSetupTests
     {
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
         using var speech = new TtsTabViewModel(new(), editor);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         var speechView = new TtsTabView { DataContext = speech };
         var scriptView = new ScriptImportView { DataContext = script };
         Control view = permanent ? scriptView : speechView;

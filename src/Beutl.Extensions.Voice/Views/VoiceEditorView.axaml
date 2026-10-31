@@ -11,6 +11,7 @@
         <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
     </UserControl.Resources>
     <StackPanel>
+        <ContentControl x:Name="LocalEngineSetupHost" IsVisible="False" Margin="8" />
         <StackPanel Margin="8,4,8,0" Spacing="4">
             <TextBlock Text="エンジン" />
             <Grid ColumnDefinitions="*,Auto" IsEnabled="{Binding !IsConnecting.Value}">
@@ -27,6 +28,7 @@
                     <icons:FluentIcon Icon="MoreHorizontal" FontSize="16" />
                     <Button.Flyout>
                         <ui:FAMenuFlyout>
+                            <ui:FAMenuFlyoutItem Text="インストール済みのエンジンを探す…" Click="FindLocalEnginesClick" />
                             <ui:FAMenuFlyoutItem Text="接続先を追加…" Click="AddConnectionClick" />
                             <ui:FAMenuFlyoutItem Text="接続先を編集…" Click="EditConnectionClick" IsEnabled="{Binding IsHttpEngine.Value}" />
                             <ui:FAMenuFlyoutItem Text="接続確認・再読み込み" Command="{Binding ReloadEngine}" />

@@ -5,6 +5,7 @@
     <ui:FAInfoBar Title="VOICEVOX Core（任意）" Margin="8"
                   IsOpen="True" IsClosable="False" Severity="Informational">
         <StackPanel Spacing="8" Margin="0,0,0,8">
+            <Button x:Name="FindLocalEnginesButton" Content="エンジンを探す…" Click="FindLocalEngines" />
             <CheckBox x:Name="NeverShowAgainCheckBox" Content="今後表示しない" />
             <WrapPanel Orientation="Horizontal">
                 <Button x:Name="InstallCoreButton" Content="インストール" Click="InstallCore" Margin="0,0,8,0" />

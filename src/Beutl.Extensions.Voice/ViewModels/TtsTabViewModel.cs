@@ -35,11 +35,15 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _synthesize = synthesize;
         Extension = extension;
         InitializePresets();
+        Script = new ScriptImportViewModel(editorContext,
+            (text, settings) => synthesize(text, settings, null));
     }
 
     public ToolTabExtension Extension { get; }
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
+    public ReactivePropertySlim<int> SelectedPage { get; } = new();
+    public ScriptImportViewModel Script { get; }
 
     private static void ShowError(string title, string message) =>
         Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
@@ -117,6 +121,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     public void WriteToJson(JsonObject json)
     {
+        json[nameof(SelectedPage)] = SelectedPage.Value;
+        Script.WriteToJson(json);
         json[nameof(Text)] = Text.Value;
         json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
@@ -125,6 +131,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     public async void ReadFromJson(JsonObject json)
     {
+        SelectedPage.Value = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
+        Script.ReadFromJson(json);
         Text.Value = (string?)json[nameof(Text)] ?? "";
         if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))
             SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
@@ -150,4 +158,10 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     }
 
     public object? GetService(Type serviceType) => null;
+
+    public override void Dispose()
+    {
+        Script.Dispose();
+        base.Dispose();
+    }
 }

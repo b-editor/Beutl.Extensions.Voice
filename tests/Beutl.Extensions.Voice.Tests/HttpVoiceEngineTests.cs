@@ -85,8 +85,9 @@ public class HttpVoiceEngineTests
         using var server = new EngineServer(aivis: true) { AdjustPitch = false };
         using var editor = Editor();
         using var model = new TtsTabViewModel(new(), editor);
-        Assert.That(await model.SaveConnection("Original", server.Url), Is.True, model.ConnectionMessage.Value);
+        Assert.That(await model.SaveConnection("Original", server.Url.Replace("http:", "HTTP:")), Is.True, model.ConnectionMessage.Value);
         var original = VoiceEngineStore.Load().Single();
+        Assert.That(original.Url, Is.EqualTo(server.Url), "Connection URLs are normalized before being stored.");
         server.ManifestStatus = server.VersionStatus = optionalStatus;
 
         string url = trailingSlash ? server.Url : server.Url.TrimEnd('/');
@@ -270,7 +271,7 @@ public class HttpVoiceEngineTests
         using var editor = Editor();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         script.RawText.Value = "A: 最初のエンジンです。\nB: 別のエンジンです。";
         script.ImportText();
         for (int i = 0; i < engines.Length; i++)
@@ -421,7 +422,7 @@ public class HttpVoiceEngineTests
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(sound.Source.Value!.Uri.LocalPath, Is.EqualTo(original));
         Assert.That(editor.History.Redo(), Is.True);
-        using var script = new ScriptImportViewModel(new(), editor);
+        using var script = new ScriptImportViewModel(editor);
         script.RawText.Value = "A: こんにちは。\nB: ありがとうございます。";
         script.ImportText();
         foreach (var speaker in script.Speakers) speaker.SelectedPreset.Value = model.SelectedPreset.Value;
@@ -454,13 +455,15 @@ public class HttpVoiceEngineTests
         frame.Save(Path.Combine(directory, name + ".png"), new PngBitmapEncoderOptions());
     }
 
-    private sealed class EngineServer : IDisposable
+    internal sealed class EngineServer : IDisposable
     {
         private readonly HttpListener _listener = new();
         private readonly Task _loop;
         public string Url { get; }
+        public int DiscoveryCount { get; private set; }
         public int SynthesisCount { get; private set; }
         public bool FailSynthesis { get; set; }
+        public bool FailDiscovery { get; set; }
         public bool AdjustPitch { get; set; } = true;
         public string EngineUuid { get; set; }
         public int ManifestStatus { get; set; }
@@ -484,6 +487,7 @@ public class HttpVoiceEngineTests
             string prefix = $"http://127.0.0.1:{number}/";
             Url = prefix + "tts/";
             _listener.Prefixes.Add(prefix);
+            _listener.Prefixes.Add($"http://localhost:{number}/");
             _listener.Start();
             _loop = Task.Run(async () =>
             {
@@ -493,6 +497,13 @@ public class HttpVoiceEngineTests
                     {
                         var context = await _listener.GetContextAsync();
                         string endpoint = context.Request.Url!.AbsolutePath;
+                        if (endpoint == "/tts/speakers") DiscoveryCount++;
+                        if (endpoint == "/tts/speakers" && FailDiscovery)
+                        {
+                            context.Response.StatusCode = 503;
+                            context.Response.Close();
+                            continue;
+                        }
                         if (endpoint == PauseAt)
                         {
                             Paused.TrySetResult();
