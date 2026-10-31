@@ -81,6 +81,17 @@ internal static class HttpVoiceEngine
             ?? throw new JsonException("音声エンジンの応答を解析できませんでした。");
     }
 
+    public static async Task<List<AccentPhraseModel>> ReplaceMoraPitchAsync(List<AccentPhraseModel> phrases,
+        VoiceSettings settings, CancellationToken cancellationToken)
+    {
+        var (connection, resolved) = await ResolveAsync(settings, cancellationToken);
+        using var response = await SendAsync(connection, HttpMethod.Post,
+            $"mora_pitch?speaker={resolved.StyleId.ToString(CultureInfo.InvariantCulture)}",
+            JsonSerializer.Serialize(phrases, VoiceSynthesisService.JsonOptions), cancellationToken);
+        return JsonSerializer.Deserialize<List<AccentPhraseModel>>(await response.Content.ReadAsStringAsync(cancellationToken))
+            ?? throw new JsonException("音声エンジンの応答を解析できませんでした。");
+    }
+
     public static async Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings,
         AudioQueryModel? query, CancellationToken cancellationToken)
     {

@@ -7,6 +7,12 @@ using Beutl.Extensions.Voice.Models;
 
 namespace Beutl.Extensions.Voice.Views;
 
+public sealed class AccentChangedEventArgs(int phraseIndex, int accent) : EventArgs
+{
+    public int PhraseIndex { get; } = phraseIndex;
+    public int Accent { get; } = accent;
+}
+
 /// <summary>
 /// アクセント句のピッチとアクセント位置を視覚的に編集するカスタムコントロール。
 /// 上半分: ピッチカーブ（ドラッグで調整可能）
@@ -58,6 +64,7 @@ public class AccentPhrasePanel : Control
     }
 
     public event EventHandler? AccentPhrasesChanged;
+    public event EventHandler<AccentChangedEventArgs>? AccentChanged;
 
     protected override Size MeasureOverride(Size availableSize)
     {
@@ -216,9 +223,7 @@ public class AccentPhrasePanel : Control
             if (phraseIndex >= 0 && moraIndex >= 0)
             {
                 // アクセント位置を変更（moraIndex+1がアクセント位置）
-                phrases[phraseIndex].Accent = moraIndex + 1;
-                AccentPhrasesChanged?.Invoke(this, EventArgs.Empty);
-                InvalidateVisual();
+                AccentChanged?.Invoke(this, new AccentChangedEventArgs(phraseIndex, moraIndex + 1));
                 e.Handled = true;
                 return;
             }

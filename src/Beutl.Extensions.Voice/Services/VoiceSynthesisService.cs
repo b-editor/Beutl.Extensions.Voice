@@ -39,6 +39,22 @@ internal static class VoiceSynthesisService
         return Task.Run(() => SynthesizeCore(text, settings, query), cancellationToken);
     }
 
+    public static Task<List<AccentPhraseModel>> ReplaceMoraPitchAsync(List<AccentPhraseModel> phrases,
+        VoiceSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (settings.EngineId != VoiceSettings.CoreEngineId)
+            return HttpVoiceEngine.ReplaceMoraPitchAsync(phrases, settings, cancellationToken);
+        return Task.Run(() =>
+        {
+            var (loader, _) = ResolveVoice(settings);
+            var result = loader.Synthesizer!.ReplaceMoraPitch(JsonSerializer.Serialize(phrases, JsonOptions),
+                checked((uint)settings.StyleId), out var json);
+            if (result != ResultCode.RESULT_OK) throw new InvalidOperationException(result.ToMessage());
+            return JsonSerializer.Deserialize<List<AccentPhraseModel>>(json!, JsonOptions)
+                ?? throw new JsonException("VOICEVOXの応答を解析できませんでした。");
+        }, cancellationToken);
+    }
+
     private static AudioQueryModel CreateCoreQuery(string text, VoiceSettings settings)
     {
         var (loader, _) = ResolveVoice(settings);

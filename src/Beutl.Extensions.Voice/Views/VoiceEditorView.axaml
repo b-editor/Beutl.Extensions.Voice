@@ -125,9 +125,10 @@
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
                               IsVisible="{Binding HasAudioQuery.Value}">
                     <views:AccentPhrasePanel x:Name="AccentPanel" MinHeight="220"
+                                             IsEnabled="{Binding !IsGenerating.Value}"
                                              ToolTip.Tip="ドラッグでピッチを調整、バーをクリックでアクセント位置を変更"
                                              AccentPhrases="{Binding AudioQuery.Value.AccentPhrases}"
-                                             AccentPhrasesChanged="OnAccentPhrasesChanged" />
+                                             AccentPhrasesChanged="OnAccentPhrasesChanged" AccentChanged="OnAccentChanged" />
                 </ScrollViewer>
             </StackPanel>
         </Expander>

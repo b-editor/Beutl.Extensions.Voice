@@ -90,6 +90,22 @@ internal static class PsdLipSync
         }
     }
 
+    internal static void RebindGroup(EngineObject target, Guid group)
+    {
+        if (!TryGetProperties(target, out var audio, out var offset)) return;
+        if (audio.Expression is VoiceLipSyncAudioExpression previousAudio)
+            audio.Expression = new VoiceLipSyncAudioExpression
+            {
+                GroupId = group, PreviousExpression = previousAudio.PreviousExpression,
+                ExtendToSpeech = previousAudio.ExtendToSpeech
+            };
+        if (offset.Expression is VoiceLipSyncOffsetExpression previousOffset)
+            offset.Expression = new VoiceLipSyncOffsetExpression
+            {
+                GroupId = group, PreviousExpression = previousOffset.PreviousExpression
+            };
+    }
+
     private static IEnumerable<EngineObject> TargetsToRestore(TtsController controller, Scene scene)
     {
         Guid group = controller.LipSyncGroupId.Value;

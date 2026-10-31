@@ -22,6 +22,11 @@ public partial class VoiceEditorView : UserControl
     private void OnAccentPhrasesChanged(object? sender, EventArgs e) =>
         (DataContext as VoiceEditorViewModel)?.OnAccentPhrasesUpdated();
 
+    private async void OnAccentChanged(object? sender, AccentChangedEventArgs e)
+    {
+        if (DataContext is VoiceEditorViewModel model) await model.ChangeAccent(e.PhraseIndex, e.Accent);
+    }
+
     private void AddConnectionClick(object? sender, RoutedEventArgs e) => ShowConnectionEditor(edit: false);
     private void FindLocalEnginesClick(object? sender, RoutedEventArgs e)
     {
