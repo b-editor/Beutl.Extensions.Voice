@@ -9,6 +9,7 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
 using Avalonia.Interactivity;
+using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -46,6 +47,112 @@ public class HttpVoiceEngineTests
     }
 
     private TestEditor Editor() => new(Path.Combine(_directory, "scene.bescene"));
+
+    private static AudioQueryModel EditableQuery() => new()
+    {
+        AccentPhrases =
+        [
+            new() { Accent = 2, Moras = [new() { Text = "ア", Vowel = "a", Pitch = 5.1, VowelLength = 0.7 },
+                new() { Text = "イ", Vowel = "i", Pitch = 5.6, VowelLength = 0.2 }] },
+            new() { Accent = 1, Moras = [new() { Text = "ウ", Vowel = "u", Pitch = 6.3, VowelLength = 0.4 }] }
+        ]
+    };
+
+    [AvaloniaTest]
+    public async Task Accent_bar_recalculates_pitch_and_persists_one_undoable_controller_edit()
+    {
+        using var server = new EngineServer { PauseAt = "/tts/mora_pitch" };
+        var engine = await HttpVoiceEngine.DiscoverAsync(new() { Url = server.Url });
+        VoiceEngineStore.Save(engine);
+        using var editor = Editor();
+        var generation = new VoiceGeneration
+        {
+            Text = "アイ、ウ。", Settings = Settings(engine), AudioQueryJson = JsonSerializer.Serialize(EditableQuery())
+        };
+        var path = Path.Combine(_directory, "original.wav");
+        await File.WriteAllBytesAsync(path, EngineServer.Wave());
+        var element = VoiceElementFactory.Create(editor.Scene, path, generation, MediaTime.Zero, 1);
+        editor.Scene.AddChild(element);
+        var controller = element.Objects.OfType<TtsController>().Single();
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        using var model = TtsControllerTests.CreateModel(editor, controller);
+        var view = new VoiceEditorView { DataContext = model };
+        var window = new Window { Width = 360, Height = 640, Content = new ScrollViewer { Content = view }, RequestedThemeVariant = ThemeVariant.Dark };
+        try
+        {
+            window.Show();
+            view.FindControl<Expander>("AccentExpander")!.IsExpanded = true;
+            await Settle();
+            var panel = view.FindControl<AccentPhrasePanel>("AccentPanel")!;
+            panel.BringIntoView();
+            await Settle();
+            int before = editor.History.UndoCount;
+            var point = panel.TranslatePoint(new Point(18, panel.Bounds.Height - 40), window)!.Value;
+            window.MouseDown(point, MouseButton.Left);
+            window.MouseUp(point, MouseButton.Left);
+            await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.That(panel.IsEnabled, Is.False);
+            server.Resume.TrySetResult();
+            for (int i = 0; i < 100 && model.IsGenerating.Value; i++) await Settle();
+            Assert.That(model.IsGenerating.Value, Is.False);
+            Assert.That(model.Message.Value, Is.Empty);
+            Assert.That(server.LastStyle, Is.EqualTo("7"));
+            var updated = model.AudioQuery.Value!;
+            Assert.That(updated.AccentPhrases[0].Accent, Is.EqualTo(1));
+            Assert.That(updated.AccentPhrases[0].Moras.Select(x => x.Pitch), Is.EqualTo(new[] { 4.2, 4.25 }));
+            Assert.That(updated.AccentPhrases[0].Moras[0].VowelLength, Is.EqualTo(0.7));
+            Assert.That(updated.AccentPhrases[1].Moras[0].Pitch, Is.EqualTo(6.3));
+            Assert.That(controller.Generation.Value, Is.SameAs(generation));
+            Assert.That(editor.History.UndoCount, Is.EqualTo(before + 1));
+            Assert.That(editor.History.Undo(), Is.True);
+            Assert.That(model.AudioQuery.Value!.AccentPhrases[0].Accent, Is.EqualTo(2));
+            Assert.That(model.AudioQuery.Value.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.1));
+            Assert.That(editor.History.Redo(), Is.True);
+            Capture(window, "accent-recalculated");
+            await model.Regenerate();
+            Assert.That((int?)server.LastQuery!["accent_phrases"]![0]!["accent"], Is.EqualTo(1));
+            Assert.That((double?)server.LastQuery["accent_phrases"]![0]!["moras"]![0]!["pitch"], Is.EqualTo(4.2));
+            Assert.That(server.MoraPitchCount, Is.EqualTo(1));
+        }
+        finally { server.Resume.TrySetResult(); window.Close(); }
+    }
+
+    [AvaloniaTest]
+    [TestCase("failure")]
+    [TestCase("text")]
+    [TestCase("manual pitch")]
+    public async Task Accent_recalculation_does_not_commit_failed_or_stale_results(string change)
+    {
+        using var server = new EngineServer { PauseAt = "/tts/mora_pitch", FailMoraPitch = change == "failure" };
+        using var editor = Editor();
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(await model.SaveConnection("Test", server.Url), Is.True);
+        model.SelectedVoice.Value = model.Voice.Value.Single();
+        model.Text.Value = "アイ、ウ。";
+        model.AudioQuery.Value = EditableQuery();
+        var original = model.AudioQuery.Value;
+        var pending = model.ChangeAccent(0, 1);
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (change == "text") model.Text.Value = "別の本文";
+        if (change == "manual pitch")
+        {
+            model.AudioQuery.Value!.AccentPhrases[1].Moras[0].Pitch = 5.9;
+            model.OnAccentPhrasesUpdated();
+        }
+        server.Resume.TrySetResult();
+        await pending;
+        Assert.That(model.IsGenerating.Value, Is.False);
+        if (change == "text") Assert.That(model.AudioQuery.Value, Is.Null);
+        else
+        {
+            Assert.That(model.AudioQuery.Value, Is.SameAs(original));
+            Assert.That(original.AccentPhrases[0].Accent, Is.EqualTo(2));
+            Assert.That(original.AccentPhrases[0].Moras[0].Pitch, Is.EqualTo(5.1));
+            Assert.That(original.AccentPhrases[1].Moras[0].Pitch, Is.EqualTo(change == "manual pitch" ? 5.9 : 6.3));
+        }
+        if (change == "failure") Assert.That(model.Message.Value, Does.Contain("HTTP 503"));
+    }
 
     [TestCase(true, 200, false)]
     [TestCase(false, 404, false)]
@@ -464,6 +571,8 @@ public class HttpVoiceEngineTests
         public int SynthesisCount { get; private set; }
         public bool FailSynthesis { get; set; }
         public bool FailDiscovery { get; set; }
+        public bool FailMoraPitch { get; set; }
+        public int MoraPitchCount { get; private set; }
         public bool AdjustPitch { get; set; } = true;
         public string EngineUuid { get; set; }
         public int ManifestStatus { get; set; }
@@ -538,6 +647,21 @@ public class HttpVoiceEngineTests
                             query["future_parameter"] = "preserve";
                             query["accent_phrases"]![0]!["moras"]![0]!["future_mora_parameter"] = 123;
                             result = query;
+                        }
+                        else if (endpoint == "/tts/mora_pitch")
+                        {
+                            MoraPitchCount++;
+                            LastStyle = context.Request.QueryString["speaker"];
+                            using var reader = new StreamReader(context.Request.InputStream);
+                            var phrases = JsonSerializer.Deserialize<List<AccentPhraseModel>>(await reader.ReadToEndAsync())!;
+                            if (FailMoraPitch) context.Response.StatusCode = 503;
+                            else
+                            {
+                                foreach (var phrase in phrases)
+                                    for (int i = 0; i < phrase.Moras.Count; i++)
+                                        phrase.Moras[i].Pitch = 4 + phrase.Accent * 0.2 + i * 0.05;
+                                result = phrases;
+                            }
                         }
                         else if (endpoint == "/tts/synthesis")
                         {

@@ -150,6 +150,92 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public void Duplicating_dialogue_rebinds_only_the_copied_pair_and_survives_split_and_reload(bool splitPortraitFirst, bool clipboard)
+    {
+        using var editor = Editor();
+        var scene = editor.Scene;
+        var target = Character(scene);
+        var first = Speech(scene, 1);
+        var second = Speech(scene, 3.5);
+        PsdLipSync.Connect(first.Controller, target);
+        PsdLipSync.Connect(second.Controller, target);
+        var group = first.Controller.LipSyncGroupId.Value;
+        var split = new ElementStructureService(editor.History);
+        if (splitPortraitFirst) split.Split(scene, [target.FindHierarchicalParent<Element>()!], At(2.5));
+        var originals = scene.Children.ToArray();
+        using var observer = new CoreObjectOperationObserver(null, scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        var sources = clipboard ? originals.Select(x => (Element)CoreSerializer.DeserializeFromJsonObject(
+            CoreSerializer.SerializeToJsonObject(x), typeof(Element))).ToArray() : originals;
+        Assert.That(new ElementDuplicateService(editor.History).DuplicateAtPosition(scene, sources, At(0), 3), Is.True);
+        var copies = scene.Children.Except(originals).ToArray();
+        var copiedTargets = copies.SelectMany(x => x.Objects).OfType<PsdTachieDrawable>().ToArray();
+        var copiedControllers = copies.SelectMany(x => x.Objects).OfType<TtsController>().ToArray();
+        var copyGroup = copiedControllers[0].LipSyncGroupId.Value;
+        Assert.That(copyGroup, Is.Not.EqualTo(group).And.Not.EqualTo(Guid.Empty));
+        Assert.That(copiedControllers.All(x => x.LipSyncGroupId.Value == copyGroup), Is.True);
+        Assert.That(copiedTargets.Select(PsdLipSync.GroupOf).Distinct(), Is.EqualTo(new[] { copyGroup }));
+        Assert.That(first.Controller.LipSyncGroupId.Value, Is.EqualTo(group));
+        Assert.That(PsdLipSync.GroupOf(target), Is.EqualTo(group));
+        Assert.That(editor.History.Undo(), Is.True);
+        Assert.That(scene.Children, Is.EquivalentTo(originals));
+        Assert.That(editor.History.Redo(), Is.True);
+        var copiedFirst = copies.Single(x => x.Objects.OfType<TtsController>().Any() && x.Start.Value == At(1));
+        var copiedSound = copiedFirst.Objects.OfType<SourceSound>().Single();
+        copiedSound.Source.Value = Wave(silent: true);
+        copiedSound.OffsetPosition.Value = At(0.3);
+        Assert.That(target.LipSyncAudio.Evaluate(new EvaluationContext(At(1.25)))!.Uri, Is.EqualTo(first.Sound.Source.Value!.Uri));
+        Assert.That(copiedTargets[0].LipSyncAudio.Evaluate(new EvaluationContext(At(1.25)))!.Uri, Is.EqualTo(copiedSound.Source.Value.Uri));
+        Assert.That(copiedTargets[0].LipSyncOffset.Evaluate(new EvaluationContext(At(1.25))),
+            Is.Not.EqualTo(target.LipSyncOffset.Evaluate(new EvaluationContext(At(1.25)))));
+        editor.History.Commit();
+        split.Split(scene, [copiedFirst], At(1.75));
+        split.Split(scene, [copiedTargets[0].FindHierarchicalParent<Element>()!], At(1.5));
+        Assert.That(PsdLipSync.Targets(scene).Where(x => x.ZIndex.Value >= 3).Select(PsdLipSync.GroupOf).Distinct(), Is.EqualTo(new[] { copyGroup }));
+        Assert.That(scene.EnumerateAllChildren<TtsController>().Where(x => x.ZIndex.Value >= 3).Select(x => x.LipSyncGroupId.Value).Distinct(), Is.EqualTo(new[] { copyGroup }));
+        using var reopened = Editor();
+        foreach (var element in scene.Children)
+        {
+            var json = CoreSerializer.SerializeToJsonObject(element);
+            Assert.That(json.ToJsonString(), Does.Not.Contain("LipSyncCopyTargets"));
+            reopened.Scene.AddChild((Element)CoreSerializer.DeserializeFromJsonObject(json, typeof(Element)), ElementOverlapHandling.Allow);
+        }
+        Assert.That(PsdLipSync.Targets(reopened.Scene).Select(PsdLipSync.GroupOf).Distinct(), Is.EquivalentTo(new[] { group, copyGroup }));
+        // Copy only a later portrait segment, without the original segment or the group's first voice.
+        var laterPortrait = reopened.Scene.Children.Single(x => x.ZIndex.Value == 3 && x.Start.Value == At(1.5));
+        var laterVoice = reopened.Scene.Children.Single(x => x.ZIndex.Value == 4 && x.Start.Value == At(1.75));
+        ObjectRegenerator.Regenerate(new[] { laterVoice, laterPortrait }, out var nextCopy);
+        var nextGroup = nextCopy[0].Objects.OfType<TtsController>().Single().LipSyncGroupId.Value;
+        Assert.That(nextGroup, Is.Not.EqualTo(copyGroup).And.Not.EqualTo(group));
+        Assert.That(PsdLipSync.GroupOf(nextCopy[1].Objects.OfType<PsdTachieDrawable>().Single()), Is.EqualTo(nextGroup));
+
+        // A standalone voice copy still drives its existing portrait.
+        ObjectRegenerator.Regenerate(first.Element, out var voiceOnly);
+        Assert.That(voiceOnly.Objects.OfType<TtsController>().Single().LipSyncGroupId.Value, Is.EqualTo(group));
+    }
+
+    [AvaloniaTest]
+    public void Splitting_an_element_with_both_voice_and_portrait_preserves_the_group()
+    {
+        using var editor = Editor();
+        var target = Character(editor.Scene);
+        var portrait = target.FindHierarchicalParent<Element>()!;
+        var speech = Speech(editor.Scene, 1);
+        portrait.RemoveObject(target);
+        speech.Element.AddObject(target);
+        editor.Scene.RemoveChild(portrait);
+        PsdLipSync.Connect(speech.Controller, target);
+        var group = speech.Controller.LipSyncGroupId.Value;
+        new ElementStructureService(editor.History).Split(editor.Scene, [speech.Element], At(1.75));
+        Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct(), Is.EqualTo(new[] { group }));
+        Assert.That(PsdLipSync.Targets(editor.Scene).Select(PsdLipSync.GroupOf).Distinct(), Is.EqualTo(new[] { group }));
+    }
+
+    [AvaloniaTest]
     public void Splitting_both_elements_and_reopening_preserves_the_audio_clock()
     {
         using var editor = Editor();

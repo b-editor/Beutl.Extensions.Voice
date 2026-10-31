@@ -188,6 +188,34 @@ public class ScriptImportTests
     }
 
     [AvaloniaTest]
+    [TestCase(false, false, 1)]
+    [TestCase(true, false, 2)]
+    [TestCase(true, true, 3)]
+    public async Task Single_utterance_avoids_layers_locked_during_synthesis(bool locked, bool occupied, int expectedLayer)
+    {
+        using var editor = Editor();
+        if (occupied) editor.Scene.AddChild(new Element { ZIndex = { Value = 1 }, Length = { Value = MediaTime.FromSeconds(10) } });
+        var layer = new TimelineLayer { ZIndex = { Value = occupied ? 2 : 1 } };
+        editor.Scene.Layers.Add(layer);
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) =>
+        {
+            layer.IsLocked.Value = locked;
+            return Wave(text, settings);
+        });
+        var settings = Presets[0].Settings;
+        model.SelectedVoice.Value = new VoiceMetadata
+        {
+            Name = settings.SpeakerName, SpeakerUuid = settings.SpeakerUuid, Version = settings.ModelVersion,
+            Styles = [new VoiceStyle { Id = settings.StyleId, Name = settings.StyleName }]
+        };
+        model.Text.Value = "こんにちは。";
+        await model.Generate();
+        var speech = editor.Scene.Children.Single(x => x.Objects.OfType<TtsController>().Any());
+        Assert.That(speech.ZIndex.Value, Is.EqualTo(expectedLayer), model.Message.Value);
+        Assert.That(editor.Scene.IsElementLocked(speech), Is.False);
+    }
+
+    [AvaloniaTest]
     public async Task Single_utterance_cleans_up_failed_creation_and_keeps_successful_audio_for_undo_redo()
     {
         using var editor = Editor();

@@ -63,6 +63,13 @@ public class VoiceGenerationTests
             model.SelectedPreset.Value = model.Presets.Value.Single();
             string originalPath = sound.Source.Value!.Uri.LocalPath;
             Assert.That(new FileInfo(originalPath).Length, Is.GreaterThan(44));
+            int accent = model.AudioQuery.Value!.AccentPhrases[0].Accent;
+            var originalPitches = model.AudioQuery.Value.AccentPhrases[0].Moras.Select(x => x.Pitch).ToArray();
+            await model.ChangeAccent(0, accent == 1 ? 2 : 1);
+            Assert.That(model.AudioQuery.Value.AccentPhrases[0].Moras.Select(x => x.Pitch), Is.Not.EqualTo(originalPitches));
+            var changed = await VoiceSynthesisService.SynthesizeAsync(original.Text, original.Settings, model.AudioQuery.Value);
+            Assert.That(changed.Wave, Is.Not.EqualTo(await File.ReadAllBytesAsync(originalPath)));
+            Assert.That(controller.Generation.Value, Is.SameAs(original));
             element.Start.Value = MediaTime.FromSeconds(3);
             element.Length.Value = MediaTime.FromSeconds(1);
             sound.OffsetPosition.Value = MediaTime.FromSeconds(0.2);

@@ -235,6 +235,33 @@ public partial class VoiceEditorViewModel : IDisposable
         ConfirmEdit();
     }
 
+    public async Task ChangeAccent(int phraseIndex, int accent)
+    {
+        if (_disposed || IsGenerating.Value || !EngineCapabilities.Value.EditAccent
+            || AudioQuery.Value is not { } original || CaptureRequest() is not { } request) return;
+        if ((uint)phraseIndex >= original.AccentPhrases.Count || accent < 1
+            || accent > original.AccentPhrases[phraseIndex].Moras.Count
+            || accent == original.AccentPhrases[phraseIndex].Accent) return;
+        string originalJson = SerializeQuery();
+        var query = JsonSerializer.Deserialize<AudioQueryModel>(originalJson)!;
+        query.AccentPhrases[phraseIndex].Accent = accent;
+        IsGenerating.Value = true;
+        Message.Value = "";
+        try
+        {
+            // Send the phrase context, but retain manual pitches in all other phrases and all durations.
+            var phrases = await VoiceSynthesisService.ReplaceMoraPitchAsync(query.AccentPhrases, request.Settings);
+            if (_disposed || !ReferenceEquals(AudioQuery.Value, original) || SerializeQuery() != originalJson) return;
+            var moras = query.AccentPhrases[phraseIndex].Moras;
+            if (phrases.Count != query.AccentPhrases.Count || phrases[phraseIndex].Moras.Count != moras.Count)
+                throw new JsonException("音声エンジンから異なるモーラ構成が返されました。");
+            for (int i = 0; i < moras.Count; i++) moras[i].Pitch = phrases[phraseIndex].Moras[i].Pitch;
+            PublishQuery(request.Text, request.Settings, query);
+        }
+        catch (Exception ex) { Message.Value = $"アクセントを変更できませんでした: {ex.Message}"; }
+        finally { IsGenerating.Value = false; }
+    }
+
     public virtual void Dispose()
     {
         _disposed = true;

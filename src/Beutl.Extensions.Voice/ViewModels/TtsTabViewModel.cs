@@ -85,7 +85,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             var element = VoiceElementFactory.Create(_scene, path, generation, start, 1);
             _historyManager.ExecuteInTransaction(() =>
             {
-                _scene.AddChild(element, ElementOverlapHandling.ZIndex);
+                element.ZIndex.Value = PsdLipSyncPresets.FreeLayer(_scene, element.Range, element.ZIndex.Value);
+                _scene.AddChild(element, ElementOverlapHandling.ThrowException);
                 if (lipSyncTarget != null)
                 {
                     PsdLipSync.Connect(element.Objects.OfType<TtsController>().Single(), lipSyncTarget);
