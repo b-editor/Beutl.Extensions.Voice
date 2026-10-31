@@ -75,7 +75,7 @@
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="{Binding PresetMessage.Value}" />
 
                             <views:VoiceEditorView x:Name="VoiceEditor" />
-                            <views:LipSyncSelectionView x:Name="GenerationLipSync" Margin="8" DataContext="{Binding LipSync}" />
+                            <views:LipSyncSelectionView x:Name="GenerationLipSync" DataContext="{Binding LipSync}" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

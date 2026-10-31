@@ -269,6 +269,11 @@ public partial class PsdLipSyncTests
             var combo = picker.FindControl<ComboBox>("TargetSelector")!;
             picker.BringIntoView();
             await Settle();
+            Capture("reading-collapsed", picker, view.FindControl<Button>("AddSpeechButton")!);
+            picker.FindControl<Expander>("LipSyncExpander")!.IsExpanded = true;
+            await Settle();
+            combo.BringIntoView();
+            await Settle();
             combo.IsDropDownOpen = true;
             await Settle();
             combo.SelectedItem = model.LipSync.Targets.Value.Single(x => x.Id == first.Id.Value);
