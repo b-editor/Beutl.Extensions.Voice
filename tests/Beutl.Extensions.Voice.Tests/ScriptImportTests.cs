@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
+using Avalonia.Automation;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
@@ -366,8 +367,9 @@ public class ScriptImportTests
             Assert.That(view.FindControl<Button>("OpenScriptButton")!.Focus(), Is.True);
             await Settle();
             var speakerSection = view.FindControl<Expander>("SpeakersSection")!;
-            var selectors = speakerSection.GetVisualDescendants().OfType<ComboBox>().ToArray();
-            Assert.That(selectors, Has.Length.EqualTo(2), "Each script speaker has only a preset selector.");
+            var selectors = speakerSection.GetVisualDescendants().OfType<ComboBox>()
+                .Where(x => AutomationProperties.GetName(x) == "声のプリセット").ToArray();
+            Assert.That(selectors, Has.Length.EqualTo(2), "Each script speaker has one voice preset selector.");
             for (int i = 0; i < selectors.Length; i++)
                 selectors[i].SelectedItem = model.Speakers[i].Presets.Value.Single(x => x.Id == Presets[i].Id);
             Assert.That(speakerSection.GetVisualDescendants().OfType<Button>().Any(x => Equals(x.Content, "適用")), Is.False);

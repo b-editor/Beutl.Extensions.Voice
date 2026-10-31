@@ -73,7 +73,9 @@
                             <NumericUpDown x:Name="LayerInput" Grid.Row="2" Grid.Column="2" Minimum="0" Maximum="2147483647" Increment="1" FormatString="0"
                                            Value="{Binding FirstLayer.Value, Mode=TwoWay}" AutomationProperties.Name="先頭レイヤー" />
                         </Grid>
-                        <CheckBox Content="話者ごとにレイヤーを分ける" IsChecked="{Binding SeparateLayers.Value, Mode=TwoWay}" />
+                        <CheckBox IsChecked="{Binding SeparateLayers.Value, Mode=TwoWay}">
+                            <TextBlock Text="立ち絵のない話者もレイヤーを分ける" TextWrapping="Wrap" />
+                        </CheckBox>
                     </StackPanel>
                 </Expander>
             </StackPanel>

@@ -40,6 +40,37 @@
                 </Grid>
             </StackPanel>
             <views:VoiceEditorView x:Name="VoiceEditor" IsEnabled="{Binding HasEditor.Value}" />
+            <Expander x:Name="LipSyncExpander" Header="口パク連携" HorizontalAlignment="Stretch"
+                      Theme="{StaticResource ToolTabExpanderTheme}" IsEnabled="{Binding HasEditor.Value}">
+                <StackPanel Margin="8" Spacing="8">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <ComboBox x:Name="LipSyncTargetSelector" HorizontalAlignment="Stretch"
+                                  PlaceholderText="PSD立ち絵を選択" AutomationProperties.Name="口パクの立ち絵"
+                                  ItemsSource="{Binding LipSyncTargets.Value}"
+                                  SelectedItem="{Binding SelectedLipSyncTarget.Value, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="viewModels:LipSyncTarget">
+                                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button Grid.Column="1" Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                                Command="{Binding RefreshLipSyncTargets}" ToolTip.Tip="立ち絵を再読み込み"
+                                AutomationProperties.Name="立ち絵を再読み込み">
+                            <icons:FluentIcon Icon="ArrowClockwise" FontSize="16" />
+                        </Button>
+                    </Grid>
+                    <TextBlock Text="シーンにPSD立ち絵を追加してください。" FontSize="12" TextWrapping="Wrap"
+                               IsVisible="{Binding !HasLipSyncTargets.Value}" />
+                    <Grid ColumnDefinitions="*,*">
+                        <Button x:Name="ConnectLipSyncButton" Content="連携" Command="{Binding ConnectLipSync}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                IsEnabled="{Binding HasLipSyncTargets.Value}" />
+                        <Button Grid.Column="1" Margin="8,0,0,0" Content="解除" Command="{Binding DisconnectLipSync}"
+                                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" IsEnabled="{Binding HasLipSync.Value}" />
+                    </Grid>
+                </StackPanel>
+            </Expander>
             <Expander x:Name="SettingsExpander" Header="生成時の設定" HorizontalAlignment="Stretch"
                       Theme="{StaticResource ToolTabExpanderTheme}">
                 <ScrollViewer MaxHeight="240" HorizontalScrollBarVisibility="Disabled">

@@ -57,7 +57,7 @@ public sealed record VoiceSettings
         Add("後無音", PostPhonemeLength, current.PostPhonemeLength);
         if (TempoDynamicsScale != current.TempoDynamicsScale)
             differences.Add($"緩急: {TempoDynamicsScale:G} → {current.TempoDynamicsScale:G}");
-        return differences.Count == 0 ? "現在の設定と一致しています。" : string.Join("\n", differences);
+        return differences.Count == 0 ? "現在の音声設定と一致しています。" : string.Join("\n", differences);
 
         void Add(string name, double saved, double value)
         {

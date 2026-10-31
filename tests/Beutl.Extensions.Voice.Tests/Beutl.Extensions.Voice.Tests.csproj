@@ -12,7 +12,9 @@
     <PackageReference Include="NUnit3TestAdapter" Version="6.3.1" />
     <PackageReference Include="Avalonia.Headless.NUnit" Version="12.1.4" />
     <PackageReference Include="Avalonia.Skia" Version="12.1.4" />
+    <PackageReference Include="Beutl.Extensions.PsdTachie" Version="0.1.1" PrivateAssets="all" />
     <Using Include="NUnit.Framework" />
     <ProjectReference Include="../../src/Beutl.Extensions.Voice/Beutl.Extensions.Voice.csproj" />
+    <None Update="TestData/*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
