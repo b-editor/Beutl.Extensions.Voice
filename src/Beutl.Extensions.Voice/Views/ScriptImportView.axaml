@@ -49,7 +49,6 @@
                                                     </DataTemplate>
                                                 </ComboBox.ItemTemplate>
                                             </ComboBox>
-                                            <views:LipSyncSelectionView DataContext="{Binding LipSync}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

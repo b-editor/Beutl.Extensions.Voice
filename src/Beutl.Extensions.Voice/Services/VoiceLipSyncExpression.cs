@@ -24,6 +24,8 @@ public abstract class VoiceLipSyncExpression<T> : IExpression<T>
 
 public sealed class VoiceLipSyncAudioExpression : VoiceLipSyncExpression<SoundSource?>
 {
+    public bool ExtendToSpeech { get; init; }
+
     public override SoundSource? Evaluate(ExpressionContext context)
     {
         if (PsdLipSync.FindSound(context, GroupId) is not { } sound) return null;

@@ -1,5 +1,4 @@
 using Beutl.Extensions.Voice.Models;
-using Beutl.ProjectSystem;
 using Reactive.Bindings;
 
 namespace Beutl.Extensions.Voice.ViewModels;
@@ -8,10 +7,9 @@ public sealed class ScriptSpeakerViewModel
 {
     private bool _refreshingPresets;
 
-    public ScriptSpeakerViewModel(string name, VoicePreset[] presets, Scene scene, VoicePreset? assignedPreset = null)
+    public ScriptSpeakerViewModel(string name, VoicePreset[] presets, VoicePreset? assignedPreset = null)
     {
         Name = name;
-        LipSync = new LipSyncSelectionViewModel(scene);
         SelectedPreset.Subscribe(preset =>
         {
             if (!_refreshingPresets) AssignedPreset = preset;
@@ -24,7 +22,6 @@ public sealed class ScriptSpeakerViewModel
     public string DisplayName => Name.Length == 0 ? "話者未指定" : Name;
     public ReactivePropertySlim<VoicePreset[]> Presets { get; } = new([]);
     public ReactivePropertySlim<VoicePreset?> SelectedPreset { get; } = new();
-    public LipSyncSelectionViewModel LipSync { get; }
     internal VoicePreset? AssignedPreset { get; private set; }
 
     internal void SetPresets(VoicePreset[] presets)

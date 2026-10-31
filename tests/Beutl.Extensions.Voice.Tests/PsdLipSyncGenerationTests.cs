@@ -107,54 +107,59 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
-    public async Task Script_generation_restores_per_speaker_targets_by_id_and_links_the_batch_in_one_undo()
+    public async Task Script_generation_uses_preset_characters_and_links_the_batch_in_one_undo()
     {
         using var editor = Editor();
         var first = Character(editor.Scene);
-        var second = Character(editor.Scene, 3); // Same name, different object.
-        var preset = GenerationPreset();
+        var second = Character(editor.Scene, 3);
+        string otherPath = Path.Combine(_directory, "guest.psd");
+        File.Copy(second.Source.Value!.FullName, otherPath);
+        second.Source.Value = new FileInfo(otherPath);
+        var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
+        var guest = GenerationPreset() with { Name = "ゲスト", LipSync = PsdLipSyncPresets.Capture(second) };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, guest);
         using var model = new ScriptImportViewModel(editor, Synthesize);
         ConfigureScript(model, preset);
-        model.Speakers[0].LipSync.SelectedId = first.Id.Value;
-        model.Speakers[1].LipSync.SelectedId = second.Id.Value;
+        model.Speakers[1].SelectedPreset.Value = guest;
         var state = new JsonObject();
         model.WriteToJson(state);
         var secondElement = second.FindHierarchicalParent<Element>()!;
         editor.Scene.RemoveChild(secondElement);
         using var restored = new ScriptImportViewModel(editor, Synthesize);
         restored.ReadFromJson(state);
-        restored.Speakers[1].LipSync.Refresh();
-        Assert.That(restored.Speakers[1].LipSync.SelectedId, Is.EqualTo(second.Id.Value));
-        await restored.Generate();
-        Assert.That(editor.Scene.EnumerateAllChildren<TtsController>(), Is.Empty);
-        Assert.That(restored.Message.Value, Does.Contain("立ち絵が見つかりません"));
-        restored.WriteToJson(state);
-        restored.ReadFromJson(state);
-        editor.Scene.AddChild(secondElement);
-        restored.Speakers[1].LipSync.Refresh();
         restored.ImportText();
+        Assert.That(restored.Speakers.Select(x => x.SelectedPreset.Value), Is.EqualTo(new[] { preset, guest }));
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         await restored.Generate();
         var controllers = editor.Scene.EnumerateAllChildren<TtsController>().ToArray();
         Assert.That(controllers, Has.Length.EqualTo(3), restored.Message.Value);
+        var added = PsdLipSync.Targets(editor.Scene).Single(x => x != first);
+        Assert.That(added.Id.Value, Is.Not.EqualTo(second.Id.Value));
+        Assert.That(first.FindHierarchicalParent<Element>()!.Length.Value, Is.EqualTo(At(10)));
+        Assert.That(added.TimeRange.Value.Start, Is.EqualTo(At(3.5)));
+        Assert.That(added.TimeRange.Value.End, Is.EqualTo(At(5.5)));
         Assert.That(controllers.Select(x => x.LipSyncGroupId.Value),
-            Is.EqualTo(new[] { PsdLipSync.GroupOf(first), PsdLipSync.GroupOf(second), PsdLipSync.GroupOf(first) }));
-        Assert.That(PsdLipSync.GroupOf(first), Is.Not.EqualTo(PsdLipSync.GroupOf(second)).And.Not.EqualTo(Guid.Empty));
+            Is.EqualTo(new[] { PsdLipSync.GroupOf(first), PsdLipSync.GroupOf(added), PsdLipSync.GroupOf(first) }));
+        Assert.That(PsdLipSync.GroupOf(first), Is.Not.EqualTo(PsdLipSync.GroupOf(added)).And.Not.EqualTo(Guid.Empty));
         Assert.That(editor.History.UndoCount, Is.EqualTo(1));
         Assert.That(editor.History.Undo(), Is.True);
-        Assert.That(editor.Scene.Children, Has.Count.EqualTo(2));
+        Assert.That(editor.Scene.Children, Has.Count.EqualTo(1));
         Assert.That(first.LipSyncAudio.Expression, Is.Null);
         Assert.That(second.LipSyncAudio.Expression, Is.Null);
         Assert.That(editor.History.Redo(), Is.True);
+        PsdLipSync.TryGetProperties(added, out var guestAudio, out _);
         Assert.That(first.LipSyncAudio.Evaluate(new EvaluationContext(At(1.5))), Is.Not.Null);
-        Assert.That(second.LipSyncAudio.Evaluate(new EvaluationContext(At(1.5))), Is.Null);
-        Assert.That(second.LipSyncAudio.Evaluate(new EvaluationContext(At(4))), Is.Not.Null);
-        restored.Speakers[1].LipSync.SelectedId = null;
+        Assert.That(guestAudio.Evaluate(new EvaluationContext(At(1.5))), Is.Null);
+        Assert.That(guestAudio.Evaluate(new EvaluationContext(At(4))), Is.Not.Null);
+        var voiceOnly = GenerationPreset();
+        VoicePresetStore.Save(VoicePresetStore.GlobalPath, voiceOnly);
+        restored.RefreshPresets();
+        restored.Speakers[1].SelectedPreset.Value = voiceOnly;
         restored.WriteToJson(state);
         restored.ReadFromJson(state);
-        Assert.That(restored.Speakers[1].LipSync.SelectedId, Is.Null, "An explicit no-link choice survives restoration.");
+        Assert.That(restored.Speakers[1].SelectedPreset.Value!.LipSync, Is.Null, "Voice-only presets remain available.");
     }
 
     [AvaloniaTest]
@@ -202,10 +207,15 @@ public partial class PsdLipSyncTests
         using var editor = Editor();
         var first = Character(editor.Scene);
         var second = Character(editor.Scene, 3);
+        string otherPath = Path.Combine(_directory, "guest.psd");
+        File.Copy(second.Source.Value!.FullName, otherPath);
+        second.Source.Value = new FileInfo(otherPath);
         var secondElement = second.FindHierarchicalParent<Element>()!;
         var obstacle = new Element { Start = { Value = At(3.5) }, Length = { Value = At(1) }, ZIndex = { Value = 1 } };
         int calls = 0;
-        var preset = GenerationPreset();
+        var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
+        var guest = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(second) };
+        editor.Scene.RemoveChild(first.FindHierarchicalParent<Element>()!);
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         using var model = new ScriptImportViewModel(editor, (text, settings) =>
         {
@@ -217,8 +227,7 @@ public partial class PsdLipSyncTests
             return Synthesize(text, settings);
         });
         ConfigureScript(model, preset);
-        model.Speakers[0].LipSync.SelectedId = first.Id.Value;
-        model.Speakers[1].LipSync.SelectedId = second.Id.Value;
+        model.Speakers[1].SelectedPreset.Value = guest;
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         await model.Generate();
@@ -228,6 +237,7 @@ public partial class PsdLipSyncTests
         Assert.That(first.LipSyncOffset.Expression, Is.Null);
         Assert.That(second.LipSyncAudio.Expression, Is.Null);
         Assert.That(Directory.GetFiles(Path.Combine(_directory, "resources", "tts")), Is.Empty);
+        Assert.That(PsdLipSync.Targets(editor.Scene).Single(), Is.SameAs(second));
         if (overlap) editor.Scene.RemoveChild(obstacle);
         else secondElement.IsLocked.Value = false;
         await model.Generate();
@@ -242,7 +252,7 @@ public partial class PsdLipSyncTests
         using var editor = Editor();
         var first = Character(editor.Scene);
         var second = Character(editor.Scene, 3);
-        var preset = GenerationPreset();
+        var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
         ConfigureSpeech(model, preset);
@@ -264,23 +274,31 @@ public partial class PsdLipSyncTests
             combo.IsDropDownOpen = false;
             await Settle();
             Assert.That(model.LipSync.SelectedId, Is.EqualTo(first.Id.Value));
+            model.SelectedPreset.Value = preset;
+            model.ApplyPreset();
+            combo.IsDropDownOpen = true;
+            await Settle();
+            Assert.That(((LipSyncChoice)combo.SelectedItem!).Preset, Is.EqualTo(preset.LipSync));
+            combo.IsDropDownOpen = false;
+            await Settle();
             Capture("reading", picker, view.FindControl<Button>("AddSpeechButton")!);
             model.SelectedPage.Value = 1;
             await Settle();
             var script = view.FindControl<ScriptImportView>("ScriptPage")!;
             script.FindControl<Expander>("InputSection")!.IsExpanded = false;
             await Settle();
-            var pickers = script.GetVisualDescendants().OfType<LipSyncSelectionView>().ToArray();
+            Assert.That(script.GetVisualDescendants().OfType<LipSyncSelectionView>(), Is.Empty);
+            var pickers = script.GetVisualDescendants().OfType<ComboBox>().ToArray();
             Assert.That(pickers, Has.Length.EqualTo(2));
-            pickers[0].FindControl<ComboBox>("TargetSelector")!.SelectedItem = model.Script.Speakers[0].LipSync.Targets.Value.Single(x => x.Id == first.Id.Value);
-            pickers[1].FindControl<ComboBox>("TargetSelector")!.SelectedItem = model.Script.Speakers[1].LipSync.Targets.Value.Single(x => x.Id == second.Id.Value);
+            foreach (var speaker in model.Script.Speakers) speaker.SelectedPreset.Value = null;
+            foreach (var pickerControl in pickers) pickerControl.SelectedItem = preset;
             pickers[1].BringIntoView();
             await Settle();
-            Assert.That(model.Script.Speakers.Select(x => x.LipSync.SelectedId), Is.EqualTo(new[] { first.Id.Value, second.Id.Value }));
+            Assert.That(model.Script.Speakers.All(x => x.SelectedPreset.Value!.LipSync == preset.LipSync), Is.True);
             Capture("script", pickers[1], script.FindControl<Button>("GenerateScriptButton")!);
             model.SelectedPage.Value = 0;
             await Settle();
-            Assert.That(model.LipSync.SelectedId, Is.EqualTo(first.Id.Value));
+            Assert.That(model.LipSync.Preset, Is.EqualTo(preset.LipSync));
 
             void Capture(string page, Control selector, Button generate)
             {

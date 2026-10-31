@@ -51,7 +51,7 @@ internal static class PsdLipSync
             : offset.Expression is VoiceLipSyncOffsetExpression offsetExpression ? offsetExpression.GroupId : Guid.Empty;
     }
 
-    public static void Connect(TtsController controller, EngineObject target)
+    public static void Connect(TtsController controller, EngineObject target, bool extendToSpeech = false)
     {
         var scene = controller.FindHierarchicalParent<Scene>()
             ?? throw new InvalidOperationException("編集する読み上げ要素が見つかりません。");
@@ -62,7 +62,10 @@ internal static class PsdLipSync
             Disconnect(controller, scene);
         if (group == Guid.Empty) group = Guid.NewGuid();
         if (audio.Expression is not VoiceLipSyncAudioExpression)
-            audio.Expression = new VoiceLipSyncAudioExpression { GroupId = group, PreviousExpression = audio.SerializeExpression() };
+            audio.Expression = new VoiceLipSyncAudioExpression
+            {
+                GroupId = group, PreviousExpression = audio.SerializeExpression(), ExtendToSpeech = extendToSpeech
+            };
         if (offset.Expression is not VoiceLipSyncOffsetExpression { GroupId: var offsetGroup } || offsetGroup != group)
             offset.Expression = new VoiceLipSyncOffsetExpression { GroupId = group, PreviousExpression = offset.SerializeExpression() };
         controller.LipSyncGroupId.Value = group;

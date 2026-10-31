@@ -5,7 +5,6 @@ using System.Text.Json.Nodes;
 using Avalonia.Threading;
 using Beutl.Editor;
 using Beutl.Editor.Services;
-using Beutl.Engine;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -119,7 +118,7 @@ public sealed class ScriptImportViewModel : IDisposable
         {
             if (!_assignments.TryGetValue(name, out var speaker))
             {
-                speaker = new ScriptSpeakerViewModel(name, _presets, _scene);
+                speaker = new ScriptSpeakerViewModel(name, _presets);
                 _assignments.Add(name, speaker);
             }
             Speakers.Add(speaker);
@@ -175,13 +174,10 @@ public sealed class ScriptImportViewModel : IDisposable
             CheckLayers(requests);
             _history.ExecuteInTransaction(() =>
             {
-                for (int i = 0; i < elements.Count; i++)
-                {
-                    var element = elements[i];
-                    _scene.AddChild(element, ElementOverlapHandling.ThrowException);
-                    if (requests[i].LipSyncTarget is { } target)
-                        PsdLipSync.Connect(element.Objects.OfType<TtsController>().Single(), target);
-                }
+                foreach (var element in elements) _scene.AddChild(element, ElementOverlapHandling.ThrowException);
+                PsdLipSyncPresets.Connect(_scene, requests.Select((request, i) =>
+                    (Controller: elements[i].Objects.OfType<TtsController>().Single(), Preset: request.Preset.LipSync))
+                    .Where(x => x.Preset != null).Select(x => (x.Controller, x.Preset!)));
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";
@@ -223,7 +219,7 @@ public sealed class ScriptImportViewModel : IDisposable
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
             int layer = checked(FirstLayer.Value + (SeparateLayers.Value ? Speakers.IndexOf(speaker) : 0));
-            return new Request(line.Text, speaker.DisplayName, preset, layer, speaker.LipSync.CaptureTarget());
+            return new Request(line.Text, speaker.DisplayName, preset, layer);
         }).ToArray();
         CheckLayers(requests);
         return requests;
@@ -241,7 +237,7 @@ public sealed class ScriptImportViewModel : IDisposable
         {
             RawText = RawText.Value, HasSpeakerNames = HasSpeakerNames.Value,
             Lines = Lines.ToArray(),
-            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.AssignedPreset, x.LipSync.SelectedId)).ToArray(),
+            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.AssignedPreset)).ToArray(),
             StartSeconds = StartSeconds.Value, GapSeconds = GapSeconds.Value,
             FirstLayer = FirstLayer.Value, SeparateLayers = SeparateLayers.Value
         });
@@ -261,8 +257,7 @@ public sealed class ScriptImportViewModel : IDisposable
         Speakers.Clear();
         foreach (var saved in state.Speakers)
         {
-            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets, _scene, saved.Preset);
-            speaker.LipSync.SelectedId = saved.LipSyncTargetId;
+            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets, saved.Preset);
             _assignments.Add(saved.Name, speaker);
         }
         SetLines(state.Lines);
@@ -301,8 +296,8 @@ public sealed class ScriptImportViewModel : IDisposable
         TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
-    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer, EngineObject? LipSyncTarget);
-    private sealed record SpeakerState(string Name, VoicePreset? Preset, Guid? LipSyncTargetId = null);
+    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);
+    private sealed record SpeakerState(string Name, VoicePreset? Preset);
     private sealed record State
     {
         public string RawText { get; init; } = "";

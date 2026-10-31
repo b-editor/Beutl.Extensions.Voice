@@ -63,6 +63,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         try
         {
             var lipSyncTarget = LipSync.CaptureTarget();
+            var lipSyncPreset = LipSync.Preset;
             Message.Value = "";
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
             var output = await _synthesize(request.Text, request.Settings, query);
@@ -81,7 +82,12 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             {
                 _scene.AddChild(element, ElementOverlapHandling.ZIndex);
                 if (lipSyncTarget != null)
+                {
                     PsdLipSync.Connect(element.Objects.OfType<TtsController>().Single(), lipSyncTarget);
+                    PsdLipSyncPresets.Extend(_scene, lipSyncTarget, element.Range);
+                }
+                else if (lipSyncPreset != null)
+                    PsdLipSyncPresets.Connect(_scene, [(element.Objects.OfType<TtsController>().Single(), lipSyncPreset)]);
             });
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
@@ -135,6 +141,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
         json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
         json["LipSyncTargetId"] = LipSync.SelectedId?.ToString();
+        json["LipSyncPreset"] = JsonSerializer.SerializeToNode(LipSync.Preset);
     }
 
     public async void ReadFromJson(JsonObject json)
@@ -142,6 +149,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         SelectedPage.Value = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
         Script.ReadFromJson(json);
         LipSync.SelectedId = Guid.TryParse((string?)json["LipSyncTargetId"], out var targetId) ? targetId : null;
+        if (json["LipSyncPreset"]?.Deserialize<VoiceLipSyncPreset>() is { } lipSyncPreset) LipSync.Preset = lipSyncPreset;
         Text.Value = (string?)json[nameof(Text)] ?? "";
         if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))
             SelectedPreset.Value = Presets.Value.FirstOrDefault(x => x.Id == id);
