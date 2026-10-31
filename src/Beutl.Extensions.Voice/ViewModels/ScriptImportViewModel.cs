@@ -5,8 +5,10 @@ using System.Text.Json.Nodes;
 using Avalonia.Threading;
 using Beutl.Editor;
 using Beutl.Editor.Services;
+using Beutl.Engine;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
+using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
 using Beutl.ProjectSystem;
@@ -117,7 +119,7 @@ public sealed class ScriptImportViewModel : IDisposable
         {
             if (!_assignments.TryGetValue(name, out var speaker))
             {
-                speaker = new ScriptSpeakerViewModel(name, _presets);
+                speaker = new ScriptSpeakerViewModel(name, _presets, _scene);
                 _assignments.Add(name, speaker);
             }
             Speakers.Add(speaker);
@@ -173,8 +175,13 @@ public sealed class ScriptImportViewModel : IDisposable
             CheckLayers(requests);
             _history.ExecuteInTransaction(() =>
             {
-                foreach (var element in elements)
+                for (int i = 0; i < elements.Count; i++)
+                {
+                    var element = elements[i];
                     _scene.AddChild(element, ElementOverlapHandling.ThrowException);
+                    if (requests[i].LipSyncTarget is { } target)
+                        PsdLipSync.Connect(element.Objects.OfType<TtsController>().Single(), target);
+                }
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";
@@ -216,7 +223,7 @@ public sealed class ScriptImportViewModel : IDisposable
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
             int layer = checked(FirstLayer.Value + (SeparateLayers.Value ? Speakers.IndexOf(speaker) : 0));
-            return new Request(line.Text, speaker.DisplayName, preset, layer);
+            return new Request(line.Text, speaker.DisplayName, preset, layer, speaker.LipSync.CaptureTarget());
         }).ToArray();
         CheckLayers(requests);
         return requests;
@@ -234,7 +241,7 @@ public sealed class ScriptImportViewModel : IDisposable
         {
             RawText = RawText.Value, HasSpeakerNames = HasSpeakerNames.Value,
             Lines = Lines.ToArray(),
-            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.AssignedPreset)).ToArray(),
+            Speakers = _assignments.Values.Select(x => new SpeakerState(x.Name, x.AssignedPreset, x.LipSync.SelectedId)).ToArray(),
             StartSeconds = StartSeconds.Value, GapSeconds = GapSeconds.Value,
             FirstLayer = FirstLayer.Value, SeparateLayers = SeparateLayers.Value
         });
@@ -254,7 +261,8 @@ public sealed class ScriptImportViewModel : IDisposable
         Speakers.Clear();
         foreach (var saved in state.Speakers)
         {
-            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets, saved.Preset);
+            var speaker = new ScriptSpeakerViewModel(saved.Name, _presets, _scene, saved.Preset);
+            speaker.LipSync.SelectedId = saved.LipSyncTargetId;
             _assignments.Add(saved.Name, speaker);
         }
         SetLines(state.Lines);
@@ -293,8 +301,8 @@ public sealed class ScriptImportViewModel : IDisposable
         TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
-    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);
-    private sealed record SpeakerState(string Name, VoicePreset? Preset);
+    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer, EngineObject? LipSyncTarget);
+    private sealed record SpeakerState(string Name, VoicePreset? Preset, Guid? LipSyncTargetId = null);
     private sealed record State
     {
         public string RawText { get; init; } = "";

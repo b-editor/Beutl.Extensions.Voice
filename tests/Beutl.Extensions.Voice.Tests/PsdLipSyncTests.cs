@@ -26,7 +26,7 @@ using Beutl.Serialization;
 
 namespace Beutl.Extensions.Voice.Tests;
 
-public class PsdLipSyncTests
+public partial class PsdLipSyncTests
 {
     private string _directory = null!;
     private string? _previousHome;
@@ -268,7 +268,7 @@ public class PsdLipSyncTests
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         using var tab = new TtsTabViewModel(new(), editor);
-        Assert.That(await tab.SaveConnection("Test", server.Url), Is.True);
+        Assert.That(await tab.SaveConnection("Test", server.Url), Is.True, tab.ConnectionMessage.Value);
         tab.SelectedVoice.Value = tab.Voice.Value.Single();
         tab.Text.Value = "読み上げ";
         await tab.Generate();

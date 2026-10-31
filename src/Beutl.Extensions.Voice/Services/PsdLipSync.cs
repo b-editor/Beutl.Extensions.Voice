@@ -25,6 +25,25 @@ internal static class PsdLipSync
     public static IEnumerable<EngineObject> Targets(Scene scene) =>
         scene.EnumerateAllChildren<EngineObject>().Where(x => TryGetProperties(x, out _, out _));
 
+    public static string TargetName(EngineObject target)
+    {
+        var element = target.FindHierarchicalParent<Element>();
+        string name = string.IsNullOrWhiteSpace(element?.Name.Value) ? "PSD立ち絵" : element.Name.Value;
+        return $"{name} (レイヤー {element?.ZIndex.Value + 1})";
+    }
+
+    public static void ValidateTarget(Scene scene, EngineObject target)
+    {
+        if (target.FindHierarchicalParent<Scene>() != scene || target.FindHierarchicalParent<Element>() is not { } element
+            || !TryGetProperties(target, out var audio, out var offset))
+            throw new InvalidOperationException("連携先のPSD立ち絵が見つかりません。");
+        // Joining an existing group changes only the voice, so a locked character can still be reused.
+        bool alreadyLinked = audio.Expression is VoiceLipSyncAudioExpression { GroupId: var group } && group != Guid.Empty
+            && offset.Expression is VoiceLipSyncOffsetExpression offsetExpression && offsetExpression.GroupId == group;
+        if (!alreadyLinked && scene.IsElementLocked(element))
+            throw new InvalidOperationException("立ち絵の要素またはレイヤーがロックされています。");
+    }
+
     public static Guid GroupOf(EngineObject target)
     {
         if (!TryGetProperties(target, out var audio, out var offset)) return Guid.Empty;
@@ -34,10 +53,12 @@ internal static class PsdLipSync
 
     public static void Connect(TtsController controller, EngineObject target)
     {
-        if (!TryGetProperties(target, out var audio, out var offset))
-            throw new InvalidOperationException("口パクに対応するPSD立ち絵が見つかりません。");
+        var scene = controller.FindHierarchicalParent<Scene>()
+            ?? throw new InvalidOperationException("編集する読み上げ要素が見つかりません。");
+        ValidateTarget(scene, target);
+        TryGetProperties(target, out var audio, out var offset);
         var group = GroupOf(target);
-        if (controller.LipSyncGroupId.Value != group && controller.FindHierarchicalParent<Scene>() is { } scene)
+        if (controller.LipSyncGroupId.Value != group)
             Disconnect(controller, scene);
         if (group == Guid.Empty) group = Guid.NewGuid();
         if (audio.Expression is not VoiceLipSyncAudioExpression)

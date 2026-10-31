@@ -24,12 +24,8 @@ public partial class TtsControllerViewModel
         var previous = SelectedLipSyncTarget.Value?.Object;
         var group = _controller.LipSyncGroupId.Value;
         HasLipSync.Value = group != Guid.Empty;
-        LipSyncTargets.Value = scene == null ? [] : PsdLipSync.Targets(scene).Select(target =>
-        {
-            var element = target.FindHierarchicalParent<Element>();
-            string name = string.IsNullOrWhiteSpace(element?.Name.Value) ? "PSD立ち絵" : element.Name.Value;
-            return new LipSyncTarget(target, $"{name} (レイヤー {element?.ZIndex.Value + 1})");
-        }).ToArray();
+        LipSyncTargets.Value = scene == null ? [] : PsdLipSync.Targets(scene)
+            .Select(target => new LipSyncTarget(target, PsdLipSync.TargetName(target))).ToArray();
         HasLipSyncTargets.Value = LipSyncTargets.Value.Length > 0;
         SelectedLipSyncTarget.Value = LipSyncTargets.Value.FirstOrDefault(x => group != Guid.Empty && PsdLipSync.GroupOf(x.Object) == group)
             ?? LipSyncTargets.Value.FirstOrDefault(x => x.Object == previous);
@@ -40,12 +36,9 @@ public partial class TtsControllerViewModel
         if (IsGenerating.Value || _disposed) return;
         try
         {
-            var (_, scene) = GetEditableTarget();
-            if (SelectedLipSyncTarget.Value?.Object is not { } target
-                || target.FindHierarchicalParent<Scene>() != scene)
+            GetEditableTarget();
+            if (SelectedLipSyncTarget.Value?.Object is not { } target)
                 throw new InvalidOperationException("連携するPSD立ち絵を選択してください。");
-            if (target.FindHierarchicalParent<Element>() is not { } targetElement || scene.IsElementLocked(targetElement))
-                throw new InvalidOperationException("立ち絵の要素またはレイヤーがロックされています。");
             _history!.ExecuteInTransaction(() => PsdLipSync.Connect(_controller, target));
             RefreshLipSyncTargets();
             Message.Value = "立ち絵を読み上げ音声に連携しました。";
