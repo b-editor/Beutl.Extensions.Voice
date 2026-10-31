@@ -37,22 +37,19 @@ internal static class PsdLipSyncPresets
     {
         foreach (var group in bindings.GroupBy(x => x.Preset.PsdPath, PathComparer))
         {
-            var range = TimeRange.FromRange(group.Min(x => x.Controller.TimeRange.Value.Start),
-                group.Max(x => x.Controller.TimeRange.Value.End));
-            var target = PsdLipSync.Targets(scene).Where(x => PathComparer.Equals(SourcePath(x), group.Key))
-                .OrderByDescending(x => x.TimeRange.Value.Intersects(range))
-                .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - range.Start).ToSeconds()))
-                .FirstOrDefault();
-            bool created = target == null;
-            if (target == null)
+            var targets = PsdLipSync.Targets(scene).Where(x => PathComparer.Equals(SourcePath(x), group.Key)).ToArray();
+            bool created = targets.Length == 0;
+            if (created)
             {
+                var range = TimeRange.FromRange(group.Min(x => x.Controller.TimeRange.Value.Start),
+                    group.Max(x => x.Controller.TimeRange.Value.End));
                 var json = JsonNode.Parse(group.First().Preset.ObjectJson) as JsonObject
                     ?? throw new InvalidOperationException("プリセットの立ち絵を読み込めませんでした。");
                 var saved = CoreSerializer.DeserializeFromJsonObject(json, typeof(EngineObject)) as EngineObject;
                 if (saved == null || !PsdLipSync.TryGetProperties(saved, out _, out _))
                     throw new InvalidOperationException("プリセットの立ち絵を使うにはPsdTachie拡張をインストールしてください。");
                 ObjectRegenerator.Regenerate(saved, saved.GetType(), out var copy);
-                target = (EngineObject)copy;
+                var target = (EngineObject)copy;
                 var element = new Element
                 {
                     Name = { Value = Path.GetFileNameWithoutExtension(group.Key) },
@@ -63,9 +60,20 @@ internal static class PsdLipSyncPresets
                 };
                 element.AddObject(target);
                 scene.AddChild(element, ElementOverlapHandling.ThrowException);
+                targets = [target];
             }
-            foreach (var binding in group) PsdLipSync.Connect(binding.Controller, target, created);
-            Extend(scene, target, range);
+            // Select per speech interval before extending any character's range.
+            var assignments = group.GroupBy(binding => targets
+                .OrderByDescending(x => x.TimeRange.Value.Intersects(binding.Controller.TimeRange.Value))
+                .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - binding.Controller.TimeRange.Value.Start).ToSeconds()))
+                .First()).ToArray();
+            foreach (var assignment in assignments)
+            {
+                foreach (var binding in assignment) PsdLipSync.Connect(binding.Controller, assignment.Key, created);
+                var range = TimeRange.FromRange(assignment.Min(x => x.Controller.TimeRange.Value.Start),
+                    assignment.Max(x => x.Controller.TimeRange.Value.End));
+                Extend(scene, assignment.Key, range);
+            }
         }
     }
 

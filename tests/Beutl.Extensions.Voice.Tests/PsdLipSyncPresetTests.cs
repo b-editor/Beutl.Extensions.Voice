@@ -146,6 +146,54 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
+    [TestCase(0, false)]
+    [TestCase(2, true)]
+    [TestCase(3, true)]
+    public async Task Script_selects_each_same_psd_character_by_the_speech_interval(double gap, bool useSecond)
+    {
+        using var editor = Editor();
+        var first = Character(editor.Scene);
+        var second = Character(editor.Scene);
+        var firstElement = first.FindHierarchicalParent<Element>()!;
+        var secondElement = second.FindHierarchicalParent<Element>()!;
+        firstElement.Length.Value = At(5);
+        secondElement.Start.Value = At(5);
+        secondElement.Length.Value = At(5);
+        var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
+        using var model = new ScriptImportViewModel(editor, Synthesize);
+        ConfigureScript(model, preset);
+        model.RawText.Value = "案内役: 最初のセリフ。\n案内役: 次のセリフ。";
+        model.GapSeconds.Value = gap;
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        await model.Generate();
+        var voices = editor.Scene.EnumerateAllChildren<TtsController>()
+            .OrderBy(x => x.TimeRange.Value.Start).ToArray();
+        Assert.That(voices, Has.Length.EqualTo(2), model.Message.Value);
+        Assert.That(voices[0].LipSyncGroupId.Value, Is.EqualTo(PsdLipSync.GroupOf(first)).And.Not.EqualTo(Guid.Empty));
+        Assert.That(voices[1].LipSyncGroupId.Value,
+            Is.EqualTo(PsdLipSync.GroupOf(useSecond ? second : first)).And.Not.EqualTo(Guid.Empty));
+        Assert.That(second.LipSyncAudio.Expression != null, Is.EqualTo(useSecond));
+        Assert.That(PsdLipSync.Targets(editor.Scene).Count(), Is.EqualTo(2));
+        Assert.That(firstElement.Range.Start, Is.EqualTo(At(0)));
+        Assert.That(firstElement.Range.End, Is.EqualTo(At(5)));
+        Assert.That(secondElement.Range.Start, Is.EqualTo(At(5)));
+        Assert.That(secondElement.Range.End, Is.EqualTo(At(10)));
+        using var render = new RenderProbe(editor.Scene);
+        render.Mouth(1.5, true);
+        render.Mouth(3.5 + gap, true, $"same-psd-second-line-gap-{gap}");
+        render.Mouth(4.5 + gap, false);
+        Assert.That(editor.History.UndoCount, Is.EqualTo(1));
+        Assert.That(editor.History.Undo(), Is.True);
+        Assert.That(editor.Scene.Children, Has.Count.EqualTo(2));
+        Assert.That(first.LipSyncAudio.Expression, Is.Null);
+        Assert.That(second.LipSyncAudio.Expression, Is.Null);
+        render.Mouth(3.5 + gap, false);
+        Assert.That(editor.History.Redo(), Is.True);
+        render.Mouth(3.5 + gap, true);
+    }
+
+    [AvaloniaTest]
     public async Task Script_presets_for_the_same_psd_share_one_character_across_separate_voice_layers()
     {
         using var editor = Editor();
