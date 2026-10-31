@@ -205,14 +205,16 @@ public class LocalEngineSetupTests
     }
 
     [AvaloniaTest]
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task Slow_running_engine_is_not_relaunched_and_can_be_cancelled(bool cancel)
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public async Task Slow_engine_discovery_waits_for_a_response_and_can_be_cancelled(bool starting, bool cancel)
     {
-        using var server = new HttpVoiceEngineTests.EngineServer { PauseAt = "/tts/speakers" };
+        using var server = new HttpVoiceEngineTests.EngineServer { FailDiscovery = starting, PauseAt = "/tts/speakers" };
         int launches = 0;
         using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }],
-            _ => null, _ => launches++);
+            _ => null, _ => { launches++; server.FailDiscovery = false; });
         model.SelectApplication(model.Engines[0], "/installed/run");
         Task<bool> registration = model.Use(model.Engines[0]);
         await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -220,7 +222,10 @@ public class LocalEngineSetupTests
         if (cancel) model.Dispose();
         server.Resume.TrySetResult();
         Assert.That(await registration.WaitAsync(TimeSpan.FromSeconds(5)), Is.EqualTo(!cancel), model.Message.Value);
-        Assert.That(launches, Is.Zero, "Slow metadata must not cause an already-running engine to be started again.");
+        Assert.That(launches, Is.EqualTo(starting ? 1 : 0), "Only a stopped engine needs to be launched.");
+        if (!cancel)
+            Assert.That(server.DiscoveryCount, Is.EqualTo(starting ? 2 : 1),
+                "A slow discovery response must be allowed to complete without retrying it.");
         Assert.That(VoiceEngineStore.Load().Length, Is.EqualTo(cancel ? 0 : 1));
         Assert.That(model.IsBusy.Value, Is.False);
     }

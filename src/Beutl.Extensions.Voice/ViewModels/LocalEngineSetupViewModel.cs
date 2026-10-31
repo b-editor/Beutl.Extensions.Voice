@@ -55,7 +55,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
                 var seed = FindStoredConnection(entry) ?? new VoiceEngineConnection { Url = entry.Engine.Url };
-                await Check(entry, seed, cancellationToken);
+                await Check(entry, seed, cancellationToken, quickCheck: true);
             }));
         }
         catch (OperationCanceledException) when (_disposed) { }
@@ -67,7 +67,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), entry.Engine.Url);
 
     private async Task<bool> Check(LocalEngineCandidateViewModel entry, VoiceEngineConnection seed,
-        CancellationToken cancellationToken, bool quickCheck = true)
+        CancellationToken cancellationToken, bool quickCheck)
     {
         entry.Connection = null;
         try
@@ -128,7 +128,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 {
                     entry.Status.Value = "エンジンの起動を待っています…";
                     await Task.Delay(1000, waiting.Token);
-                    if (await Check(entry, seed, waiting.Token)) break;
+                    if (await Check(entry, seed, waiting.Token, quickCheck: false)) break;
                 }
             }
             waiting.Token.ThrowIfCancellationRequested();

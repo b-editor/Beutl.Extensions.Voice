@@ -85,8 +85,9 @@ public class HttpVoiceEngineTests
         using var server = new EngineServer(aivis: true) { AdjustPitch = false };
         using var editor = Editor();
         using var model = new TtsTabViewModel(new(), editor);
-        Assert.That(await model.SaveConnection("Original", server.Url), Is.True, model.ConnectionMessage.Value);
+        Assert.That(await model.SaveConnection("Original", server.Url.Replace("http:", "HTTP:")), Is.True, model.ConnectionMessage.Value);
         var original = VoiceEngineStore.Load().Single();
+        Assert.That(original.Url, Is.EqualTo(server.Url), "Connection URLs are normalized before being stored.");
         server.ManifestStatus = server.VersionStatus = optionalStatus;
 
         string url = trailingSlash ? server.Url : server.Url.TrimEnd('/');
@@ -459,6 +460,7 @@ public class HttpVoiceEngineTests
         private readonly HttpListener _listener = new();
         private readonly Task _loop;
         public string Url { get; }
+        public int DiscoveryCount { get; private set; }
         public int SynthesisCount { get; private set; }
         public bool FailSynthesis { get; set; }
         public bool FailDiscovery { get; set; }
@@ -495,6 +497,7 @@ public class HttpVoiceEngineTests
                     {
                         var context = await _listener.GetContextAsync();
                         string endpoint = context.Request.Url!.AbsolutePath;
+                        if (endpoint == "/tts/speakers") DiscoveryCount++;
                         if (endpoint == "/tts/speakers" && FailDiscovery)
                         {
                             context.Response.StatusCode = 503;
