@@ -14,7 +14,7 @@ using Reactive.Bindings.Extensions;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
-public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorContext
+public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorContext
 {
     private readonly TtsController _controller;
     private readonly ILogger _logger = Log.CreateLogger<TtsControllerViewModel>();
@@ -26,11 +26,13 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         Inner = inner;
         Extension = extension;
         _controller = controller;
+        _lipSyncHistory.AddTo(_subscriptions);
         SelectedPreset.Subscribe(value => HasSelectedPreset.Value = value != null).AddTo(_subscriptions);
         controller.AppliedPreset.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Draft.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Generation.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Text.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
+        controller.LipSyncGroupId.GetObservable().Subscribe(_ => RefreshLipSyncTargets()).AddTo(_subscriptions);
         Edited += SaveDraft;
         EditCompleted += () => _history?.Commit();
         RefreshPresets();
@@ -238,7 +240,10 @@ public class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEditorConte
         if (visitor is IServiceProvider services)
         {
             _history = services.GetService(typeof(HistoryManager)) as HistoryManager;
+            // The target expressions and the group can replay in either order during Undo/Redo.
+            _lipSyncHistory.Disposable = _history?.StateChanged.Subscribe(_ => RefreshLipSyncTargets());
             HasEditor.Value = _history != null;
+            RefreshLipSyncTargets();
         }
     }
 }

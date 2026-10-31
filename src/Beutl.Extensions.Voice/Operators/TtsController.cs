@@ -9,7 +9,7 @@ public partial class TtsController : EngineObject
     public TtsController()
     {
         ScanProperties<TtsController>();
-        HideProperties(Generation, AppliedPreset, Draft);
+        HideProperties(Generation, AppliedPreset, Draft, LipSyncGroupId);
     }
 
     [DataType(DataType.MultilineText)]
@@ -21,4 +21,7 @@ public partial class TtsController : EngineObject
 
     // Pending edits use the same immutable snapshot format as a completed generation.
     public IProperty<VoiceGeneration?> Draft { get; } = Property.CreateValue<VoiceGeneration?>();
+
+    // A shared binding survives splitting either the speech or its character element.
+    public IProperty<Guid> LipSyncGroupId { get; } = Property.CreateValue(Guid.Empty);
 }
