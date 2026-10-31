@@ -119,12 +119,58 @@ public class HttpVoiceEngineTests
     }
 
     [AvaloniaTest]
+    [TestCase("text")]
+    [TestCase("voice")]
+    [TestCase("query")]
+    [TestCase("dispose")]
+    public async Task Invalidating_accent_edit_cancels_before_the_http_response(string change)
+    {
+        using var server = new EngineServer { PauseAt = "/tts/mora_pitch", AbortPausedResponse = true };
+        using var editor = Editor();
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(await model.SaveConnection("Test", server.Url), Is.True);
+        model.SelectedVoice.Value = model.Voice.Value.Single();
+        model.Text.Value = "アイ、ウ。";
+        var original = model.AudioQuery.Value = EditableQuery();
+        var pending = model.ChangeAccent(0, 1);
+        try
+        {
+            await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            if (change == "text") model.Text.Value = "変更した本文";
+            if (change == "voice") model.SelectedVoice.Value = null;
+            if (change == "query") model.AudioQuery.Value = EditableQuery(); // Same voice, e.g. Undo restores a query.
+            if (change == "dispose") model.Dispose();
+            var expected = model.AudioQuery.Value;
+            await pending.WaitAsync(TimeSpan.FromSeconds(2));
+            Assert.That(server.Resume.Task.IsCompleted, Is.False, "The client must stop waiting without a server response.");
+            Assert.That(model.IsGenerating.Value, Is.False);
+            Assert.That(model.Message.Value, Is.Empty, "Cancellation is not an analysis error.");
+            Assert.That(model.AudioQuery.Value, Is.SameAs(expected));
+            Assert.That(original.AccentPhrases[0].Accent, Is.EqualTo(2));
+            if (change != "dispose")
+            {
+                server.Resume.TrySetResult();
+                model.SelectedVoice.Value = model.Voice.Value.Single();
+                await model.CreateQuery().WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.That(model.AudioQuery.Value!.Kana, Is.EqualTo(model.Text.Value));
+                Assert.That(model.IsGenerating.Value, Is.False);
+                Assert.That(model.Message.Value, Is.Empty);
+            }
+        }
+        finally
+        {
+            server.Resume.TrySetResult();
+            await pending.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [AvaloniaTest]
     [TestCase("failure")]
     [TestCase("text")]
     [TestCase("manual pitch")]
     public async Task Accent_recalculation_does_not_commit_failed_or_stale_results(string change)
     {
-        using var server = new EngineServer { PauseAt = "/tts/mora_pitch", FailMoraPitch = change == "failure" };
+        using var server = new EngineServer { PauseAt = "/tts/mora_pitch", FailMoraPitch = change == "failure", AbortPausedResponse = change != "failure" };
         using var editor = Editor();
         using var model = new TtsTabViewModel(new(), editor);
         Assert.That(await model.SaveConnection("Test", server.Url), Is.True);
@@ -579,6 +625,7 @@ public class HttpVoiceEngineTests
         public int VersionStatus { get; set; } = 200;
         public bool OmitUuid { get; set; }
         public string? PauseAt { get; set; }
+        public bool AbortPausedResponse { get; set; }
         public TaskCompletionSource Paused { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource Resume { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public string? LastText { get; private set; }
@@ -617,6 +664,11 @@ public class HttpVoiceEngineTests
                         {
                             Paused.TrySetResult();
                             await Resume.Task.WaitAsync(TimeSpan.FromSeconds(10));
+                            if (AbortPausedResponse)
+                            {
+                                context.Response.Abort();
+                                continue;
+                            }
                         }
                         object? result = null;
                         if (endpoint == "/tts/version")

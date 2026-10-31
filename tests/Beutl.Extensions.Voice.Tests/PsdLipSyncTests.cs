@@ -161,6 +161,8 @@ public partial class PsdLipSyncTests
         var target = Character(scene);
         var first = Speech(scene, 1);
         var second = Speech(scene, 3.5);
+        target.LipSyncAudio.Expression = Expression.CreateReference<SoundSource?>(first.Sound.Id.Value, nameof(SourceSound.Source));
+        target.LipSyncOffset.Expression = Expression.CreateReference<MediaTime>(first.Sound.Id.Value, nameof(SourceSound.OffsetPosition));
         PsdLipSync.Connect(first.Controller, target);
         PsdLipSync.Connect(second.Controller, target);
         var group = first.Controller.LipSyncGroupId.Value;
@@ -216,6 +218,24 @@ public partial class PsdLipSyncTests
         // A standalone voice copy still drives its existing portrait.
         ObjectRegenerator.Regenerate(first.Element, out var voiceOnly);
         Assert.That(voiceOnly.Objects.OfType<TtsController>().Single().LipSyncGroupId.Value, Is.EqualTo(group));
+
+        // Disconnect the last copied voice after deleting the other copied lines and split halves.
+        foreach (var element in scene.Children.Where(x => x != copiedFirst
+                     && x.Objects.OfType<TtsController>().Any(c => c.LipSyncGroupId.Value == copyGroup)).ToArray())
+            scene.RemoveChild(element);
+        var linkedTargets = PsdLipSync.Targets(scene).Where(x => PsdLipSync.GroupOf(x) == copyGroup).ToArray();
+        PsdLipSync.Disconnect(copiedFirst.Objects.OfType<TtsController>().Single(), scene);
+        foreach (var portrait in linkedTargets)
+        {
+            var psd = (PsdTachieDrawable)portrait;
+            var audio = (ReferenceExpression<SoundSource?>)psd.LipSyncAudio.Expression!;
+            var offset = (ReferenceExpression<MediaTime>)psd.LipSyncOffset.Expression!;
+            Assert.That(audio.ObjectId, Is.EqualTo(copiedSound.Id.Value));
+            Assert.That(audio.PropertyPath, Is.EqualTo(nameof(SourceSound.Source)));
+            Assert.That(offset.ObjectId, Is.EqualTo(copiedSound.Id.Value));
+            Assert.That(offset.PropertyPath, Is.EqualTo(nameof(SourceSound.OffsetPosition)));
+        }
+        Assert.That(PsdLipSync.GroupOf(target), Is.EqualTo(group));
     }
 
     [AvaloniaTest]
