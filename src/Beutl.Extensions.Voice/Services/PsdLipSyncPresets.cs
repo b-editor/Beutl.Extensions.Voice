@@ -12,9 +12,6 @@ namespace Beutl.Extensions.Voice.Services;
 
 internal static class PsdLipSyncPresets
 {
-    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
-        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-
     private static string? SourcePath(EngineObject target) => target.Properties
         .OfType<IExpressionProperty<FileInfo?>>()
         .FirstOrDefault(x => x.Name == "Source")?.Value?.FullName;
@@ -35,7 +32,7 @@ internal static class PsdLipSyncPresets
     // Call inside the same history transaction as audio placement, after adding all speech elements.
     public static void Connect(Scene scene, IEnumerable<(TtsController Controller, VoiceLipSyncPreset Preset)> bindings)
     {
-        foreach (var group in bindings.GroupBy(x => x.Preset.PsdPath, PathComparer))
+        foreach (var group in bindings.GroupBy(x => FilePathComparison.ResolveCanonicalPath(x.Preset.PsdPath), StringComparer.Ordinal))
         {
             var targets = FindTargets(scene, group.Key);
             bool created = targets.Length == 0;
@@ -65,19 +62,22 @@ internal static class PsdLipSyncPresets
         var planned = speech.Where(x => x.Preset == null).Select(x => x.Element).ToList();
         var links = new List<(TtsController Controller, EngineObject Target, bool Created)>();
         int nextLayer = firstLayer;
-        foreach (var group in speech.Where(x => x.Preset != null).GroupBy(x => x.Preset!.PsdPath, PathComparer))
+        foreach (var group in speech.Where(x => x.Preset != null)
+                     .GroupBy(x => FilePathComparison.ResolveCanonicalPath(x.Preset!.PsdPath), StringComparer.Ordinal))
         {
             var targets = FindTargets(scene, group.Key);
             bool created = targets.Length == 0;
             if (created)
                 targets = [CreateCharacter(scene, group.First().Preset!, scriptRange, FreePair(scene, scriptRange, nextLayer, planned))];
+            // Split parts share a group; independently linked characters keep their own speech intervals.
+            bool oneGroup = targets.Select(PsdLipSync.GroupOf).Distinct().Count() == 1;
             var assignments = group.GroupBy(x => SelectTarget(targets, x.Element.Range)).ToArray();
             foreach (var assignment in assignments)
             {
                 var target = assignment.Key;
                 PsdLipSync.ValidateTarget(scene, target);
-                Extend(scene, target, scriptRange, planned);
                 var range = TimeRange.FromRange(assignment.Min(x => x.Element.Range.Start), assignment.Max(x => x.Element.Range.End));
+                Extend(scene, target, oneGroup ? scriptRange : range, planned);
                 int layer = FreeLayer(scene, range, checked(target.FindHierarchicalParent<Element>()!.ZIndex.Value + 1), planned: planned);
                 foreach (var item in assignment)
                 {
@@ -92,8 +92,9 @@ internal static class PsdLipSyncPresets
         foreach (var link in links) PsdLipSync.Connect(link.Controller, link.Target, link.Created);
     }
 
-    private static EngineObject[] FindTargets(Scene scene, string path) =>
-        PsdLipSync.Targets(scene).Where(x => PathComparer.Equals(SourcePath(x), path)).ToArray();
+    private static EngineObject[] FindTargets(Scene scene, string canonicalPath) =>
+        PsdLipSync.Targets(scene).Where(x => SourcePath(x) is { } path
+            && FilePathComparison.ResolveCanonicalPath(path) == canonicalPath).ToArray();
 
     private static EngineObject SelectTarget(EngineObject[] targets, TimeRange range) => targets
         .OrderByDescending(x => x.TimeRange.Value.Intersects(range))
