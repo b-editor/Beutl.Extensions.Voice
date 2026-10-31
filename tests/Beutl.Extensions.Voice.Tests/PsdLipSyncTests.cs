@@ -104,17 +104,20 @@ public class PsdLipSyncTests
     {
         using var editor = Editor();
         var target = Character(editor.Scene);
+        // One continuous character above successive speech clips on the same audio layer.
+        editor.Scene.MoveChild(0, At(0.25), At(8), target.FindHierarchicalParent<Element>()!);
         var first = Speech(editor.Scene, 1);
-        var second = Speech(editor.Scene, 3.5, 2);
+        var second = Speech(editor.Scene, 3.5);
         PsdLipSync.Connect(first.Controller, target);
         PsdLipSync.Connect(second.Controller, target);
         using var render = new RenderProbe(editor.Scene);
-        render.Mouth(0.5, false);
+        render.Mouth(0.5, false, "lipsync-before-lines");
         render.Mouth(1.5, true, "lipsync-speaking");
         render.Mouth(2.5, false, "lipsync-silent");
         render.Mouth(3, false); // Clip end is excluded.
-        render.Mouth(3.25, false);
-        render.Mouth(4, true);
+        render.Mouth(3.25, false, "lipsync-between-lines");
+        render.Mouth(4, true, "lipsync-second-line");
+        render.Mouth(5.5, false, "lipsync-after-lines");
         editor.Scene.MoveChild(2, At(2), At(2), second.Element);
         second.Sound.Source.Value = Wave(silent: true);
         render.Mouth(2.25, false); // The newest line wins when clips overlap.
