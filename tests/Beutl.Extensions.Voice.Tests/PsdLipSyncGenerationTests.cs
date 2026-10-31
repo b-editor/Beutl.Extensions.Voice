@@ -2,8 +2,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Headless;
 using Avalonia.Headless.NUnit;
+using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
@@ -14,6 +16,7 @@ using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
 using Beutl.ProjectSystem;
+using FluentAvalonia.UI.Controls;
 
 namespace Beutl.Extensions.Voice.Tests;
 
@@ -252,7 +255,8 @@ public partial class PsdLipSyncTests
     {
         using var editor = Editor();
         var first = Character(editor.Scene);
-        var second = Character(editor.Scene, 3);
+        var second = Character(editor.Scene);
+        second.FindHierarchicalParent<Element>()!.Start.Value = At(10);
         var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
@@ -276,10 +280,12 @@ public partial class PsdLipSyncTests
             await Settle();
             combo.IsDropDownOpen = true;
             await Settle();
+            Assert.That(model.LipSync.Targets.Value.Where(x => x.Id != null).Select(x => x.Name).Distinct().Count(), Is.EqualTo(2));
             combo.SelectedItem = model.LipSync.Targets.Value.Single(x => x.Id == first.Id.Value);
             combo.IsDropDownOpen = false;
             await Settle();
             Assert.That(model.LipSync.SelectedId, Is.EqualTo(first.Id.Value));
+            Capture("reading-target", picker, view.FindControl<Button>("AddSpeechButton")!);
             model.SelectedPreset.Value = preset;
             model.ApplyPreset();
             combo.IsDropDownOpen = true;
@@ -288,6 +294,19 @@ public partial class PsdLipSyncTests
             combo.IsDropDownOpen = false;
             await Settle();
             Capture("reading", picker, view.FindControl<Button>("AddSpeechButton")!);
+            model.LipSync.Preset = null;
+            var menuButton = view.FindControl<Button>("PresetMenuButton")!;
+            menuButton.BringIntoView();
+            await Settle();
+            ((FAMenuFlyout)menuButton.Flyout!).Items.OfType<FAMenuFlyoutItem>()
+                .Single(x => x.Text == "保存値との差分…").RaiseEvent(new RoutedEventArgs(FAMenuFlyoutItem.ClickEvent));
+            await Settle();
+            var details = (Flyout)FlyoutBase.GetAttachedFlyout(menuButton)!;
+            Assert.That(((StackPanel)details.Content!).GetVisualDescendants().OfType<TextBlock>()
+                .Any(x => x.Text == model.PresetDetails.Value && x.Text.Contains("→ 連携しない")), Is.True);
+            Capture("preset-details", menuButton, view.FindControl<Button>("AddSpeechButton")!, TopLevel.GetTopLevel(details.Popup.Child));
+            details.Hide();
+            model.ApplyPreset();
             model.SelectedPage.Value = 1;
             await Settle();
             var script = view.FindControl<ScriptImportView>("ScriptPage")!;
@@ -306,7 +325,7 @@ public partial class PsdLipSyncTests
             await Settle();
             Assert.That(model.LipSync.Preset, Is.EqualTo(preset.LipSync));
 
-            void Capture(string page, Control selector, Button generate)
+            void Capture(string page, Control selector, Button generate, TopLevel? surface = null)
             {
                 var origin = selector.TranslatePoint(default, window)!.Value;
                 Assert.That(origin.X, Is.GreaterThanOrEqualTo(0));
@@ -315,7 +334,7 @@ public partial class PsdLipSyncTests
                     Is.LessThanOrEqualTo(window.ClientSize.Height));
                 if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is not { } directory) return;
                 Directory.CreateDirectory(directory);
-                using var frame = window.CaptureRenderedFrame()!;
+                using var frame = (surface ?? window).CaptureRenderedFrame()!;
                 frame.Save(Path.Combine(directory, $"generation-lipsync-{page}-{width}.png"), new PngBitmapEncoderOptions());
             }
         }

@@ -31,6 +31,7 @@ public partial class PsdLipSyncTests
         model.PresetName.Value = "立ち絵付き";
         model.LipSync.SelectedId = target.Id.Value;
         model.AddPreset();
+        Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:"));
         var preset = VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single();
         Assert.That(preset.LipSync, Is.Not.Null, model.PresetMessage.Value);
         Assert.That(model.LipSync.Preset, Is.EqualTo(preset.LipSync));
@@ -57,17 +58,27 @@ public partial class PsdLipSyncTests
         model.RenamePreset();
         Assert.That(model.SelectedPreset.Value!.LipSync, Is.EqualTo(preset.LipSync));
         model.LipSync.SelectedId = target.Id.Value;
+        Assert.That(model.PresetDetails.Value, Does.Contain("口パクの変更:").And.Contain(PsdLipSync.TargetName(target)));
         model.UpdatePreset();
+        Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:"));
         Assert.That(model.SelectedPreset.Value!.LipSync!.ObjectJson, Does.Contain("変更したパーツ"));
         Assert.That(VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single(x => x.Id == preset.Id), Is.EqualTo(preset));
         Assert.That(copy.Layers.Value, Is.EqualTo("-非表示"));
         model.SelectedPreset.Value = preset;
         model.ApplyPreset();
         Assert.That(model.LipSync.Preset, Is.EqualTo(preset.LipSync));
+        model.LipSync.Preset = null;
+        Assert.That(model.PresetDetails.Value, Does.Contain("口パクの変更:").And.Contain("→ 連携しない"));
+        Assert.That(model.PresetDetails.Value, Does.Not.Contain("現在の設定と一致"));
+        model.PitchScale.Value = 0.1;
+        Assert.That(model.PresetDetails.Value, Does.Contain("音高:").And.Contain("口パクの変更:"));
+        model.ApplyPreset();
+        Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:").And.Not.Contain("音高:"));
         model.SelectedPreset.Value = GenerationPreset();
         model.ApplyPreset();
         Assert.That(model.LipSync.Preset, Is.Null);
         Assert.That(model.LipSync.SelectedId, Is.Null);
+        Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:"));
     }
 
     [AvaloniaTest]

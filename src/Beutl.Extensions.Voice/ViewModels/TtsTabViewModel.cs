@@ -35,8 +35,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
         _synthesize = synthesize;
         Extension = extension;
-        InitializePresets();
         LipSync = new LipSyncSelectionViewModel(_scene);
+        InitializePresets();
         Script = new ScriptImportViewModel(editorContext,
             (text, settings) => synthesize(text, settings, null));
     }

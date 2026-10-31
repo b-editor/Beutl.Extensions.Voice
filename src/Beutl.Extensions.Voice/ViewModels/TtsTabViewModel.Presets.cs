@@ -30,6 +30,7 @@ public partial class TtsTabViewModel
         SelectedVoice.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         SelectedStyle.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         SelectedEngine.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
+        LipSync.Selected.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
             property.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
     }
@@ -143,6 +144,10 @@ public partial class TtsTabViewModel
         var preset = SelectedPreset.Value;
         PresetDetails.Value = preset == null ? "" : preset.Settings.Describe() +
             (preset.LipSync is { } lipSync ? $"\n口パク: {Path.GetFileNameWithoutExtension(lipSync.PsdPath)}" : "") + "\n\n" +
-            (CaptureSettings() is { } current ? preset.Settings.DescribeDifferences(current) : "現在の話者が未選択です。");
+            (CaptureSettings() is { } current ? preset.Settings.DescribeDifferences(current) : "現在の話者が未選択です。") +
+            // A scene target is an explicit choice; a saved preset can also create or reuse a character.
+            (LipSync.SelectedId != null || LipSync.Preset != preset.LipSync
+                ? $"\n口パクの変更: {(preset.LipSync is { } saved ? Path.GetFileNameWithoutExtension(saved.PsdPath) : "連携しない")} → {LipSync.Selected.Value?.Name ?? "連携しない"}"
+                : "");
     }
 }

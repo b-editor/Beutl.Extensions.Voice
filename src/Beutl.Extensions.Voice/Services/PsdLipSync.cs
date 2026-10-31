@@ -29,7 +29,8 @@ internal static class PsdLipSync
     {
         var element = target.FindHierarchicalParent<Element>();
         string name = string.IsNullOrWhiteSpace(element?.Name.Value) ? "PSD立ち絵" : element.Name.Value;
-        return $"{name} (レイヤー {element?.ZIndex.Value + 1})";
+        return element == null ? name
+            : $"{name} (レイヤー {element.ZIndex.Value + 1}, {element.Start.Value.ToSeconds():0.###}–{element.Range.End.ToSeconds():0.###} 秒)";
     }
 
     public static void ValidateTarget(Scene scene, EngineObject target)
