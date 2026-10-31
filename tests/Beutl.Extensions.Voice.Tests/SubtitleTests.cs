@@ -10,6 +10,7 @@ using Avalonia.Threading;
 using Beutl.Audio;
 using Beutl.Editor.Observers;
 using Beutl.Editor.Services;
+using Beutl.Engine.Expressions;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -20,6 +21,7 @@ using Beutl.Graphics.Backend;
 using Beutl.Graphics.Rendering;
 using Beutl.Graphics.Transformation;
 using Beutl.Media;
+using Beutl.Media.Source;
 using Beutl.ProjectSystem;
 using Beutl.Serialization;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -82,6 +84,8 @@ public class SubtitleTests
     private static Element Template(Scene scene)
     {
         var element = new Element { Name = { Value = "話者名付き字幕" }, Start = { Value = At(30) }, Length = { Value = At(1) } };
+        element.AddObject(new Beutl.Graphics.Shapes.RectShape { Width = { Value = 320 }, Height = { Value = 80 } });
+        element.AddObject(new SourceImage());
         element.AddObject(new TextBlock
         {
             Text = { Value = "「{text}」" }, Size = { Value = 36 },
@@ -99,7 +103,10 @@ public class SubtitleTests
     {
         var item = ObjectTemplateItem.CreateFromInstance(source, name);
         string path = Path.Combine(_directory, name + ".json");
-        File.WriteAllText(path, ObjectTemplateItem.ToJson(item).ToJsonString());
+        var json = ObjectTemplateItem.ToJson(item);
+        json[nameof(ObjectTemplateItem.Json)] = CoreSerializer.SerializeToJsonObject(source,
+            new CoreSerializerOptions { BaseUri = new Uri(path) });
+        File.WriteAllText(path, json.ToJsonString());
         return ObjectTemplateItem.FromJson(JsonNode.Parse(File.ReadAllText(path))!, name, path, NullLogger.Instance)!;
     }
 
@@ -115,7 +122,13 @@ public class SubtitleTests
         using var editor = Editor();
         editor.Scene.FrameSize.Value = new(640, 360);
         var template = Template(editor.Scene);
+        string imagePath = Path.Combine(_directory, "caption-image.png");
+        using (var image = new Beutl.Media.Bitmap(2, 2)) image.Save(imagePath, EncodedImageFormat.Png);
+        var source = new ImageSource();
+        source.ReadFrom(new Uri(imagePath));
+        template.Objects.OfType<SourceImage>().Single().Source.Value = source;
         var saved = SavedTemplate(template, "話者名付き字幕");
+        Assert.That(saved.Json["Objects"]!.AsArray().OfType<JsonObject>().Single(x => x["Source"]?.ToString() == "caption-image.png"), Is.Not.Null);
         using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [saved]);
         Configure(model);
         model.Subtitles.SelectedId = saved.Id;
@@ -147,6 +160,8 @@ public class SubtitleTests
         Assert.That(caption.Length.Value, Is.EqualTo(speech.Length.Value));
         Assert.That(caption.ZIndex.Value, Is.GreaterThan(speech.ZIndex.Value));
         Assert.That(caption.EnumerateAllChildren<Sound>(), Is.Empty);
+        Assert.That(caption.Objects.OfType<Beutl.Graphics.Shapes.RectShape>().Single().Width.Value, Is.EqualTo(320));
+        Assert.That(caption.Objects.OfType<SourceImage>().Single().Source.Value!.Uri, Is.EqualTo(new Uri(imagePath)));
         Assert.That(Body(caption).Text.Value, Is.EqualTo("「こんにちは。」"));
         Assert.That(Body(caption).Size.Value, Is.EqualTo(36));
         Assert.That(((TranslateTransform)Body(caption).Transform.Value!).Y.Value, Is.EqualTo(80));
@@ -158,6 +173,116 @@ public class SubtitleTests
         Assert.That(editor.Scene.Children, Is.EqualTo(new[] { template }));
         Assert.That(editor.History.Redo(), Is.True);
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(3));
+        using var other = new TestEditor(Path.Combine(_directory, "other-project", "scene.bescene"));
+        using var otherTab = new TtsTabViewModel(new(), other, (text, settings, _) => Synthesize(text, settings));
+        Configure(otherTab);
+        otherTab.Subtitles.Template = preset.Subtitle;
+        await otherTab.Generate();
+        Assert.That(Caption(other.Scene).Objects.OfType<SourceImage>().Single().Source.Value!.Uri,
+            Is.EqualTo(new Uri(imagePath)), otherTab.Message.Value);
+    }
+
+    [AvaloniaTest]
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public async Task Invalid_templates_fail_before_synthesis_and_can_be_replaced(bool script, bool missingText)
+    {
+        using var editor = Editor();
+        int calls = 0;
+        Task<VoiceSynthesisResult> Generate(string text, VoiceSettings settings)
+        {
+            calls++;
+            return Synthesize(text, settings);
+        }
+        var invalid = new VoiceSubtitleTemplate("無効な字幕", missingText
+            ? CoreSerializer.SerializeToJsonString(new Element()) : "{invalid");
+        var valid = VoiceSubtitles.Default(editor.Scene);
+        using var tab = new TtsTabViewModel(new(), editor, (text, settings, _) => Generate(text, settings));
+        Configure(tab);
+        tab.Subtitles.Template = invalid;
+        using var batch = new ScriptImportViewModel(editor, Generate);
+        batch.RawText.Value = "案内役: 最初のセリフ。\nゲスト: 最後のセリフ。";
+        batch.ImportText();
+        batch.Speakers[0].SelectedPreset.Value = Preset() with { Subtitle = valid };
+        batch.Speakers[1].SelectedPreset.Value = Preset() with { Subtitle = invalid };
+        batch.IsVoiceVoxInstalled.Value = true;
+        await Run();
+        Assert.That(calls, Is.Zero, "Every assigned template must load before the first synthesis request.");
+        Assert.That(editor.Scene.Children, Is.Empty);
+        Assert.That(Directory.GetFiles(_directory, "*.wav", SearchOption.AllDirectories), Is.Empty);
+        tab.Subtitles.Template = valid;
+        batch.Speakers[1].SelectedPreset.Value = Preset() with { Subtitle = valid };
+        await Run();
+        Assert.That(calls, Is.EqualTo(script ? 2 : 1), script ? batch.Message.Value : tab.Message.Value);
+        Assert.That(editor.Scene.EnumerateAllChildren<SubtitleController>().Count(), Is.EqualTo(calls));
+
+        Task Run() => script ? batch.Generate() : tab.Generate();
+    }
+
+    [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Expression_controlled_captions_do_not_silently_keep_old_text_on_regeneration(bool duringSynthesis)
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer();
+        using var editor = Editor();
+        using var tab = new TtsTabViewModel(new(), editor);
+        Assert.That(await tab.SaveConnection("Test", server.Url), Is.True);
+        tab.SelectedVoice.Value = tab.Voice.Value.Single();
+        tab.SelectedStyle.Value = tab.SelectedVoice.Value.Styles.First();
+        tab.Text.Value = "最初のセリフ。";
+        tab.Subtitles.SelectedId = Guid.Empty;
+        await tab.Generate();
+        var controller = editor.Scene.EnumerateAllChildren<TtsController>().Single();
+        var sound = controller.FindHierarchicalParent<Element>()!.Objects.OfType<SourceSound>().Single();
+        var caption = Caption(editor.Scene);
+        var body = Body(caption);
+        var expression = new StringExpression<string?>("\"式による字幕\"");
+        var previous = sound.Source.Value;
+        int calls = server.SynthesisCount;
+        using var model = TtsControllerTests.CreateModel(editor, controller);
+        controller.Text.Value = "更新したセリフ。";
+        if (duringSynthesis)
+        {
+            server.PauseAt = "/tts/synthesis";
+            var regenerate = model.Regenerate();
+            await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            body.Text.Expression = expression;
+            server.Resume.TrySetResult();
+            await regenerate;
+            server.PauseAt = null;
+        }
+        else
+        {
+            body.Text.Expression = expression;
+            await model.Regenerate();
+        }
+        Assert.That(body.Text.Evaluate(new EvaluationContext(At(0))), Is.EqualTo("式による字幕"));
+        Assert.That(sound.Source.Value, Is.SameAs(previous), "Audio must not change while its linked subtitle cannot display the new text.");
+        Assert.That(body.Text.Value, Is.EqualTo("最初のセリフ。"));
+        Assert.That(body.Text.Expression, Is.SameAs(expression));
+        Assert.That(server.SynthesisCount, Is.EqualTo(calls + (duringSynthesis ? 1 : 0)));
+        Assert.That(model.Message.Value, Does.Contain("式"));
+
+        // Tuning does not rewrite the caption, so an expression is still allowed.
+        controller.Text.Value = "最初のセリフ。";
+        model.SpeedScale.Value = 1.2;
+        await model.Regenerate();
+        Assert.That(sound.Source.Value, Is.Not.SameAs(previous), model.Message.Value);
+        Assert.That(body.Text.Expression, Is.SameAs(expression));
+        previous = sound.Source.Value;
+        var link = caption.Objects.OfType<SubtitleController>().Single();
+        link.IsEnabled.Value = false;
+        controller.Text.Value = "更新したセリフ。";
+        await model.Regenerate();
+        Assert.That(sound.Source.Value, Is.Not.SameAs(previous), model.Message.Value);
+        Assert.That(body.Text.Expression, Is.SameAs(expression));
+        link.IsEnabled.Value = true;
+        body.Text.Expression = null;
+        await model.Regenerate();
+        Assert.That(body.Text.Value, Is.EqualTo(controller.Text.Value), model.Message.Value);
     }
 
     [AvaloniaTest]

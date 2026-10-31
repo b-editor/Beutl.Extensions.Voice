@@ -58,12 +58,19 @@ internal static class VoiceSubtitles
         throw new InvalidOperationException("字幕に使うテキストへ {text} を入力してください。");
     }
 
-    public static Element? Create(Scene scene, Element speech, VoiceSubtitleTemplate? template)
+    public static Element? Load(VoiceSubtitleTemplate? template)
     {
         if (template == null) return null;
         var saved = CoreSerializer.DeserializeFromJsonObject(JsonNode.Parse(template.ElementJson)!.AsObject(), typeof(Element)) as Element
             ?? throw new InvalidOperationException("字幕テンプレートを読み込めませんでした。");
-        ObjectRegenerator.Regenerate(saved, out Element caption);
+        GetTextTargets(saved);
+        return saved;
+    }
+
+    public static Element? Create(Scene scene, Element speech, Element? template)
+    {
+        if (template == null) return null;
+        ObjectRegenerator.Regenerate(template, out Element caption);
         var controller = speech.Objects.OfType<TtsController>().Single();
         var targets = GetTextTargets(caption);
         var bindings = targets.Select(target => new SubtitleTextBinding(target.Id.Value,
@@ -84,7 +91,7 @@ internal static class VoiceSubtitles
     }
 
     // Single speech placement shares the batch planner's contiguous-layer search.
-    public static void Place(Scene scene, Element speech, VoiceSubtitleTemplate? template)
+    public static void Place(Scene scene, Element speech, Element? template)
     {
         var caption = Create(scene, speech, template);
         if (caption == null) return;
@@ -135,6 +142,8 @@ internal static class VoiceSubtitles
         {
             if (scene.IsElementLocked(update.Target.FindHierarchicalParent<Element>()!))
                 throw new InvalidOperationException("更新する字幕の要素またはレイヤーがロックされています。");
+            if (update.Target.Text.Expression != null)
+                throw new InvalidOperationException("更新する字幕の本文に式が設定されています。式を解除するか字幕連携を無効にしてください。");
             if (update.Target.Text.Value != update.Previous)
                 throw new InvalidOperationException("生成中に字幕の本文が変わりました。もう一度再生成してください。");
         }

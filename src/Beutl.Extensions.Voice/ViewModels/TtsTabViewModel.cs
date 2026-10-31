@@ -68,7 +68,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         {
             var lipSyncTarget = LipSync.CaptureTarget();
             var lipSyncPreset = LipSync.Preset;
-            var subtitleTemplate = Subtitles.CaptureTemplate();
+            var subtitleTemplate = VoiceSubtitles.Load(Subtitles.CaptureTemplate());
             Message.Value = "";
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
             var output = await _synthesize(request.Text, request.Settings, query);
