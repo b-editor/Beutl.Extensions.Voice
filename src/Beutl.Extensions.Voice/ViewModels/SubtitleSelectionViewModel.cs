@@ -2,7 +2,6 @@ using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Graphics;
-using Beutl.Graphics.Shapes;
 using Beutl.ProjectSystem;
 using Reactive.Bindings;
 
@@ -33,9 +32,9 @@ public sealed class SubtitleSelectionViewModel(Scene scene, Func<IEnumerable<Obj
     {
         List<SubtitleChoice> choices = [new(null, "字幕なし"), new(Guid.Empty, "標準字幕")];
         if (template != null) choices.Add(new(null, $"プリセット: {template.Name}", template));
-        choices.AddRange(GetTemplates().Where(x => CreateTemplateElement(x)?.EnumerateAllChildren<TextBlock>().Any() == true)
+        choices.AddRange(GetTemplates().Where(CanUseTemplate)
             .Select(x => new SubtitleChoice(x.Id, x.Name.Value)));
-        if (selectedId != null && choices.All(x => x.Id != selectedId)) choices.Add(new(selectedId, "テンプレートが見つかりません"));
+        if (selectedId != null && choices.All(x => x.Id != selectedId)) choices.Add(new(selectedId, "テンプレートを使用できません"));
         Choices.Value = choices.ToArray();
         Selected.Value = choices.First(x => x.Id == selectedId && x.Template == template);
     }
@@ -55,6 +54,18 @@ public sealed class SubtitleSelectionViewModel(Scene scene, Func<IEnumerable<Obj
     private IEnumerable<ObjectTemplateItem> GetTemplates() => loadTemplates?.Invoke()
         ?? ObjectTemplateService.Instance.FindByBaseType(typeof(Element))
             .Concat(ObjectTemplateService.Instance.FindByBaseType(typeof(Drawable)));
+
+    private static bool CanUseTemplate(ObjectTemplateItem template)
+    {
+        if (CreateTemplateElement(template) is not { } element) return false;
+        try
+        {
+            // Capture also restores placeholders from a generated caption's saved bindings.
+            VoiceSubtitles.Capture(element);
+            return true;
+        }
+        catch (InvalidOperationException) { return false; }
+    }
 
     private static Element? CreateTemplateElement(ObjectTemplateItem template)
     {

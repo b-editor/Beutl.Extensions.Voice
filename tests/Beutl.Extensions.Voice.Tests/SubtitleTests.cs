@@ -400,6 +400,83 @@ public class SubtitleTests
     }
 
     [AvaloniaTest]
+    [TestCase("copy")]
+    [TestCase("stale-copy")]
+    [TestCase("enable")]
+    [TestCase("remove")]
+    [TestCase("unlink")]
+    [TestCase("unrelated")]
+    [TestCase("tuning")]
+    public async Task Regeneration_checks_new_caption_targets_without_blocking_unaffected_edits(string change)
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer();
+        using var editor = Editor();
+        using var tab = new TtsTabViewModel(new(), editor);
+        Assert.That(await tab.SaveConnection("Test", server.Url), Is.True);
+        tab.SelectedVoice.Value = tab.Voice.Value.Single();
+        tab.SelectedStyle.Value = tab.SelectedVoice.Value.Styles.First();
+        tab.Text.Value = "最初のセリフ。";
+        tab.Subtitles.SelectedId = Guid.Empty;
+        await tab.Generate();
+        var controller = editor.Scene.EnumerateAllChildren<TtsController>().Single();
+        var speech = controller.FindHierarchicalParent<Element>()!;
+        var sound = speech.Objects.OfType<SourceSound>().Single();
+        var caption = Caption(editor.Scene);
+        var link = caption.Objects.OfType<SubtitleController>().Single();
+        var previous = sound.Source.Value;
+        ObjectRegenerator.Regenerate(caption, out Element copy);
+        Assert.That(copy.Objects.OfType<SubtitleController>().Single().SourceId.Value, Is.EqualTo(controller.Id.Value));
+        using var model = TtsControllerTests.CreateModel(editor, controller);
+        controller.Text.Value = change == "tuning" ? tab.Text.Value : "更新したセリフ。";
+        model.SpeedScale.Value = 1.2;
+        if (change == "stale-copy") Body(caption).Text.Value = controller.Text.Value;
+        if (change == "enable") link.IsEnabled.Value = false;
+        server.PauseAt = "/tts/synthesis";
+        var regenerate = model.Regenerate();
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        switch (change)
+        {
+            case "copy":
+            case "stale-copy":
+            case "tuning":
+                editor.Scene.AddChild(copy, ElementOverlapHandling.Allow);
+                break;
+            case "enable":
+                link.IsEnabled.Value = true;
+                break;
+            case "remove":
+                editor.Scene.RemoveChild(caption);
+                break;
+            case "unlink":
+                link.IsEnabled.Value = false;
+                break;
+            case "unrelated":
+                ObjectRegenerator.Regenerate(new[] { speech, caption }, out Element[] pair);
+                foreach (var element in pair) editor.Scene.AddChild(element, ElementOverlapHandling.Allow);
+                copy = pair[1];
+                break;
+        }
+        server.Resume.TrySetResult();
+        await regenerate;
+        server.PauseAt = null;
+        if (change is "copy" or "stale-copy" or "enable")
+        {
+            Assert.That(sound.Source.Value, Is.SameAs(previous), model.Message.Value);
+            Assert.That(Body(caption).Text.Value, Is.EqualTo(change == "stale-copy" ? controller.Text.Value : tab.Text.Value));
+            Assert.That(Body(copy).Text.Value, Is.EqualTo(tab.Text.Value));
+            Assert.That(model.Message.Value, Does.Contain("生成中").And.Contain("字幕"));
+            Assert.That(Directory.GetFiles(_directory, "*.wav", SearchOption.AllDirectories), Has.Length.EqualTo(1));
+            await model.Regenerate();
+        }
+        Assert.That(sound.Source.Value, Is.Not.SameAs(previous), model.Message.Value);
+        foreach (var target in editor.Scene.EnumerateAllChildren<SubtitleController>()
+                     .Where(x => x.IsEnabled.Value && x.SourceId.Value == controller.Id.Value))
+            Assert.That(Body(target.FindHierarchicalParent<Element>()!).Text.Value, Is.EqualTo(controller.Text.Value));
+        if (change == "unlink") Assert.That(Body(caption).Text.Value, Is.EqualTo(tab.Text.Value));
+        if (change == "unrelated") Assert.That(Body(copy).Text.Value, Is.EqualTo(tab.Text.Value));
+    }
+
+    [AvaloniaTest]
     public async Task Reload_and_pair_duplication_keep_links_independent_from_the_original()
     {
         using var editor = Editor();
@@ -427,7 +504,7 @@ public class SubtitleTests
         Assert.That(Body(copies[1]).Text.Value, Is.EqualTo("複製の字幕"));
         ObjectRegenerator.Regenerate(speech, out Element soundOnly);
         reopened.Scene.AddChild(soundOnly, ElementOverlapHandling.Allow);
-        Assert.That(VoiceSubtitles.PrepareUpdate(soundOnly.Objects.OfType<TtsController>().Single(), "音声だけ複製"), Is.Empty);
+        Assert.That(VoiceSubtitles.PrepareUpdate(soundOnly.Objects.OfType<TtsController>().Single(), "音声だけ複製").Targets, Is.Empty);
     }
 
     [AvaloniaTest]
@@ -470,12 +547,24 @@ public class SubtitleTests
             var savedGroup = SavedTemplate(group, "保存したグループ");
             var savedBackground = SavedTemplate(background, "背景だけの要素");
             var savedShape = SavedTemplate(background.Objects.Single(), "背景だけの図形");
-            savedTemplates.AddRange([savedElement, savedText, savedGroup, savedBackground, savedShape]);
+            var ambiguous = new Element();
+            ambiguous.AddObject(new TextBlock { Text = { Value = "本文" } });
+            ambiguous.AddObject(new TextBlock { Text = { Value = "話者名" } });
+            var savedAmbiguous = SavedTemplate(ambiguous, "本文の指定がない字幕");
+            var generatedBody = ambiguous.Objects.OfType<TextBlock>().First();
+            ambiguous.AddObject(new SubtitleController
+            {
+                TextBindings = { Value = [new(generatedBody.Id.Value, "「{text}」")] }
+            });
+            var savedCaption = SavedTemplate(ambiguous, "生成した字幕");
+            savedTemplates.AddRange([savedElement, savedText, savedGroup, savedBackground, savedShape, savedAmbiguous, savedCaption]);
             selector.IsDropDownOpen = true;
             await Settle();
             Assert.That(selector.Items.OfType<SubtitleChoice>().Where(x => x.Id != null && x.Id != Guid.Empty).Select(x => x.Id),
-                Is.EquivalentTo(new Guid?[] { savedElement.Id, savedText.Id, savedGroup.Id }),
-                "Only saved templates containing text are offered, never timeline elements or non-text templates.");
+                Is.EquivalentTo(new Guid?[] { savedElement.Id, savedText.Id, savedGroup.Id, savedCaption.Id }),
+                "Only usable saved templates are offered, including generated captions whose saved bindings identify the text.");
+            selector.SelectedItem = selector.Items.OfType<SubtitleChoice>().Single(x => x.Id == savedCaption.Id);
+            Assert.That(model.Subtitles.CaptureTemplate()!.ElementJson, Does.Contain("{text}"));
             selector.SelectedItem = selector.Items.OfType<SubtitleChoice>().Single(x => x.Id == savedText.Id);
             var textTemplate = model.Subtitles.CaptureTemplate()!;
             Assert.That(textTemplate.Name, Is.EqualTo(savedText.Name.Value));

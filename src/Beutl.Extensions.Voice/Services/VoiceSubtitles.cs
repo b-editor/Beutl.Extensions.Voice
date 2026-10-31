@@ -109,36 +109,46 @@ internal static class VoiceSubtitles
     }
 
     internal sealed record TextUpdate(SubtitleController Link, TextBlock Target, string? Previous, string Next);
+    internal sealed record UpdateSnapshot(string Text, TextUpdate[] Targets);
 
-    public static TextUpdate[] PrepareUpdate(TtsController controller, string text)
-    {
-        var scene = controller.FindHierarchicalParent<Scene>()!;
-        var updates = scene.EnumerateAllChildren<SubtitleController>()
+    private static IEnumerable<(SubtitleController Link, TextBlock Target, SubtitleTextBinding Binding)> LinkedTargets(TtsController controller) =>
+        controller.FindHierarchicalParent<Scene>()!.EnumerateAllChildren<SubtitleController>()
             .Where(x => x.IsEnabled.Value && x.SourceId.Value == controller.Id.Value)
             .SelectMany(link => link.FindHierarchicalParent<Element>()!.EnumerateAllChildren<TextBlock>()
                 .Select(target => (Target: target, Binding: link.TextBindings.Value.FirstOrDefault(x => x.TextId == target.Id.Value)))
                 .Where(x => x.Binding != null)
-                .Select(x => new TextUpdate(link, x.Target, x.Target.Text.Value, x.Binding!.Pattern.Replace(Placeholder, text))))
-            .Where(x => x.Previous != x.Next).ToArray();
-        ValidateUpdates(scene, controller, updates);
-        return updates;
-    }
+                .Select(x => (link, x.Target, x.Binding!)));
 
-    public static void Update(TtsController controller, IReadOnlyList<TextUpdate> updates)
+    public static UpdateSnapshot PrepareUpdate(TtsController controller, string text)
     {
         var scene = controller.FindHierarchicalParent<Scene>()!;
+        var updates = LinkedTargets(controller)
+            .Select(x => new TextUpdate(x.Link, x.Target, x.Target.Text.Value, x.Binding.Pattern.Replace(Placeholder, text))).ToArray();
         ValidateUpdates(scene, controller, updates);
-        foreach (var update in updates.Where(x => IsLinked(scene, controller, x))) update.Target.Text.Value = update.Next;
+        return new(text, updates);
     }
 
-    private static bool IsLinked(Scene scene, TtsController controller, TextUpdate update) => update.Link.IsEnabled.Value
+    public static void Update(TtsController controller, UpdateSnapshot snapshot)
+    {
+        var scene = controller.FindHierarchicalParent<Scene>()!;
+        // A newly linked target may need an update that was not captured before synthesis.
+        // Keep the original values for existing targets so intervening edits are never overwritten.
+        if (LinkedTargets(controller).Any(x => x.Target.Text.Value != x.Binding.Pattern.Replace(Placeholder, snapshot.Text)
+                && !snapshot.Targets.Any(saved => saved.Link == x.Link && saved.Target == x.Target)))
+            throw new InvalidOperationException("生成中に更新する字幕が追加されました。もう一度再生成してください。");
+        ValidateUpdates(scene, controller, snapshot.Targets);
+        foreach (var update in snapshot.Targets.Where(x => ShouldUpdate(scene, controller, x))) update.Target.Text.Value = update.Next;
+    }
+
+    private static bool ShouldUpdate(Scene scene, TtsController controller, TextUpdate update) => update.Previous != update.Next
+        && update.Link.IsEnabled.Value
         && update.Link.SourceId.Value == controller.Id.Value
         && update.Target.FindHierarchicalParent<Scene>() == scene
         && update.Link.FindHierarchicalParent<Element>() == update.Target.FindHierarchicalParent<Element>();
 
     private static void ValidateUpdates(Scene scene, TtsController controller, IReadOnlyList<TextUpdate> updates)
     {
-        foreach (var update in updates.Where(x => IsLinked(scene, controller, x)))
+        foreach (var update in updates.Where(x => ShouldUpdate(scene, controller, x)))
         {
             if (scene.IsElementLocked(update.Target.FindHierarchicalParent<Element>()!))
                 throw new InvalidOperationException("更新する字幕の要素またはレイヤーがロックされています。");
