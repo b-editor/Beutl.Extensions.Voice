@@ -176,6 +176,7 @@ public sealed class ScriptImportViewModel : IDisposable
             {
                 PsdLipSyncPresets.PlaceScript(_scene, requests.Select((request, i) =>
                     (elements[i], request.Preset.LipSync)).ToArray(), firstLayer);
+                VoiceSubtitles.Place(_scene, requests.Select((request, i) => (elements[i], request.Preset.Subtitle)).ToArray());
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";

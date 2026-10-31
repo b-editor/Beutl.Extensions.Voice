@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Markup.Xaml.Styling;
+using Avalonia.Platform;
 using Beutl.Collections;
 using Beutl.Editor;
 using Beutl.Editor.Services;
@@ -22,6 +23,13 @@ public class TestApp : Application
     public override void Initialize()
     {
         DecoderRegistry.Register(new WaveDecoderInfo());
+        // The desktop host registers bundled engine fonts and fallbacks during startup.
+        // Reproduce the Japanese fallback when rendering captions in this headless host.
+        using (var font = AssetLoader.Open(new Uri("avares://Beutl.Controls/Assets/Fonts/NotoSansJP/NotoSansJP-Regular.ttf")))
+            Beutl.Media.FontManager.Instance.AddFont(font);
+        typeof(Beutl.Media.FontManager).GetMethod("SetFallbackFonts",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .Invoke(Beutl.Media.FontManager.Instance, [new[] { new Beutl.Media.FontFamily("Noto Sans JP") }, null]);
         Styles.Add(new FluentAvaloniaTheme());
         Styles.Add(new StyleInclude(new Uri("avares://Beutl.Controls/"))
         {

@@ -174,6 +174,7 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
             if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("テキストを入力してください。");
 
             var query = CopyCurrentQuery();
+            var subtitleUpdates = VoiceSubtitles.PrepareUpdate(_controller, text);
             string directory = VoiceSynthesisService.GetOutputDirectory(scene);
             var output = await VoiceSynthesisService.SynthesizeAsync(text, settings, query);
             if (_disposed) return;
@@ -191,6 +192,7 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
             var nextSource = SoundSource.Open(path);
             _history!.ExecuteInTransaction(() =>
             {
+                VoiceSubtitles.Update(_controller, subtitleUpdates);
                 sound.Source.Value = nextSource;
                 _controller.Generation.Value = new VoiceGeneration
                 {
