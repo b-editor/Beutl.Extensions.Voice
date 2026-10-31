@@ -175,8 +175,7 @@ public sealed class ScriptImportViewModel : IDisposable
             _history.ExecuteInTransaction(() =>
             {
                 PsdLipSyncPresets.PlaceScript(_scene, requests.Select((request, i) =>
-                    (elements[i], request.Preset.LipSync)).ToArray(), firstLayer);
-                VoiceSubtitles.Place(_scene, requests.Select((request, i) => (elements[i], request.Preset.Subtitle)).ToArray());
+                    (elements[i], request.Preset.LipSync, VoiceSubtitles.Create(_scene, elements[i], request.Preset.Subtitle))).ToArray(), firstLayer);
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";
@@ -218,7 +217,8 @@ public sealed class ScriptImportViewModel : IDisposable
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
             int layer = preset.LipSync == null && SeparateLayers.Value
-                ? checked(FirstLayer.Value + Speakers.IndexOf(speaker)) : FirstLayer.Value;
+                ? checked(FirstLayer.Value + Speakers.Take(Speakers.IndexOf(speaker))
+                    .Sum(x => x.SelectedPreset.Value is { LipSync: null, Subtitle: not null } ? 2 : 1)) : FirstLayer.Value;
             return new Request(line.Text, speaker.DisplayName, preset, layer);
         }).ToArray();
         CheckLayers(requests);
@@ -227,7 +227,9 @@ public sealed class ScriptImportViewModel : IDisposable
 
     private void CheckLayers(Request[] requests)
     {
-        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).Select(x => x.Layer).Distinct())
+        // Subtitle pairs are placed together on available layers; plain audio retains its explicit layer.
+        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).GroupBy(x => x.Layer)
+                     .Where(x => x.All(item => item.Preset.Subtitle == null)).Select(x => x.Key))
             if (_scene.IsLayerLocked(layer)) throw new InvalidOperationException($"レイヤー {layer} はロックされています。");
     }
 

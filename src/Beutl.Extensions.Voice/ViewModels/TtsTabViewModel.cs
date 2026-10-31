@@ -93,7 +93,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 }
                 else if (lipSyncPreset != null)
                     PsdLipSyncPresets.Connect(_scene, [(element.Objects.OfType<TtsController>().Single(), lipSyncPreset)]);
-                VoiceSubtitles.Place(_scene, [(element, subtitleTemplate)]);
+                VoiceSubtitles.Place(_scene, element, subtitleTemplate);
             });
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);

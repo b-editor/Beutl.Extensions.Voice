@@ -58,43 +58,47 @@ internal static class VoiceSubtitles
         throw new InvalidOperationException("字幕に使うテキストへ {text} を入力してください。");
     }
 
-    // Call inside the same transaction as speech placement, after its final layers are known.
-    public static void Place(Scene scene, IReadOnlyList<(Element Speech, VoiceSubtitleTemplate? Template)> items)
+    public static Element? Create(Scene scene, Element speech, VoiceSubtitleTemplate? template)
     {
-        var captions = new List<Element>();
-        foreach (var (speech, template) in items)
+        if (template == null) return null;
+        var saved = CoreSerializer.DeserializeFromJsonObject(JsonNode.Parse(template.ElementJson)!.AsObject(), typeof(Element)) as Element
+            ?? throw new InvalidOperationException("字幕テンプレートを読み込めませんでした。");
+        ObjectRegenerator.Regenerate(saved, out Element caption);
+        var controller = speech.Objects.OfType<TtsController>().Single();
+        var targets = GetTextTargets(caption);
+        var bindings = targets.Select(target => new SubtitleTextBinding(target.Id.Value,
+            target.Text.Value?.Contains(Placeholder, StringComparison.Ordinal) == true ? target.Text.Value : Placeholder)).ToArray();
+        foreach (var target in targets)
         {
-            if (template == null) continue;
-            var saved = CoreSerializer.DeserializeFromJsonObject(JsonNode.Parse(template.ElementJson)!.AsObject(), typeof(Element)) as Element
-                ?? throw new InvalidOperationException("字幕テンプレートを読み込めませんでした。");
-            ObjectRegenerator.Regenerate(saved, out Element caption);
-            var controller = speech.Objects.OfType<TtsController>().Single();
-            var targets = GetTextTargets(caption);
-            var bindings = targets.Select(target => new SubtitleTextBinding(target.Id.Value,
-                target.Text.Value?.Contains(Placeholder, StringComparison.Ordinal) == true ? target.Text.Value : Placeholder)).ToArray();
-            foreach (var target in targets)
-            {
-                target.Text.Expression = null;
-                target.Text.Value = bindings.First(x => x.TextId == target.Id.Value).Pattern.Replace(Placeholder, controller.Generation.Value!.Text);
-            }
-            caption.AddObject(new SubtitleController { SourceId = { Value = controller.Id.Value }, TextBindings = { Value = bindings } });
-            caption.Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm");
-            caption.Name.Value = "字幕: " + controller.Generation.Value!.Text.ReplaceLineEndings(" ");
-            caption.IsLocked.Value = false;
-            caption.IsEnabled.Value = true;
-            caption.Start.Value = speech.Start.Value;
-            caption.Length.Value = speech.Length.Value;
-            captions.Add(caption);
+            target.Text.Expression = null;
+            target.Text.Value = bindings.First(x => x.TextId == target.Id.Value).Pattern.Replace(Placeholder, controller.Generation.Value!.Text);
         }
-        if (captions.Count == 0) return;
-        int layer = checked(items.Max(x => x.Speech.ZIndex.Value) + 1);
-        while (scene.IsLayerLocked(layer) || captions.Any(caption => scene.Children.Any(x => x.ZIndex.Value == layer && x.Range.Intersects(caption.Range))))
-            layer = checked(layer + 1);
-        foreach (var caption in captions)
-        {
-            caption.ZIndex.Value = layer;
-            scene.AddChild(caption, ElementOverlapHandling.ThrowException);
-        }
+        caption.AddObject(new SubtitleController { SourceId = { Value = controller.Id.Value }, TextBindings = { Value = bindings } });
+        caption.Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm");
+        caption.Name.Value = "字幕: " + controller.Generation.Value!.Text.ReplaceLineEndings(" ");
+        caption.IsLocked.Value = false;
+        caption.IsEnabled.Value = true;
+        caption.Start.Value = speech.Start.Value;
+        caption.Length.Value = speech.Length.Value;
+        return caption;
+    }
+
+    // Single speech placement shares the batch planner's contiguous-layer search.
+    public static void Place(Scene scene, Element speech, VoiceSubtitleTemplate? template)
+    {
+        var caption = Create(scene, speech, template);
+        if (caption == null) return;
+        Guid group = speech.Objects.OfType<TtsController>().Single().LipSyncGroupId.Value;
+        var character = group == Guid.Empty ? null : PsdLipSync.Targets(scene)
+            .Where(x => PsdLipSync.GroupOf(x) == group)
+            .OrderByDescending(x => x.TimeRange.Value.Intersects(speech.Range))
+            .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - speech.Start.Value).ToSeconds())).FirstOrDefault();
+        int preferred = character == null ? speech.ZIndex.Value
+            : Math.Max(speech.ZIndex.Value, checked(character.FindHierarchicalParent<Element>()!.ZIndex.Value + 1));
+        int layer = PsdLipSyncPresets.FreeLayer(scene, speech.Range, preferred, speech, layerCount: 2);
+        if (layer != speech.ZIndex.Value) scene.MoveChild(layer, speech.Start.Value, speech.Length.Value, speech);
+        caption.ZIndex.Value = checked(layer + 1);
+        scene.AddChild(caption, ElementOverlapHandling.ThrowException);
     }
 
     internal sealed record TextUpdate(SubtitleController Link, TextBlock Target, string? Previous, string Next);

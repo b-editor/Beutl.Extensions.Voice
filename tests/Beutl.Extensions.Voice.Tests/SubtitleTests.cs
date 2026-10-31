@@ -161,14 +161,21 @@ public class SubtitleTests
     }
 
     [AvaloniaTest]
-    public async Task Script_uses_each_speakers_template_on_one_free_unlocked_layer()
+    [TestCase(false, true, false)]
+    [TestCase(true, true, false)]
+    [TestCase(true, false, false)]
+    [TestCase(false, true, true)]
+    [TestCase(false, false, true)]
+    public async Task Script_keeps_subtitles_below_their_audio_layers(bool separateLayers, bool guestSubtitle, bool locked)
     {
         using var editor = Editor();
         editor.Scene.FrameSize.Value = new(640, 360);
         var first = Preset() with { Subtitle = VoiceSubtitles.Capture(Template(editor.Scene)) };
-        var second = Preset() with { Subtitle = VoiceSubtitles.Default(editor.Scene) };
-        editor.Scene.Layers.Add(new TimelineLayer { ZIndex = { Value = 2 }, IsLocked = { Value = true } });
+        var second = Preset() with { Subtitle = guestSubtitle ? VoiceSubtitles.Default(editor.Scene) : null };
+        if (locked) editor.Scene.Layers.Add(new TimelineLayer { ZIndex = { Value = 0 }, IsLocked = { Value = true } });
         using var model = new ScriptImportViewModel(editor, Synthesize);
+        model.FirstLayer.Value = 0;
+        model.SeparateLayers.Value = separateLayers;
         model.RawText.Value = "案内役: こんにちは。\nゲスト: よろしく。\n案内役: 始めましょう。";
         model.ImportText();
         model.Speakers[0].SelectedPreset.Value = first;
@@ -180,7 +187,8 @@ public class SubtitleTests
         var voices = editor.Scene.EnumerateAllChildren<TtsController>().ToArray();
         Assert.That(voices, Has.Length.EqualTo(3), model.Message.Value);
         var links = editor.Scene.EnumerateAllChildren<SubtitleController>().ToArray();
-        Assert.That(links, Has.Length.EqualTo(3));
+        int captionCount = guestSubtitle ? 3 : 2;
+        Assert.That(links, Has.Length.EqualTo(captionCount));
         foreach (var link in links)
         {
             var voice = voices.Single(x => x.Id.Value == link.SourceId.Value);
@@ -188,14 +196,19 @@ public class SubtitleTests
             var caption = link.FindHierarchicalParent<Element>()!;
             Assert.That(caption.Range, Is.EqualTo(speech.Range));
             Assert.That(editor.Scene.IsElementLocked(caption), Is.False);
+            Assert.That(editor.Scene.IsElementLocked(speech), Is.False);
+            Assert.That(caption.ZIndex.Value, Is.EqualTo(speech.ZIndex.Value + 1));
             string text = voice.Generation.Value!.Text;
             Assert.That(Body(caption).Text.Value, Is.EqualTo(text == "よろしく。" ? text : $"「{text}」"));
         }
-        Assert.That(links.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value).Distinct().Count(), Is.EqualTo(1));
+        Assert.That(links.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value).Distinct().Count(),
+            Is.EqualTo(separateLayers && guestSubtitle ? 2 : 1));
+        if (separateLayers)
+            Assert.That(voices.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value), Is.EqualTo(new[] { 0, 2, 0 }));
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(1));
         Assert.That(editor.History.Redo(), Is.True);
-        Assert.That(editor.Scene.Children, Has.Count.EqualTo(7));
+        Assert.That(editor.Scene.Children, Has.Count.EqualTo(4 + captionCount));
     }
 
     [AvaloniaTest]
