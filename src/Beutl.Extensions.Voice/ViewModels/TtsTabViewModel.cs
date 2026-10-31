@@ -28,7 +28,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         : this(extension, editorContext, (text, settings, query) => VoiceSynthesisService.SynthesizeAsync(text, settings, query)) { }
 
     internal TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext,
-        Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize)
+        Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize,
+        Func<IEnumerable<ObjectTemplateItem>>? subtitleTemplates = null)
     {
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
@@ -36,7 +37,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _synthesize = synthesize;
         Extension = extension;
         LipSync = new LipSyncSelectionViewModel(_scene);
-        Subtitles = new SubtitleSelectionViewModel(_scene);
+        Subtitles = new SubtitleSelectionViewModel(_scene, subtitleTemplates);
         Subtitles.Refresh();
         InitializePresets();
         Script = new ScriptImportViewModel(editorContext,
@@ -147,7 +148,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
         json["LipSyncTargetId"] = LipSync.SelectedId?.ToString();
         json["LipSyncPreset"] = JsonSerializer.SerializeToNode(LipSync.Preset);
-        json["SubtitleElementId"] = Subtitles.SelectedId?.ToString();
+        json["SubtitleTemplateId"] = Subtitles.SelectedId?.ToString();
         json["SubtitleTemplate"] = JsonSerializer.SerializeToNode(Subtitles.Template);
     }
 
@@ -155,7 +156,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     {
         SelectedPage.Value = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
         Script.ReadFromJson(json);
-        Subtitles.SelectedId = Guid.TryParse((string?)json["SubtitleElementId"], out var subtitleId) ? subtitleId : null;
+        Subtitles.SelectedId = Guid.TryParse((string?)json["SubtitleTemplateId"], out var subtitleId) ? subtitleId : null;
         if (json["SubtitleTemplate"]?.Deserialize<VoiceSubtitleTemplate>() is { } subtitleTemplate) Subtitles.Template = subtitleTemplate;
         LipSync.SelectedId = Guid.TryParse((string?)json["LipSyncTargetId"], out var targetId) ? targetId : null;
         if (json["LipSyncPreset"]?.Deserialize<VoiceLipSyncPreset>() is { } lipSyncPreset) LipSync.Preset = lipSyncPreset;

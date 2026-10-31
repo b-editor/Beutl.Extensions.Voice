@@ -22,6 +22,7 @@ using Beutl.Graphics.Transformation;
 using Beutl.Media;
 using Beutl.ProjectSystem;
 using Beutl.Serialization;
+using Microsoft.Extensions.Logging.Abstractions;
 using TextBlock = Beutl.Graphics.Shapes.TextBlock;
 
 namespace Beutl.Extensions.Voice.Tests;
@@ -93,6 +94,15 @@ public class SubtitleTests
     }
 
     private static Element Caption(Scene scene) => scene.EnumerateAllChildren<SubtitleController>().Single().FindHierarchicalParent<Element>()!;
+
+    private ObjectTemplateItem SavedTemplate(ICoreSerializable source, string name)
+    {
+        var item = ObjectTemplateItem.CreateFromInstance(source, name);
+        string path = Path.Combine(_directory, name + ".json");
+        File.WriteAllText(path, ObjectTemplateItem.ToJson(item).ToJsonString());
+        return ObjectTemplateItem.FromJson(JsonNode.Parse(File.ReadAllText(path))!, name, path, NullLogger.Instance)!;
+    }
+
     private static TextBlock Body(Element caption)
     {
         var binding = caption.Objects.OfType<SubtitleController>().Single().TextBindings.Value.Single();
@@ -105,9 +115,17 @@ public class SubtitleTests
         using var editor = Editor();
         editor.Scene.FrameSize.Value = new(640, 360);
         var template = Template(editor.Scene);
-        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        var saved = SavedTemplate(template, "話者名付き字幕");
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [saved]);
         Configure(model);
-        model.Subtitles.SelectedId = template.Id.Value;
+        model.Subtitles.SelectedId = saved.Id;
+        var libraryState = new JsonObject();
+        model.WriteToJson(libraryState);
+        model.Subtitles.SelectedId = null;
+        model.ReadFromJson(libraryState);
+        Assert.That(model.Subtitles.SelectedId, Is.EqualTo(saved.Id));
+        Assert.That(libraryState["SubtitleTemplateId"]!.GetValue<string>(), Is.EqualTo(saved.Id.ToString()));
+        Assert.That(libraryState.ContainsKey("SubtitleElementId"), Is.False);
         model.PresetName.Value = "字幕付き";
         model.AddPreset();
         var preset = VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single();
@@ -280,8 +298,8 @@ public class SubtitleTests
     public async Task Subtitle_controls_remain_visible_at_narrow_widths(int width)
     {
         using var editor = Editor();
-        Template(editor.Scene);
-        using var model = new TtsTabViewModel(new(), editor);
+        var savedTemplates = new List<ObjectTemplateItem>();
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => savedTemplates);
         Configure(model);
         model.Subtitles.SelectedId = Guid.Empty;
         var view = new TtsTabView { DataContext = model };
@@ -296,6 +314,40 @@ public class SubtitleTests
             expander.BringIntoView();
             await Settle();
             var selector = subtitles.FindControl<ComboBox>("SubtitleTemplateSelector")!;
+            // Templates saved after opening the tab appear on the next dropdown open.
+            var template = Template(editor.Scene);
+            var text = template.Objects.OfType<TextBlock>().First();
+            template.Objects.Remove(text);
+            var group = new DrawableGroup();
+            group.Children.Add(text);
+            template.AddObject(group);
+            var plain = new Element { Name = { Value = "テキスト要素" } };
+            plain.AddObject(new TextBlock { Text = { Value = "字幕に使うテキスト" } });
+            editor.Scene.AddChild(plain, ElementOverlapHandling.Allow);
+            var background = new Element { Name = { Value = "背景のみ" } };
+            background.AddObject(new Beutl.Graphics.Shapes.RectShape());
+            editor.Scene.AddChild(background, ElementOverlapHandling.Allow);
+            var savedElement = SavedTemplate(template, "話者名付き字幕");
+            var savedText = SavedTemplate(plain.Objects.OfType<TextBlock>().Single(), "保存したテキスト");
+            var savedGroup = SavedTemplate(group, "保存したグループ");
+            var savedBackground = SavedTemplate(background, "背景だけの要素");
+            var savedShape = SavedTemplate(background.Objects.Single(), "背景だけの図形");
+            savedTemplates.AddRange([savedElement, savedText, savedGroup, savedBackground, savedShape]);
+            selector.IsDropDownOpen = true;
+            await Settle();
+            Assert.That(selector.Items.OfType<SubtitleChoice>().Where(x => x.Id != null && x.Id != Guid.Empty).Select(x => x.Id),
+                Is.EquivalentTo(new Guid?[] { savedElement.Id, savedText.Id, savedGroup.Id }),
+                "Only saved templates containing text are offered, never timeline elements or non-text templates.");
+            selector.SelectedItem = selector.Items.OfType<SubtitleChoice>().Single(x => x.Id == savedText.Id);
+            var textTemplate = model.Subtitles.CaptureTemplate()!;
+            Assert.That(textTemplate.Name, Is.EqualTo(savedText.Name.Value));
+            var textElement = (Element)CoreSerializer.DeserializeFromJsonObject(JsonNode.Parse(textTemplate.ElementJson)!.AsObject(), typeof(Element));
+            Assert.That(textElement.EnumerateAllChildren<TextBlock>().Single().Text.Value, Is.EqualTo("字幕に使うテキスト"));
+            selector.SelectedItem = selector.Items.OfType<SubtitleChoice>().Single(x => x.Id == savedElement.Id);
+            selector.IsDropDownOpen = false;
+            await Settle();
+            Assert.That(model.Subtitles.SelectedId, Is.EqualTo(savedElement.Id));
+            Assert.That(model.Subtitles.CaptureTemplate(), Is.Not.Null);
             Assert.That(selector.Bounds.Width, Is.GreaterThan(150));
             var bottom = selector.TranslatePoint(new Avalonia.Point(selector.Bounds.Width, selector.Bounds.Height), window)!.Value;
             Assert.That(bottom.X, Is.LessThanOrEqualTo(window.ClientSize.Width));
@@ -307,6 +359,18 @@ public class SubtitleTests
                 using var frame = window.CaptureRenderedFrame()!;
                 frame.Save(Path.Combine(directory, $"subtitle-controls-{width}.png"), new PngBitmapEncoderOptions());
             }
+            selector.IsDropDownOpen = true;
+            await Settle();
+            Assert.That(((SubtitleChoice)selector.SelectedItem!).Id, Is.EqualTo(savedElement.Id));
+            selector.IsDropDownOpen = false;
+            var state = new JsonObject();
+            model.WriteToJson(state);
+            // An old scene-element selection must not be reintroduced as a library choice.
+            state.Remove("SubtitleTemplateId");
+            state["SubtitleElementId"] = template.Id.Value.ToString();
+            model.ReadFromJson(state);
+            Assert.That(model.Subtitles.SelectedId, Is.Null);
+            Assert.That(model.Subtitles.Choices.Value.Select(x => x.Id), Does.Not.Contain(template.Id.Value));
         }
         finally { window.Close(); }
     }

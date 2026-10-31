@@ -9,7 +9,7 @@
         <Grid Margin="8" ColumnDefinitions="*,Auto">
             <ComboBox x:Name="SubtitleTemplateSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTemplates"
                       AutomationProperties.Name="字幕テンプレート"
-                      ToolTip.Tip="テキストが複数ある要素では、字幕本文に {text} を指定します。"
+                      ToolTip.Tip="保存したテキスト・要素テンプレートから選択します。テキストが複数ある場合は字幕本文に {text} を指定します。"
                       ItemsSource="{Binding Choices.Value}" SelectedItem="{Binding Selected.Value, Mode=TwoWay}">
                 <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:SubtitleChoice">
