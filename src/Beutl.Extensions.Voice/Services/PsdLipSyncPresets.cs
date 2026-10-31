@@ -54,12 +54,19 @@ internal static class PsdLipSyncPresets
         }
     }
 
-    // Plan paired layers before adding speech, so temporary overlaps never change its timing.
+    // Plan character, speech and optional subtitle layers before adding clips.
     // The caller includes this entire operation in the batch's history transaction.
-    public static void PlaceScript(Scene scene, IReadOnlyList<(Element Element, VoiceLipSyncPreset? Preset)> speech, int firstLayer)
+    public static void PlaceScript(Scene scene,
+        IReadOnlyList<(Element Element, VoiceLipSyncPreset? Preset, Element? Subtitle)> speech, int firstLayer)
     {
         var scriptRange = TimeRange.FromRange(speech.Min(x => x.Element.Range.Start), speech.Max(x => x.Element.Range.End));
-        var planned = speech.Where(x => x.Preset == null).Select(x => x.Element).ToList();
+        var plain = speech.Where(x => x.Preset == null).GroupBy(x => x.Element.ZIndex.Value).ToArray();
+        var planned = plain.Where(x => x.All(item => item.Subtitle == null)).SelectMany(x => x.Select(item => item.Element)).ToList();
+        foreach (var group in plain.Where(x => x.Any(item => item.Subtitle != null)))
+        {
+            int layer = FreeLayer(scene, scriptRange, group.Key, planned: planned, layerCount: 2);
+            foreach (var item in group) Plan(item.Element, item.Subtitle, layer);
+        }
         var links = new List<(TtsController Controller, EngineObject Target, bool Created)>();
         int nextLayer = firstLayer;
         foreach (var group in speech.Where(x => x.Preset != null)
@@ -68,7 +75,8 @@ internal static class PsdLipSyncPresets
             var targets = FindTargets(scene, group.Key);
             bool created = targets.Length == 0;
             if (created)
-                targets = [CreateCharacter(scene, group.First().Preset!, scriptRange, FreePair(scene, scriptRange, nextLayer, planned))];
+                targets = [CreateCharacter(scene, group.First().Preset!, scriptRange,
+                    FreeLayer(scene, scriptRange, nextLayer, planned: planned, layerCount: group.Any(x => x.Subtitle != null) ? 3 : 2))];
             // Split parts share a group; independently linked characters keep their own speech intervals.
             bool oneGroup = targets.Select(PsdLipSync.GroupOf).Distinct().Count() == 1;
             var assignments = group.GroupBy(x => SelectTarget(targets, x.Element.Range)).ToArray();
@@ -78,18 +86,32 @@ internal static class PsdLipSyncPresets
                 PsdLipSync.ValidateTarget(scene, target);
                 var range = TimeRange.FromRange(assignment.Min(x => x.Element.Range.Start), assignment.Max(x => x.Element.Range.End));
                 Extend(scene, target, oneGroup ? scriptRange : range, planned);
-                int layer = FreeLayer(scene, range, checked(target.FindHierarchicalParent<Element>()!.ZIndex.Value + 1), planned: planned);
+                int layerCount = assignment.Any(x => x.Subtitle != null) ? 2 : 1;
+                int layer = FreeLayer(scene, range, checked(target.FindHierarchicalParent<Element>()!.ZIndex.Value + 1),
+                    planned: planned, layerCount: layerCount);
                 foreach (var item in assignment)
                 {
-                    item.Element.ZIndex.Value = layer;
-                    planned.Add(item.Element);
+                    Plan(item.Element, item.Subtitle, layer);
                     links.Add((item.Element.Objects.OfType<TtsController>().Single(), target, created));
                 }
-                nextLayer = Math.Max(nextLayer, checked(layer + 1));
+                nextLayer = Math.Max(nextLayer, checked(layer + layerCount));
             }
         }
-        foreach (var item in speech) scene.AddChild(item.Element, ElementOverlapHandling.ThrowException);
+        foreach (var item in speech)
+        {
+            scene.AddChild(item.Element, ElementOverlapHandling.ThrowException);
+            if (item.Subtitle != null) scene.AddChild(item.Subtitle, ElementOverlapHandling.ThrowException);
+        }
         foreach (var link in links) PsdLipSync.Connect(link.Controller, link.Target, link.Created);
+
+        void Plan(Element element, Element? subtitle, int layer)
+        {
+            element.ZIndex.Value = layer;
+            planned.Add(element);
+            if (subtitle == null) return;
+            subtitle.ZIndex.Value = checked(layer + 1);
+            planned.Add(subtitle);
+        }
     }
 
     private static EngineObject[] FindTargets(Scene scene, string canonicalPath) =>
@@ -149,16 +171,10 @@ internal static class PsdLipSyncPresets
         !scene.IsLayerLocked(layer) && !scene.Children.Concat(planned ?? []).Any(x => x != except
             && x.ZIndex.Value == layer && x.Range.Intersects(range));
 
-    private static int FreeLayer(Scene scene, TimeRange range, int preferred, Element? except = null,
-        IReadOnlyCollection<Element>? planned = null)
+    internal static int FreeLayer(Scene scene, TimeRange range, int preferred, Element? except = null,
+        IReadOnlyCollection<Element>? planned = null, int layerCount = 1)
     {
-        while (!IsFree(scene, range, preferred, except, planned)) preferred = checked(preferred + 1);
-        return preferred;
-    }
-
-    private static int FreePair(Scene scene, TimeRange range, int preferred, IReadOnlyCollection<Element> planned)
-    {
-        while (!IsFree(scene, range, preferred, null, planned) || !IsFree(scene, range, checked(preferred + 1), null, planned))
+        while (Enumerable.Range(0, layerCount).Any(offset => !IsFree(scene, range, checked(preferred + offset), except, planned)))
             preferred = checked(preferred + 1);
         return preferred;
     }

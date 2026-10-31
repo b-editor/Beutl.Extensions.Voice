@@ -175,7 +175,7 @@ public sealed class ScriptImportViewModel : IDisposable
             _history.ExecuteInTransaction(() =>
             {
                 PsdLipSyncPresets.PlaceScript(_scene, requests.Select((request, i) =>
-                    (elements[i], request.Preset.LipSync)).ToArray(), firstLayer);
+                    (elements[i], request.Preset.LipSync, VoiceSubtitles.Create(_scene, elements[i], request.Subtitle))).ToArray(), firstLayer);
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";
@@ -209,6 +209,8 @@ public sealed class ScriptImportViewModel : IDisposable
         if (!double.IsFinite(StartSeconds.Value) || StartSeconds.Value < 0 ||
             !double.IsFinite(GapSeconds.Value) || GapSeconds.Value < 0 || FirstLayer.Value < 0)
             throw new InvalidOperationException("開始位置、間隔、レイヤーには 0 以上の値を指定してください。");
+        // Load each snapshot once before synthesis and reuse it for placement.
+        var subtitles = new Dictionary<VoiceSubtitleTemplate, Element?>();
         var requests = Lines.Select((line, i) =>
         {
             if (string.IsNullOrWhiteSpace(line.Text))
@@ -217,8 +219,12 @@ public sealed class ScriptImportViewModel : IDisposable
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
             int layer = preset.LipSync == null && SeparateLayers.Value
-                ? checked(FirstLayer.Value + Speakers.IndexOf(speaker)) : FirstLayer.Value;
-            return new Request(line.Text, speaker.DisplayName, preset, layer);
+                ? checked(FirstLayer.Value + Speakers.Take(Speakers.IndexOf(speaker))
+                    .Sum(x => x.SelectedPreset.Value is { LipSync: null, Subtitle: not null } ? 2 : 1)) : FirstLayer.Value;
+            Element? subtitle = null;
+            if (preset.Subtitle is { } template && !subtitles.TryGetValue(template, out subtitle))
+                subtitles.Add(template, subtitle = VoiceSubtitles.Load(template));
+            return new Request(line.Text, speaker.DisplayName, preset, layer, subtitle);
         }).ToArray();
         CheckLayers(requests);
         return requests;
@@ -226,7 +232,9 @@ public sealed class ScriptImportViewModel : IDisposable
 
     private void CheckLayers(Request[] requests)
     {
-        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).Select(x => x.Layer).Distinct())
+        // Subtitle pairs are placed together on available layers; plain audio retains its explicit layer.
+        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).GroupBy(x => x.Layer)
+                     .Where(x => x.All(item => item.Preset.Subtitle == null)).Select(x => x.Key))
             if (_scene.IsLayerLocked(layer)) throw new InvalidOperationException($"レイヤー {layer} はロックされています。");
     }
 
@@ -295,7 +303,7 @@ public sealed class ScriptImportViewModel : IDisposable
         TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
-    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer);
+    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer, Element? Subtitle);
     private sealed record SpeakerState(string Name, VoicePreset? Preset);
     private sealed record State
     {

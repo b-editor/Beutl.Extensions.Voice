@@ -6,6 +6,7 @@ public sealed record VoicePreset
     public string Name { get; init; } = "";
     public VoiceSettings Settings { get; init; } = new();
     public VoiceLipSyncPreset? LipSync { get; init; }
+    public VoiceSubtitleTemplate? Subtitle { get; init; }
 }
 
 // Keep the serialized object immutable when presets are copied or edited in another tab.

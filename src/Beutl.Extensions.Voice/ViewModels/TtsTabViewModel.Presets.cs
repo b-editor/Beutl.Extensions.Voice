@@ -31,6 +31,7 @@ public partial class TtsTabViewModel
         SelectedStyle.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         SelectedEngine.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         LipSync.Selected.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
+        Subtitles.Selected.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
             property.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
     }
@@ -55,7 +56,10 @@ public partial class TtsTabViewModel
     public void AddPreset() => EditPreset(() =>
     {
         var settings = CaptureSettings() ?? throw new InvalidOperationException("話者とスタイルを選択してください。");
-        var preset = new VoicePreset { Name = RequirePresetName(), Settings = settings, LipSync = LipSync.CapturePreset() };
+        var preset = new VoicePreset
+        {
+            Name = RequirePresetName(), Settings = settings, LipSync = LipSync.CapturePreset(), Subtitle = Subtitles.CaptureTemplate()
+        };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         return preset.Id;
     }, capturesCurrentSettings: true);
@@ -81,7 +85,8 @@ public partial class TtsTabViewModel
         var id = RequirePreset().Id;
         var settings = CaptureSettings() ?? throw new InvalidOperationException("話者とスタイルを選択してください。");
         var lipSync = LipSync.CapturePreset();
-        VoicePresetStore.Update(VoicePresetStore.GlobalPath, id, preset => preset with { Settings = settings, LipSync = lipSync });
+        var subtitle = Subtitles.CaptureTemplate();
+        VoicePresetStore.Update(VoicePresetStore.GlobalPath, id, preset => preset with { Settings = settings, LipSync = lipSync, Subtitle = subtitle });
         return id;
     }, capturesCurrentSettings: true);
 
@@ -103,6 +108,7 @@ public partial class TtsTabViewModel
             {
                 _appliedPreset = preset;
                 LipSync.Preset = preset.LipSync;
+                Subtitles.Template = preset.Subtitle;
             }
             else if (_appliedPreset is { } applied && applied.Id == id)
                 _appliedPreset = applied with { Name = preset.Name };
@@ -134,6 +140,7 @@ public partial class TtsTabViewModel
         {
             ApplySettings(preset.Settings);
             LipSync.Preset = preset.LipSync;
+            Subtitles.Template = preset.Subtitle;
             _appliedPreset = preset;
         }
         RefreshPresetDetails();
@@ -143,11 +150,14 @@ public partial class TtsTabViewModel
     {
         var preset = SelectedPreset.Value;
         PresetDetails.Value = preset == null ? "" : preset.Settings.Describe() +
-            (preset.LipSync is { } lipSync ? $"\n口パク: {Path.GetFileNameWithoutExtension(lipSync.PsdPath)}" : "") + "\n\n" +
+            (preset.LipSync is { } lipSync ? $"\n口パク: {Path.GetFileNameWithoutExtension(lipSync.PsdPath)}" : "") +
+            (preset.Subtitle is { } subtitle ? $"\n字幕: {subtitle.Name}" : "") + "\n\n" +
             (CaptureSettings() is { } current ? preset.Settings.DescribeDifferences(current) : "現在の話者が未選択です。") +
             // A scene target is an explicit choice; a saved preset can also create or reuse a character.
             (LipSync.SelectedId != null || LipSync.Preset != preset.LipSync
                 ? $"\n口パクの変更: {(preset.LipSync is { } saved ? Path.GetFileNameWithoutExtension(saved.PsdPath) : "連携しない")} → {LipSync.Selected.Value?.Name ?? "連携しない"}"
-                : "");
+                : "") +
+            (Subtitles.SelectedId != null || Subtitles.Template != preset.Subtitle
+                ? $"\n字幕の変更: {preset.Subtitle?.Name ?? "字幕なし"} → {Subtitles.Selected.Value?.Name ?? "字幕なし"}" : "");
     }
 }

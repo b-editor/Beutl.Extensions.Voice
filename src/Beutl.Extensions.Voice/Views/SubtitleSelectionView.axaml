@@ -1,0 +1,26 @@
+<UserControl x:Class="Beutl.Extensions.Voice.Views.SubtitleSelectionView"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
+             xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
+             x:CompileBindings="True" x:DataType="vm:SubtitleSelectionViewModel">
+    <Expander x:Name="SubtitleExpander" Header="字幕" HorizontalAlignment="Stretch"
+              Theme="{StaticResource ToolTabExpanderTheme}">
+        <Grid Margin="8" ColumnDefinitions="*,Auto">
+            <ComboBox x:Name="SubtitleTemplateSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTemplates"
+                      AutomationProperties.Name="字幕テンプレート"
+                      ToolTip.Tip="保存したテキスト・要素テンプレートから選択します。テキストが複数ある場合は字幕本文に {text} を指定します。"
+                      ItemsSource="{Binding Choices.Value}" SelectedItem="{Binding Selected.Value, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SubtitleChoice">
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Grid.Column="1" Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                    Command="{Binding Refresh}" ToolTip.Tip="テンプレートを再読み込み" AutomationProperties.Name="テンプレートを再読み込み">
+                <icons:FluentIcon Icon="ArrowClockwise" FontSize="16" />
+            </Button>
+        </Grid>
+    </Expander>
+</UserControl>

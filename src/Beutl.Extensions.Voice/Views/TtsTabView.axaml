@@ -76,6 +76,7 @@
 
                             <views:VoiceEditorView x:Name="VoiceEditor" />
                             <views:LipSyncSelectionView x:Name="GenerationLipSync" DataContext="{Binding LipSync}" />
+                            <views:SubtitleSelectionView x:Name="GenerationSubtitles" DataContext="{Binding Subtitles}" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

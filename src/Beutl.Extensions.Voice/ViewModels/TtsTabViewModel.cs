@@ -28,7 +28,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         : this(extension, editorContext, (text, settings, query) => VoiceSynthesisService.SynthesizeAsync(text, settings, query)) { }
 
     internal TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext,
-        Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize)
+        Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize,
+        Func<IEnumerable<ObjectTemplateItem>>? subtitleTemplates = null)
     {
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
@@ -36,6 +37,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _synthesize = synthesize;
         Extension = extension;
         LipSync = new LipSyncSelectionViewModel(_scene);
+        Subtitles = new SubtitleSelectionViewModel(_scene, subtitleTemplates);
+        Subtitles.Refresh();
         InitializePresets();
         Script = new ScriptImportViewModel(editorContext,
             (text, settings) => synthesize(text, settings, null));
@@ -47,6 +50,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     public ReactivePropertySlim<int> SelectedPage { get; } = new();
     public ScriptImportViewModel Script { get; }
     public LipSyncSelectionViewModel LipSync { get; }
+    public SubtitleSelectionViewModel Subtitles { get; }
 
     private static void ShowError(string title, string message) =>
         Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
@@ -64,6 +68,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         {
             var lipSyncTarget = LipSync.CaptureTarget();
             var lipSyncPreset = LipSync.Preset;
+            var subtitleTemplate = VoiceSubtitles.Load(Subtitles.CaptureTemplate());
             Message.Value = "";
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
             var output = await _synthesize(request.Text, request.Settings, query);
@@ -88,6 +93,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 }
                 else if (lipSyncPreset != null)
                     PsdLipSyncPresets.Connect(_scene, [(element.Objects.OfType<TtsController>().Single(), lipSyncPreset)]);
+                VoiceSubtitles.Place(_scene, element, subtitleTemplate);
             });
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
@@ -142,12 +148,16 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
         json["LipSyncTargetId"] = LipSync.SelectedId?.ToString();
         json["LipSyncPreset"] = JsonSerializer.SerializeToNode(LipSync.Preset);
+        json["SubtitleTemplateId"] = Subtitles.SelectedId?.ToString();
+        json["SubtitleTemplate"] = JsonSerializer.SerializeToNode(Subtitles.Template);
     }
 
     public async void ReadFromJson(JsonObject json)
     {
         SelectedPage.Value = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
         Script.ReadFromJson(json);
+        Subtitles.SelectedId = Guid.TryParse((string?)json["SubtitleTemplateId"], out var subtitleId) ? subtitleId : null;
+        if (json["SubtitleTemplate"]?.Deserialize<VoiceSubtitleTemplate>() is { } subtitleTemplate) Subtitles.Template = subtitleTemplate;
         LipSync.SelectedId = Guid.TryParse((string?)json["LipSyncTargetId"], out var targetId) ? targetId : null;
         if (json["LipSyncPreset"]?.Deserialize<VoiceLipSyncPreset>() is { } lipSyncPreset) LipSync.Preset = lipSyncPreset;
         Text.Value = (string?)json[nameof(Text)] ?? "";

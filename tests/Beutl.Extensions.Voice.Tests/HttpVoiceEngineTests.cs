@@ -566,7 +566,7 @@ public class HttpVoiceEngineTests
             });
         }
 
-        private static byte[] Wave()
+        internal static byte[] Wave()
         {
             using var stream = new MemoryStream();
             using var writer = new BinaryWriter(stream);
