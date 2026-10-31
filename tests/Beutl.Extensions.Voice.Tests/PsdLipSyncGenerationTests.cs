@@ -138,8 +138,9 @@ public partial class PsdLipSyncTests
         var added = PsdLipSync.Targets(editor.Scene).Single(x => x != first);
         Assert.That(added.Id.Value, Is.Not.EqualTo(second.Id.Value));
         Assert.That(first.FindHierarchicalParent<Element>()!.Length.Value, Is.EqualTo(At(10)));
-        Assert.That(added.TimeRange.Value.Start, Is.EqualTo(At(3.5)));
-        Assert.That(added.TimeRange.Value.End, Is.EqualTo(At(5.5)));
+        Assert.That(added.TimeRange.Value.Start, Is.EqualTo(At(1)));
+        Assert.That(added.TimeRange.Value.End, Is.EqualTo(At(8)));
+        Assert.That(controllers.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value), Is.EqualTo(new[] { 1, 3, 1 }));
         Assert.That(controllers.Select(x => x.LipSyncGroupId.Value),
             Is.EqualTo(new[] { PsdLipSync.GroupOf(first), PsdLipSync.GroupOf(added), PsdLipSync.GroupOf(first) }));
         Assert.That(PsdLipSync.GroupOf(first), Is.Not.EqualTo(PsdLipSync.GroupOf(added)).And.Not.EqualTo(Guid.Empty));
@@ -214,7 +215,7 @@ public partial class PsdLipSyncTests
         var obstacle = new Element { Start = { Value = At(3.5) }, Length = { Value = At(1) }, ZIndex = { Value = 1 } };
         int calls = 0;
         var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
-        var guest = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(second) };
+        var guest = GenerationPreset() with { LipSync = overlap ? null : PsdLipSyncPresets.Capture(second) };
         editor.Scene.RemoveChild(first.FindHierarchicalParent<Element>()!);
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
         using var model = new ScriptImportViewModel(editor, (text, settings) =>

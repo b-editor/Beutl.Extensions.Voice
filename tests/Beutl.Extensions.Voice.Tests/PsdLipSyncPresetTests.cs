@@ -194,14 +194,79 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
-    public async Task Script_presets_for_the_same_psd_share_one_character_across_separate_voice_layers()
+    [TestCase(0, false)]
+    [TestCase(4, true)]
+    public async Task Script_places_full_length_characters_above_their_speech_automatically(int firstLayer, bool separateLayers)
+    {
+        using var editor = Editor();
+        var first = Character(editor.Scene);
+        var second = Character(editor.Scene);
+        string guestPath = Path.Combine(_directory, "guest.psd");
+        File.Copy(second.Source.Value!.FullName, guestPath);
+        second.Source.Value = new FileInfo(guestPath);
+        first.Transform.Value = new TranslateTransform { X = { Value = -60 } };
+        second.Transform.Value = new TranslateTransform { X = { Value = 60 } };
+        var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
+        var guest = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(second) };
+        editor.Scene.RemoveChild(first.FindHierarchicalParent<Element>()!);
+        editor.Scene.RemoveChild(second.FindHierarchicalParent<Element>()!);
+        using var model = new ScriptImportViewModel(editor, Synthesize);
+        ConfigureScript(model, preset);
+        model.Speakers[1].SelectedPreset.Value = guest;
+        model.RawText.Value = "案内役: こんにちは。\nゲスト: よろしくお願いします。\n案内役: 始めましょう。\nゲスト: はい。";
+        model.StartSeconds.Value = 0;
+        model.FirstLayer.Value = firstLayer;
+        model.SeparateLayers.Value = separateLayers;
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        await model.Generate();
+        var characters = PsdLipSync.Targets(editor.Scene).OrderBy(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value).ToArray();
+        Assert.That(characters, Has.Length.EqualTo(2), model.Message.Value);
+        Assert.That(characters.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value),
+            Is.EqualTo(new[] { firstLayer, firstLayer + 2 }));
+        Assert.That(characters.All(x => x.TimeRange.Value.Start == At(0) && x.TimeRange.Value.End == At(9.5)), Is.True);
+        var voices = editor.Scene.EnumerateAllChildren<TtsController>().ToArray();
+        Assert.That(voices, Has.Length.EqualTo(4));
+        Assert.That(voices.Select(x => x.TimeRange.Value.Start), Is.EqualTo(new[] { At(0), At(2.5), At(5), At(7.5) }));
+        Assert.That(voices.Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value),
+            Is.EqualTo(new[] { firstLayer + 1, firstLayer + 3, firstLayer + 1, firstLayer + 3 }));
+        Assert.That(voices.Select(x => x.LipSyncGroupId.Value), Is.EqualTo(new[]
+        {
+            PsdLipSync.GroupOf(characters[0]), PsdLipSync.GroupOf(characters[1]),
+            PsdLipSync.GroupOf(characters[0]), PsdLipSync.GroupOf(characters[1])
+        }));
+        using (var render = new RenderProbe(editor.Scene))
+        {
+            render.Mouth(0.5, true, "script-paired-first-speaking", offsetX: -60);
+            render.Mouth(0.5, false, offsetX: 60);
+            render.Mouth(2.25, false, "script-paired-gap", offsetX: -60);
+            render.Mouth(2.25, false, offsetX: 60);
+            render.Mouth(3, false, offsetX: -60);
+            render.Mouth(3, true, "script-paired-second-speaking", offsetX: 60);
+        }
+        Assert.That(editor.History.UndoCount, Is.EqualTo(1));
+        Assert.That(editor.History.Undo(), Is.True);
+        Assert.That(editor.Scene.Children, Is.Empty);
+        Assert.That(editor.History.Redo(), Is.True);
+        Assert.That(editor.Scene.Children, Has.Count.EqualTo(6));
+        model.StartSeconds.Value = 12;
+        await model.Generate();
+        Assert.That(PsdLipSync.Targets(editor.Scene).ToArray(), Is.EqualTo(characters), model.Message.Value);
+        Assert.That(characters.All(x => x.TimeRange.Value.Start == At(0) && x.TimeRange.Value.End == At(21.5)), Is.True);
+        Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Skip(4)
+            .Select(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value),
+            Is.EqualTo(new[] { firstLayer + 1, firstLayer + 3, firstLayer + 1, firstLayer + 3 }));
+    }
+
+    [AvaloniaTest]
+    public async Task Script_presets_for_the_same_psd_share_one_character_and_audio_layer()
     {
         using var editor = Editor();
         var source = Character(editor.Scene);
         var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(source) };
         var other = preset with { Id = Guid.NewGuid(), Name = "別の声" };
         editor.Scene.RemoveChild(source.FindHierarchicalParent<Element>()!);
-        editor.Scene.Layers.Add(new TimelineLayer { ZIndex = { Value = 0 }, IsLocked = { Value = true } });
+        editor.Scene.Layers.Add(new TimelineLayer { ZIndex = { Value = 1 }, IsLocked = { Value = true } });
         using var model = new ScriptImportViewModel(editor, Synthesize);
         ConfigureScript(model, preset);
         model.Speakers[1].SelectedPreset.Value = other;
@@ -214,10 +279,11 @@ public partial class PsdLipSyncTests
         var character = target.FindHierarchicalParent<Element>()!;
         Assert.That(character.Range.Start, Is.EqualTo(At(1)));
         Assert.That(character.Range.End, Is.EqualTo(At(8)));
-        Assert.That(character.ZIndex.Value, Is.EqualTo(3));
+        Assert.That(character.ZIndex.Value, Is.EqualTo(2));
         var voices = editor.Scene.EnumerateAllChildren<TtsController>().ToArray();
         Assert.That(voices, Has.Length.EqualTo(3), model.Message.Value);
         Assert.That(voices.All(x => x.LipSyncGroupId.Value == PsdLipSync.GroupOf(target)), Is.True);
+        Assert.That(voices.All(x => x.FindHierarchicalParent<Element>()!.ZIndex.Value == 3), Is.True);
         Assert.That(editor.History.UndoCount, Is.EqualTo(1));
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(editor.Scene.Children, Is.Empty);

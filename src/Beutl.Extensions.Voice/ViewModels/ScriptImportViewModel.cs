@@ -7,7 +7,6 @@ using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
-using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
 using Beutl.ProjectSystem;
@@ -141,6 +140,7 @@ public sealed class ScriptImportViewModel : IDisposable
         try
         {
             var requests = CaptureRequests();
+            int firstLayer = FirstLayer.Value;
             var start = MediaTime.FromSeconds(StartSeconds.Value);
             var gap = MediaTime.FromSeconds(GapSeconds.Value);
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
@@ -174,10 +174,8 @@ public sealed class ScriptImportViewModel : IDisposable
             CheckLayers(requests);
             _history.ExecuteInTransaction(() =>
             {
-                foreach (var element in elements) _scene.AddChild(element, ElementOverlapHandling.ThrowException);
-                PsdLipSyncPresets.Connect(_scene, requests.Select((request, i) =>
-                    (Controller: elements[i].Objects.OfType<TtsController>().Single(), Preset: request.Preset.LipSync))
-                    .Where(x => x.Preset != null).Select(x => (x.Controller, x.Preset!)));
+                PsdLipSyncPresets.PlaceScript(_scene, requests.Select((request, i) =>
+                    (elements[i], request.Preset.LipSync)).ToArray(), firstLayer);
             }, "台本の音声を一括配置");
             committed = true;
             Message.Value = $"{elements.Count} 件の音声を配置しました。";
@@ -218,7 +216,8 @@ public sealed class ScriptImportViewModel : IDisposable
             var speaker = _assignments[line.Speaker];
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
-            int layer = checked(FirstLayer.Value + (SeparateLayers.Value ? Speakers.IndexOf(speaker) : 0));
+            int layer = preset.LipSync == null && SeparateLayers.Value
+                ? checked(FirstLayer.Value + Speakers.IndexOf(speaker)) : FirstLayer.Value;
             return new Request(line.Text, speaker.DisplayName, preset, layer);
         }).ToArray();
         CheckLayers(requests);
@@ -227,7 +226,7 @@ public sealed class ScriptImportViewModel : IDisposable
 
     private void CheckLayers(Request[] requests)
     {
-        foreach (int layer in requests.Select(x => x.Layer).Distinct())
+        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).Select(x => x.Layer).Distinct())
             if (_scene.IsLayerLocked(layer)) throw new InvalidOperationException($"レイヤー {layer} はロックされています。");
     }
 

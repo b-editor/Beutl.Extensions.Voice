@@ -37,36 +37,16 @@ internal static class PsdLipSyncPresets
     {
         foreach (var group in bindings.GroupBy(x => x.Preset.PsdPath, PathComparer))
         {
-            var targets = PsdLipSync.Targets(scene).Where(x => PathComparer.Equals(SourcePath(x), group.Key)).ToArray();
+            var targets = FindTargets(scene, group.Key);
             bool created = targets.Length == 0;
             if (created)
             {
                 var range = TimeRange.FromRange(group.Min(x => x.Controller.TimeRange.Value.Start),
                     group.Max(x => x.Controller.TimeRange.Value.End));
-                var json = JsonNode.Parse(group.First().Preset.ObjectJson) as JsonObject
-                    ?? throw new InvalidOperationException("プリセットの立ち絵を読み込めませんでした。");
-                var saved = CoreSerializer.DeserializeFromJsonObject(json, typeof(EngineObject)) as EngineObject;
-                if (saved == null || !PsdLipSync.TryGetProperties(saved, out _, out _))
-                    throw new InvalidOperationException("プリセットの立ち絵を使うにはPsdTachie拡張をインストールしてください。");
-                ObjectRegenerator.Regenerate(saved, saved.GetType(), out var copy);
-                var target = (EngineObject)copy;
-                var element = new Element
-                {
-                    Name = { Value = Path.GetFileNameWithoutExtension(group.Key) },
-                    Start = { Value = range.Start }, Length = { Value = range.Duration },
-                    ZIndex = { Value = FreeLayer(scene, range, 0) },
-                    Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm"),
-                    AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(target.GetType().FullName!) }
-                };
-                element.AddObject(target);
-                scene.AddChild(element, ElementOverlapHandling.ThrowException);
-                targets = [target];
+                targets = [CreateCharacter(scene, group.First().Preset, range, FreeLayer(scene, range, 0))];
             }
             // Select per speech interval before extending any character's range.
-            var assignments = group.GroupBy(binding => targets
-                .OrderByDescending(x => x.TimeRange.Value.Intersects(binding.Controller.TimeRange.Value))
-                .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - binding.Controller.TimeRange.Value.Start).ToSeconds()))
-                .First()).ToArray();
+            var assignments = group.GroupBy(binding => SelectTarget(targets, binding.Controller.TimeRange.Value)).ToArray();
             foreach (var assignment in assignments)
             {
                 foreach (var binding in assignment) PsdLipSync.Connect(binding.Controller, assignment.Key, created);
@@ -77,7 +57,71 @@ internal static class PsdLipSyncPresets
         }
     }
 
-    public static void Extend(Scene scene, EngineObject target, TimeRange range)
+    // Plan paired layers before adding speech, so temporary overlaps never change its timing.
+    // The caller includes this entire operation in the batch's history transaction.
+    public static void PlaceScript(Scene scene, IReadOnlyList<(Element Element, VoiceLipSyncPreset? Preset)> speech, int firstLayer)
+    {
+        var scriptRange = TimeRange.FromRange(speech.Min(x => x.Element.Range.Start), speech.Max(x => x.Element.Range.End));
+        var planned = speech.Where(x => x.Preset == null).Select(x => x.Element).ToList();
+        var links = new List<(TtsController Controller, EngineObject Target, bool Created)>();
+        int nextLayer = firstLayer;
+        foreach (var group in speech.Where(x => x.Preset != null).GroupBy(x => x.Preset!.PsdPath, PathComparer))
+        {
+            var targets = FindTargets(scene, group.Key);
+            bool created = targets.Length == 0;
+            if (created)
+                targets = [CreateCharacter(scene, group.First().Preset!, scriptRange, FreePair(scene, scriptRange, nextLayer, planned))];
+            var assignments = group.GroupBy(x => SelectTarget(targets, x.Element.Range)).ToArray();
+            foreach (var assignment in assignments)
+            {
+                var target = assignment.Key;
+                PsdLipSync.ValidateTarget(scene, target);
+                Extend(scene, target, scriptRange, planned);
+                var range = TimeRange.FromRange(assignment.Min(x => x.Element.Range.Start), assignment.Max(x => x.Element.Range.End));
+                int layer = FreeLayer(scene, range, checked(target.FindHierarchicalParent<Element>()!.ZIndex.Value + 1), planned: planned);
+                foreach (var item in assignment)
+                {
+                    item.Element.ZIndex.Value = layer;
+                    planned.Add(item.Element);
+                    links.Add((item.Element.Objects.OfType<TtsController>().Single(), target, created));
+                }
+                nextLayer = Math.Max(nextLayer, checked(layer + 1));
+            }
+        }
+        foreach (var item in speech) scene.AddChild(item.Element, ElementOverlapHandling.ThrowException);
+        foreach (var link in links) PsdLipSync.Connect(link.Controller, link.Target, link.Created);
+    }
+
+    private static EngineObject[] FindTargets(Scene scene, string path) =>
+        PsdLipSync.Targets(scene).Where(x => PathComparer.Equals(SourcePath(x), path)).ToArray();
+
+    private static EngineObject SelectTarget(EngineObject[] targets, TimeRange range) => targets
+        .OrderByDescending(x => x.TimeRange.Value.Intersects(range))
+        .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - range.Start).ToSeconds())).First();
+
+    private static EngineObject CreateCharacter(Scene scene, VoiceLipSyncPreset preset, TimeRange range, int layer)
+    {
+        var json = JsonNode.Parse(preset.ObjectJson) as JsonObject
+            ?? throw new InvalidOperationException("プリセットの立ち絵を読み込めませんでした。");
+        var saved = CoreSerializer.DeserializeFromJsonObject(json, typeof(EngineObject)) as EngineObject;
+        if (saved == null || !PsdLipSync.TryGetProperties(saved, out _, out _))
+            throw new InvalidOperationException("プリセットの立ち絵を使うにはPsdTachie拡張をインストールしてください。");
+        ObjectRegenerator.Regenerate(saved, saved.GetType(), out var copy);
+        var target = (EngineObject)copy;
+        var element = new Element
+        {
+            Name = { Value = Path.GetFileNameWithoutExtension(preset.PsdPath) },
+            Start = { Value = range.Start }, Length = { Value = range.Duration },
+            ZIndex = { Value = layer },
+            Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm"),
+            AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(target.GetType().FullName!) }
+        };
+        element.AddObject(target);
+        scene.AddChild(element, ElementOverlapHandling.ThrowException);
+        return target;
+    }
+
+    public static void Extend(Scene scene, EngineObject target, TimeRange range, IReadOnlyCollection<Element>? planned = null)
     {
         Guid group = PsdLipSync.GroupOf(target);
         // Split characters keep their interior boundaries; only extend the outer ends of the group.
@@ -96,14 +140,25 @@ internal static class PsdLipSyncPresets
             if (scene.IsElementLocked(element))
                 throw new InvalidOperationException("表示区間を延長する立ち絵の要素またはレイヤーがロックされています。");
             var expanded = TimeRange.FromRange(start, end);
-            scene.MoveChild(FreeLayer(scene, expanded, element.ZIndex.Value, element), start, expanded.Duration, element);
+            scene.MoveChild(FreeLayer(scene, expanded, element.ZIndex.Value, element, planned), start, expanded.Duration, element);
         }
     }
 
-    private static int FreeLayer(Scene scene, TimeRange range, int preferred, Element? except = null)
+    private static bool IsFree(Scene scene, TimeRange range, int layer, Element? except, IReadOnlyCollection<Element>? planned) =>
+        !scene.IsLayerLocked(layer) && !scene.Children.Concat(planned ?? []).Any(x => x != except
+            && x.ZIndex.Value == layer && x.Range.Intersects(range));
+
+    private static int FreeLayer(Scene scene, TimeRange range, int preferred, Element? except = null,
+        IReadOnlyCollection<Element>? planned = null)
     {
-        while (scene.IsLayerLocked(preferred) || scene.Children.Any(x => x != except
-                   && x.ZIndex.Value == preferred && x.Range.Intersects(range))) preferred++;
+        while (!IsFree(scene, range, preferred, except, planned)) preferred = checked(preferred + 1);
+        return preferred;
+    }
+
+    private static int FreePair(Scene scene, TimeRange range, int preferred, IReadOnlyCollection<Element> planned)
+    {
+        while (!IsFree(scene, range, preferred, null, planned) || !IsFree(scene, range, checked(preferred + 1), null, planned))
+            preferred = checked(preferred + 1);
         return preferred;
     }
 }

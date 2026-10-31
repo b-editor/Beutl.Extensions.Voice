@@ -352,14 +352,14 @@ public partial class PsdLipSyncTests
             _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, RenderIntent.Delivery));
         }
 
-        public void Mouth(double seconds, bool open, string? capture = null) => RenderThread.Dispatcher.Invoke(() =>
+        public void Mouth(double seconds, bool open, string? capture = null, int offsetX = 0) => RenderThread.Dispatcher.Invoke(() =>
         {
             _renderer.Render(_renderer.Compositor.EvaluateGraphics(At(seconds)));
             using var snapshot = _renderer.Snapshot();
             using var frame = snapshot.Convert(BitmapColorType.Bgra8888, BitmapAlphaType.Premul, BitmapColorSpace.Srgb);
             // The 64x48 PSD is centered in a 320x240 frame. Open mouth fills row 12; closed is row 14 only.
             var row = frame.GetRow(96 + (open ? 13 : 12));
-            int pixel = (128 + 43) * 4;
+            int pixel = (128 + 43 + offsetX) * 4;
             var expected = open ? (R: 190, G: 0, B: 0) : (R: 200, G: 200, B: 200);
             Assert.That(Math.Abs(row[pixel + 2] - expected.R) < 12 && Math.Abs(row[pixel + 1] - expected.G) < 12
                 && Math.Abs(row[pixel] - expected.B) < 12, Is.True, $"Mouth at {seconds}s should be {(open ? "open" : "closed")}");
