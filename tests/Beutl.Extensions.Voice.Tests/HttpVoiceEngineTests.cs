@@ -485,6 +485,7 @@ public class HttpVoiceEngineTests
             string prefix = $"http://127.0.0.1:{number}/";
             Url = prefix + "tts/";
             _listener.Prefixes.Add(prefix);
+            _listener.Prefixes.Add($"http://localhost:{number}/");
             _listener.Start();
             _loop = Task.Run(async () =>
             {

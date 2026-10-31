@@ -49,12 +49,25 @@ public static class VoiceEngineStore
 
     public static void Delete(string id) => Change(connections => connections.RemoveAll(x => x.Id == id));
 
+    internal static VoiceEngineConnection? FindByUrl(IEnumerable<VoiceEngineConnection> connections, string url)
+    {
+        // Prefer an exact match if both spellings were already registered separately.
+        string key = LoopbackKey(url);
+        return connections.FirstOrDefault(x => x.Url == url)
+            ?? connections.FirstOrDefault(x => LoopbackKey(x.Url) == key);
+
+        static string LoopbackKey(string address) =>
+            Uri.TryCreate(address, UriKind.Absolute, out var uri) && uri.Host == "localhost"
+                ? new UriBuilder(uri) { Host = "127.0.0.1" }.Uri.AbsoluteUri : address;
+    }
+
     internal static VoiceEngineConnection RegisterDiscovered(VoiceEngineConnection connection, bool allowCreate)
     {
         Change(connections =>
         {
             int index = FindConnection(connections, connection.Id, connection.Url);
-            if (index < 0) index = connections.FindIndex(x => x.Url == connection.Url);
+            if (index < 0 && FindByUrl(connections, connection.Url) is { } existing)
+                index = connections.IndexOf(existing);
             if (index < 0)
             {
                 if (!allowCreate) throw new InvalidOperationException("接続先が削除されています。");
@@ -62,7 +75,10 @@ public static class VoiceEngineStore
             }
             else
             {
-                connection = connection with { Id = connections[index].Id, Name = connections[index].Name };
+                connection = connection with
+                {
+                    Id = connections[index].Id, Name = connections[index].Name, Url = connections[index].Url
+                };
                 connections[index] = connection;
             }
         });

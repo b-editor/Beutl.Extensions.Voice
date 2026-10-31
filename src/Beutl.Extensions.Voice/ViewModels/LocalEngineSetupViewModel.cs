@@ -64,16 +64,16 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     }
 
     private static VoiceEngineConnection? FindStoredConnection(LocalEngineCandidateViewModel entry) =>
-        VoiceEngineStore.Load().FirstOrDefault(x => x.Url == entry.Engine.Url);
+        VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), entry.Engine.Url);
 
     private async Task<bool> Check(LocalEngineCandidateViewModel entry, VoiceEngineConnection seed,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool quickCheck = true)
     {
         entry.Connection = null;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(2));
+            if (quickCheck) timeout.CancelAfter(TimeSpan.FromSeconds(2));
             var connection = await HttpVoiceEngine.DiscoverAsync(seed, timeout.Token);
             cancellationToken.ThrowIfCancellationRequested();
             entry.Connection = connection;
@@ -118,7 +118,8 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             using var waiting = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             waiting.CancelAfter(TimeSpan.FromSeconds(60));
             // Recheck before launch: another application may have started the same engine since the search.
-            if (!await Check(entry, seed, waiting.Token))
+            // Allow the normal discovery timeout for slow engines before launching another process.
+            if (!await Check(entry, seed, waiting.Token, quickCheck: false))
             {
                 if (entry.ApplicationPath.Value is not { } path)
                     throw new InvalidOperationException("アプリを起動してから再検索してください。");

@@ -134,6 +134,7 @@ public class LocalEngineSetupTests
         await (starting ? started.Task : server.Paused.Task).WaitAsync(TimeSpan.FromSeconds(5));
         var current = change == "move" ? seed with { Url = "http://127.0.0.1:59999/", Name = "Moved engine" }
             : seed with { Id = "replacement-engine", Name = "Renamed engine" };
+        if (change == "create") current = current with { Url = server.Url.Replace("127.0.0.1", "localhost") };
         if (change is "delete" or "replace") VoiceEngineStore.Delete(seed.Id);
         if (change != "delete") VoiceEngineStore.Save(current);
         server.FailDiscovery = false;
@@ -175,7 +176,9 @@ public class LocalEngineSetupTests
     }
 
     [AvaloniaTest]
-    public async Task Search_is_read_only_and_registration_reuses_existing_preset_identity()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Search_is_read_only_and_registration_reuses_existing_preset_identity(bool localhost)
     {
         using var server = new HttpVoiceEngineTests.EngineServer(aivis: true);
         int launches = 0;
@@ -185,6 +188,7 @@ public class LocalEngineSetupTests
         Assert.That(VoiceEngineStore.Load(), Is.Empty);
         Assert.That(launches, Is.Zero);
         var existing = model.Engines[0].Connection! with { Id = "preset-engine-id", Name = "My engine" };
+        if (localhost) existing = existing with { Url = server.Url.Replace("127.0.0.1", "localhost") };
         VoiceEngineStore.Save(existing);
         server.ManifestStatus = 404;
         server.VersionStatus = 501;
@@ -192,11 +196,65 @@ public class LocalEngineSetupTests
         Assert.That(await model.Use(model.Engines[0]), Is.True, model.Message.Value);
         Assert.That(model.SelectedConnection!.Id, Is.EqualTo(existing.Id));
         Assert.That(model.SelectedConnection.Name, Is.EqualTo(existing.Name));
+        Assert.That(model.SelectedConnection.Url, Is.EqualTo(existing.Url));
         Assert.That(model.SelectedConnection.EngineUuid, Is.EqualTo(existing.EngineUuid));
         Assert.That(model.SelectedConnection.Version, Is.EqualTo(existing.Version));
         Assert.That(model.SelectedConnection.Capabilities.TempoDynamics, Is.True);
         Assert.That(VoiceEngineStore.Load(), Has.Length.EqualTo(1));
         Assert.That(launches, Is.Zero, "An engine that is already responding must not be started again.");
+    }
+
+    [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task Slow_running_engine_is_not_relaunched_and_can_be_cancelled(bool cancel)
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer { PauseAt = "/tts/speakers" };
+        int launches = 0;
+        using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }],
+            _ => null, _ => launches++);
+        model.SelectApplication(model.Engines[0], "/installed/run");
+        Task<bool> registration = model.Use(model.Engines[0]);
+        await server.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        if (cancel) model.Dispose();
+        server.Resume.TrySetResult();
+        Assert.That(await registration.WaitAsync(TimeSpan.FromSeconds(5)), Is.EqualTo(!cancel), model.Message.Value);
+        Assert.That(launches, Is.Zero, "Slow metadata must not cause an already-running engine to be started again.");
+        Assert.That(VoiceEngineStore.Load().Length, Is.EqualTo(cancel ? 0 : 1));
+        Assert.That(model.IsBusy.Value, Is.False);
+    }
+
+    [TestCase("http://localhost:50021/tts/", true)]
+    [TestCase("http://localhost:50022/tts/", false)]
+    [TestCase("http://localhost:50021/other/", false)]
+    [TestCase("https://localhost:50021/tts/", false)]
+    [TestCase("http://example.com:50021/tts/", false)]
+    [TestCase("http://[::1]:50021/tts/", false)]
+    public void Registration_matches_loopback_aliases_without_merging_other_endpoints(string url, bool matches)
+    {
+        var existing = new VoiceEngineConnection { Url = url, Name = "Saved engine" };
+        VoiceEngineStore.Save(existing);
+        var discovered = new VoiceEngineConnection { Url = "http://127.0.0.1:50021/tts/", Name = "Detected engine" };
+        var registered = VoiceEngineStore.RegisterDiscovered(discovered, allowCreate: true);
+        Assert.That(registered.Id, Is.EqualTo(matches ? existing.Id : discovered.Id));
+        Assert.That(registered.Url, Is.EqualTo(matches ? existing.Url : discovered.Url));
+        Assert.That(VoiceEngineStore.Load(), Has.Length.EqualTo(matches ? 1 : 2));
+        Assert.That(VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), existing.Url)!.Id, Is.EqualTo(existing.Id));
+        Assert.That(VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), discovered.Url)!.Id, Is.EqualTo(registered.Id));
+    }
+
+    [Test]
+    public void Registration_prefers_an_existing_exact_url_over_a_loopback_alias()
+    {
+        var alias = new VoiceEngineConnection { Url = "http://localhost:50021/" };
+        var exact = new VoiceEngineConnection { Url = "http://127.0.0.1:50021/" };
+        VoiceEngineStore.Save(alias);
+        VoiceEngineStore.Save(exact);
+        Assert.That(VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), exact.Url)!.Id, Is.EqualTo(exact.Id));
+        var registered = VoiceEngineStore.RegisterDiscovered(new() { Url = exact.Url }, allowCreate: true);
+        Assert.That(registered.Id, Is.EqualTo(exact.Id));
+        Assert.That(VoiceEngineStore.Load(), Has.Length.EqualTo(2));
     }
 
     [AvaloniaTest]
