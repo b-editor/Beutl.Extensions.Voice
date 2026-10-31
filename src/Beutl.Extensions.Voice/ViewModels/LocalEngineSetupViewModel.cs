@@ -55,7 +55,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
                 var seed = FindStoredConnection(entry) ?? new VoiceEngineConnection { Url = entry.Engine.Url };
-                await Check(entry, seed, cancellationToken, quickCheck: true);
+                await Check(entry, seed, cancellationToken);
             }));
         }
         catch (OperationCanceledException) when (_disposed) { }
@@ -67,14 +67,12 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), entry.Engine.Url);
 
     private async Task<bool> Check(LocalEngineCandidateViewModel entry, VoiceEngineConnection seed,
-        CancellationToken cancellationToken, bool quickCheck)
+        CancellationToken cancellationToken)
     {
         entry.Connection = null;
         try
         {
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            if (quickCheck) timeout.CancelAfter(TimeSpan.FromSeconds(2));
-            var connection = await HttpVoiceEngine.DiscoverAsync(seed, timeout.Token);
+            var connection = await HttpVoiceEngine.DiscoverAsync(seed, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             entry.Connection = connection;
             entry.Status.Value = $"接続可能: {connection.Name} {connection.Version}".TrimEnd();
@@ -118,8 +116,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             using var waiting = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             waiting.CancelAfter(TimeSpan.FromSeconds(60));
             // Recheck before launch: another application may have started the same engine since the search.
-            // Allow the normal discovery timeout for slow engines before launching another process.
-            if (!await Check(entry, seed, waiting.Token, quickCheck: false))
+            if (!await Check(entry, seed, waiting.Token))
             {
                 if (entry.ApplicationPath.Value is not { } path)
                     throw new InvalidOperationException("アプリを起動してから再検索してください。");
@@ -128,7 +125,7 @@ public sealed class LocalEngineSetupViewModel : IDisposable
                 {
                     entry.Status.Value = "エンジンの起動を待っています…";
                     await Task.Delay(1000, waiting.Token);
-                    if (await Check(entry, seed, waiting.Token, quickCheck: false)) break;
+                    if (await Check(entry, seed, waiting.Token)) break;
                 }
             }
             waiting.Token.ThrowIfCancellationRequested();

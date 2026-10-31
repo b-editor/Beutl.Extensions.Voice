@@ -357,7 +357,7 @@ public class LocalEngineSetupTests
     [TestCase(460, true)]
     public async Task Settings_tab_renders_scrolls_and_selects_the_registered_engine(int width, bool light)
     {
-        using var ready = new HttpVoiceEngineTests.EngineServer(aivis: true);
+        using var ready = new HttpVoiceEngineTests.EngineServer(aivis: true) { PauseAt = "/tts/speakers" };
         using var stopped = new HttpVoiceEngineTests.EngineServer { FailDiscovery = true };
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
         using var speech = new TtsTabViewModel(new(), editor);
@@ -376,6 +376,9 @@ public class LocalEngineSetupTests
         window.Show();
         try
         {
+            await ready.Paused.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            await Task.Delay(TimeSpan.FromSeconds(3));
+            ready.Resume.TrySetResult();
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (model.IsBusy.Value && DateTime.UtcNow < deadline) await Task.Delay(20);
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
@@ -409,6 +412,8 @@ public class LocalEngineSetupTests
                 $"Last controls must be reachable (offset {scroll.Offset.Y}, extent {scroll.Extent.Height}, viewport {scroll.Viewport.Height}).");
             scroll.Offset = default;
             var button = content.GetVisualDescendants().OfType<Button>().First(x => x.Name == "UseEngineButton");
+            Assert.That(model.Engines[0].ApplicationPath.Value, Is.Null);
+            Assert.That(button.IsEnabled, Is.True, "A slow running engine must remain connectable without an application path.");
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             deadline = DateTime.UtcNow.AddSeconds(5);
             while (speech.SelectedPage.Value != 0 && DateTime.UtcNow < deadline) await Task.Delay(20);
