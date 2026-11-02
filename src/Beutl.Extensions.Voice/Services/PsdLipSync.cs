@@ -132,11 +132,13 @@ internal static class PsdLipSync
         }
     }
 
-    public static MediaTime SourceTime(SourceSound sound, MediaTime time, Func<KeyFrameAnimation<float>, SpeedIntegrator> getIntegrator)
+    public static MediaTime SourceTime(SourceSound sound, ExpressionContext context, Func<KeyFrameAnimation<float>, SpeedIntegrator> getIntegrator)
     {
+        MediaTime time = context.Time;
         MediaTime local = time - sound.TimeRange.Value.Start;
         MediaTime mapped;
-        if (sound.Speed.GetKeyFrameAnimation() is { } animation)
+        // Like the audio graph, follow an expression on the speed or offset; one on the speed hides its keyframes.
+        if (!sound.Speed.HasExpression && sound.Speed.GetKeyFrameAnimation() is { } animation)
         {
             var integrator = getIntegrator(animation);
             lock (integrator)
@@ -144,7 +146,16 @@ internal static class PsdLipSync
                     ? integrator.Integrate(time, animation) - integrator.Integrate(sound.TimeRange.Value.Start, animation)
                     : integrator.Integrate(local, animation);
         }
-        else mapped = MediaTime.FromSeconds(local.ToSeconds() * sound.Speed.Value / 100d);
-        return mapped + sound.OffsetPosition.Value;
+        else mapped = MediaTime.FromSeconds(local.ToSeconds() * Evaluate(sound.Speed, context) / 100d);
+        return mapped + Evaluate(sound.OffsetPosition, context);
+    }
+
+    // Evaluate a sound's property as its own, keeping the context that guards against reference cycles.
+    public static T Evaluate<T>(IExpressionProperty<T> property, ExpressionContext context)
+    {
+        var current = context.CurrentProperty;
+        context.CurrentProperty = property;
+        try { return property.Evaluate(context); }
+        finally { context.CurrentProperty = current; }
     }
 }

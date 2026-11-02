@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Markup.Xaml.Styling;
-using Avalonia.Platform;
 using Beutl.Collections;
 using Beutl.Editor;
 using Beutl.Editor.Services;
@@ -25,7 +24,9 @@ public class TestApp : Application
         DecoderRegistry.Register(new WaveDecoderInfo());
         // The desktop host registers bundled engine fonts and fallbacks during startup.
         // Reproduce the Japanese fallback when rendering captions in this headless host.
-        using (var font = AssetLoader.Open(new Uri("avares://Beutl.Controls/Assets/Fonts/NotoSansJP/NotoSansJP-Regular.ttf")))
+        // The Beutl.Controls package no longer embeds the UI fonts, so this subset holds the glyphs the caption test draws;
+        // see TestData/NotoSansJP.LICENSE.
+        using (var font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "TestData", "NotoSansJP-Regular.subset.ttf")))
             Beutl.Media.FontManager.Instance.AddFont(font);
         typeof(Beutl.Media.FontManager).GetMethod("SetFallbackFonts",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!

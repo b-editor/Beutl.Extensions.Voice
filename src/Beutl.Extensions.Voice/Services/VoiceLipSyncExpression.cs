@@ -26,14 +26,8 @@ public sealed class VoiceLipSyncAudioExpression : VoiceLipSyncExpression<SoundSo
 {
     public bool ExtendToSpeech { get; init; }
 
-    public override SoundSource? Evaluate(ExpressionContext context)
-    {
-        if (PsdLipSync.FindSound(context, GroupId) is not { } sound) return null;
-        var property = context.CurrentProperty;
-        context.CurrentProperty = sound.Source;
-        try { return sound.Source.Evaluate(context); }
-        finally { context.CurrentProperty = property; }
-    }
+    public override SoundSource? Evaluate(ExpressionContext context) =>
+        PsdLipSync.FindSound(context, GroupId) is { } sound ? PsdLipSync.Evaluate(sound.Source, context) : null;
 }
 
 public sealed class VoiceLipSyncOffsetExpression : VoiceLipSyncExpression<MediaTime>
@@ -45,7 +39,7 @@ public sealed class VoiceLipSyncOffsetExpression : VoiceLipSyncExpression<MediaT
     {
         if (PsdLipSync.FindSound(context, GroupId) is not { } sound
             || context.CurrentProperty.GetOwnerObject() is not EngineObject target) return MediaTime.Zero;
-        return context.Time - target.TimeRange.Value.Start - PsdLipSync.SourceTime(sound, context.Time,
+        return context.Time - target.TimeRange.Value.Start - PsdLipSync.SourceTime(sound, context,
             animation => _integrators.GetValue(animation, value =>
             {
                 var integrator = new SpeedIntegrator(48000);

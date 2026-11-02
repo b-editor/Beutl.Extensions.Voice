@@ -311,6 +311,39 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
+    public void Speed_and_offset_expressions_move_the_mouth_with_the_audio()
+    {
+        using var editor = Editor();
+        var target = Character(editor.Scene);
+        var speech = Speech(editor.Scene, 1);
+        PsdLipSync.Connect(speech.Controller, target);
+        var animation = new KeyFrameAnimation<float>();
+        animation.KeyFrames.Add(new KeyFrame<float> { KeyTime = { Value = At(0) }, Value = { Value = 100 } });
+        speech.Sound.Speed.SetKeyFrameAnimation(animation);
+        using var render = new RenderProbe(editor.Scene);
+        render.Mouth(1.25, true);
+        render.Mouth(1.75, true);
+
+        // The audio graph plays an expression on either property, and one on the speed hides its keyframes.
+        var speed = new ProbeExpression<float>(200);
+        speech.Sound.Speed.Expression = speed;
+        render.Mouth(1.25, true);
+        render.Mouth(1.75, false);
+        Assert.That(speed.EvaluatedFor, Is.SameAs(speech.Sound.Speed));
+        speech.Sound.Speed.Expression = null;
+        render.Mouth(1.75, true);
+
+        var offset = new ProbeExpression<MediaTime>(At(1));
+        speech.Sound.OffsetPosition.Expression = offset;
+        render.Mouth(1.25, false);
+        Assert.That(offset.EvaluatedFor, Is.SameAs(speech.Sound.OffsetPosition));
+
+        // A reference back to the character ends at the context's cycle guard.
+        speech.Sound.OffsetPosition.Expression = Expression.CreateReference<MediaTime>(target.Id.Value, nameof(PsdTachieDrawable.LipSyncOffset));
+        Assert.That(target.LipSyncOffset.Evaluate(new EvaluationContext(At(1.25))).ToSeconds(), Is.EqualTo(1).Within(0.001));
+    }
+
+    [AvaloniaTest]
     public void Linking_switching_and_unlinking_are_undoable_and_restore_existing_inputs()
     {
         using var editor = Editor();
@@ -445,6 +478,19 @@ public partial class PsdLipSyncTests
         await Task.Delay(150);
         Dispatcher.UIThread.RunJobs();
         AvaloniaHeadlessPlatform.ForceRenderTimerTick(3);
+    }
+
+    private sealed class ProbeExpression<T>(T value) : IExpression<T>
+    {
+        public IProperty? EvaluatedFor { get; private set; }
+        public string ExpressionString => "";
+        public bool Validate(out string? error) { error = null; return true; }
+
+        public T Evaluate(ExpressionContext context)
+        {
+            EvaluatedFor = context.CurrentProperty;
+            return value;
+        }
     }
 
     private sealed class RenderProbe : IDisposable
