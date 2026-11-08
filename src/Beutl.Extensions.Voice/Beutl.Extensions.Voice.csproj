@@ -1,12 +1,12 @@
-﻿<Project Sdk="Beutl.Extensibility.Sdk/2.0.0-preview.10">
+﻿<Project Sdk="Beutl.Extensibility.Sdk/2.0.0-preview.11">
 
     <PropertyGroup>
         <PackageId>Beutl.Extensions.Voice</PackageId>
         <Title>Text to Speech</Title>
         <Description>テキストを読み上げます</Description>
         <PackageTags>audio,speech,voice,tts</PackageTags>
-        <Version>1.0.8</Version>
-        <AssemblyVersion>1.0.8.0</AssemblyVersion>
+        <Version>1.0.9</Version>
+        <AssemblyVersion>1.0.9.0</AssemblyVersion>
         <Authors>Yuto Terada</Authors>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <BeutlAutoReferenceSourceGenerators>false</BeutlAutoReferenceSourceGenerators>
