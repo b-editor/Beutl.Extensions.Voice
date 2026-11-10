@@ -64,8 +64,10 @@ internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelectio
     public ICoreList<Element> SelectedElements { get; } = new CoreList<Element>();
     public void Select(CoreObject? obj, bool notifyIfSelected = false) => Selection.Value = obj;
     public void Seek(MediaTime time) => Time.Value = time;
-    public T? FindToolTab<T>(Func<T, bool> condition) where T : IToolContext => default;
-    public T? FindToolTab<T>() where T : IToolContext => default;
+    // The tool tabs open in this editor.
+    public List<IToolContext> ToolTabs { get; } = [];
+    public T? FindToolTab<T>(Func<T, bool> condition) where T : IToolContext => ToolTabs.OfType<T>().FirstOrDefault(condition);
+    public T? FindToolTab<T>() where T : IToolContext => ToolTabs.OfType<T>().FirstOrDefault();
     public bool OpenToolTab(IToolContext item) => false;
     public void CloseToolTab(IToolContext item) { }
     public object? GetService(Type type) => type == typeof(Scene) ? Scene : type == typeof(HistoryManager) ? History

@@ -10,19 +10,24 @@ namespace Beutl.Extensions.Voice.Services;
 
 internal static class VoiceElementFactory
 {
-    public static Element Create(Scene scene, string path, VoiceGeneration generation, MediaTime start, int layer)
+    public static Element Create(Scene scene, string path, VoiceGeneration generation, MediaTime start, int layer) =>
+        Create(scene, path, generation.Text, generation, start, layer);
+
+    // Speech made elsewhere, such as on a text-to-speech site, has no settings to regenerate it with.
+    public static Element Create(Scene scene, string path, string text, VoiceGeneration? generation, MediaTime start, int layer)
     {
         var element = new Element
         {
             Start = { Value = start }, ZIndex = { Value = layer },
             Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm"),
-            Name = { Value = generation.Text.ReplaceLineEndings(" ") },
+            Name = { Value = string.IsNullOrWhiteSpace(text) ? Path.GetFileNameWithoutExtension(path) : text.ReplaceLineEndings(" ") },
             AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(typeof(TtsController).FullName!) }
         };
         element.AddObject(new SourceSound { Source = { Value = SoundSource.Open(path) } });
-        element.AddObject(new TtsController { Text = { Value = generation.Text }, Generation = { Value = generation } });
+        element.AddObject(new TtsController { Text = { Value = text }, Generation = { Value = generation } });
         if (!element.TryGetOriginalDuration(out var duration) || duration <= MediaTime.Zero)
-            throw new InvalidOperationException("生成した音声の長さを取得できませんでした。");
+            throw new InvalidOperationException(generation == null
+                ? "音声の長さを取得できませんでした。" : "生成した音声の長さを取得できませんでした。");
         element.Length.Value = duration;
         return element;
     }

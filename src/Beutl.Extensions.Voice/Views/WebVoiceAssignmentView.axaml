@@ -1,0 +1,51 @@
+<UserControl x:Class="Beutl.Extensions.Voice.Views.WebVoiceAssignmentView"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:Beutl.Extensions.Voice.Models"
+             xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
+             x:CompileBindings="True" x:DataType="vm:WebVoiceAssignmentViewModel">
+    <StackPanel MaxWidth="360" Spacing="4">
+        <TextBlock x:Name="AssignmentDescription" Margin="0,0,0,8" Text="{Binding Description}" TextWrapping="Wrap" />
+
+        <StackPanel Spacing="4" IsVisible="{Binding HasPresets}">
+            <TextBlock Text="声のプリセットから" />
+            <ComboBox x:Name="AssignmentPresetSelector" HorizontalAlignment="Stretch"
+                      PlaceholderText="プリセットの立ち絵と字幕を使う"
+                      AutomationProperties.Name="声のプリセットから立ち絵と字幕を使う"
+                      ItemsSource="{Binding Presets}" SelectedItem="{Binding SelectedPreset.Value, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:VoicePreset">
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </StackPanel>
+
+        <TextBlock Margin="0,4,0,0" Text="立ち絵（口パク）" />
+        <ComboBox x:Name="AssignmentLipSyncSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTargets"
+                  AutomationProperties.Name="口パクで連携する立ち絵"
+                  ItemsSource="{Binding LipSync.Targets.Value}" SelectedItem="{Binding LipSync.Selected.Value, Mode=TwoWay}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:LipSyncChoice">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <TextBlock Margin="0,4,0,0" Text="字幕" />
+        <ComboBox x:Name="AssignmentSubtitleSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTemplates"
+                  AutomationProperties.Name="字幕テンプレート"
+                  ItemsSource="{Binding Subtitles.Choices.Value}" SelectedItem="{Binding Subtitles.Selected.Value, Mode=TwoWay}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:SubtitleChoice">
+                    <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <TextBlock x:Name="AssignmentMessage" Margin="0,4,0,0" TextWrapping="Wrap"
+                   Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                   IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                   Text="{Binding Message.Value}" />
+    </StackPanel>
+</UserControl>

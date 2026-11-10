@@ -72,17 +72,19 @@ internal static class VoiceSubtitles
         if (template == null) return null;
         ObjectRegenerator.Regenerate(template, out Element caption);
         var controller = speech.Objects.OfType<TtsController>().Single();
+        // Speech downloaded from a site has its text but no generation settings.
+        string text = controller.Generation.Value?.Text ?? controller.Text.Value;
         var targets = GetTextTargets(caption);
         var bindings = targets.Select(target => new SubtitleTextBinding(target.Id.Value,
             target.Text.Value?.Contains(Placeholder, StringComparison.Ordinal) == true ? target.Text.Value : Placeholder)).ToArray();
         foreach (var target in targets)
         {
             target.Text.Expression = null;
-            target.Text.Value = bindings.First(x => x.TextId == target.Id.Value).Pattern.Replace(Placeholder, controller.Generation.Value!.Text);
+            target.Text.Value = bindings.First(x => x.TextId == target.Id.Value).Pattern.Replace(Placeholder, text);
         }
         caption.AddObject(new SubtitleController { SourceId = { Value = controller.Id.Value }, TextBindings = { Value = bindings } });
         caption.Uri = RandomFileNameGenerator.GenerateUri(scene.Uri!, "belm");
-        caption.Name.Value = "字幕: " + controller.Generation.Value!.Text.ReplaceLineEndings(" ");
+        caption.Name.Value = "字幕: " + text.ReplaceLineEndings(" ");
         caption.IsLocked.Value = false;
         caption.IsEnabled.Value = true;
         caption.Start.Value = speech.Start.Value;
