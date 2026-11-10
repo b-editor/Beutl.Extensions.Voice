@@ -21,7 +21,7 @@ public sealed class ScriptImportViewModel : IDisposable
     private readonly Scene _scene;
     private readonly HistoryManager _history;
     private readonly IEditorClock _clock;
-    private readonly Func<string, VoiceSettings, Task<VoiceSynthesisResult>> _synthesize;
+    private readonly Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> _synthesize;
     private readonly ILogger _logger = Log.CreateLogger<ScriptImportViewModel>();
     private readonly IDisposable _loaderSubscription;
     private readonly IDisposable _connectionSubscription;
@@ -33,10 +33,14 @@ public sealed class ScriptImportViewModel : IDisposable
     private bool _disposed;
 
     public ScriptImportViewModel(IEditorContext editor)
-        : this(editor, (text, settings) => VoiceSynthesisService.SynthesizeAsync(text, settings, null)) { }
+        : this(editor, (text, settings, token) => VoiceSynthesisService.SynthesizeAsync(text, settings, null, token)) { }
 
     internal ScriptImportViewModel(IEditorContext editor,
         Func<string, VoiceSettings, Task<VoiceSynthesisResult>> synthesize)
+        : this(editor, (text, settings, _) => synthesize(text, settings)) { }
+
+    private ScriptImportViewModel(IEditorContext editor,
+        Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> synthesize)
     {
         _scene = editor.GetRequiredService<Scene>();
         _history = editor.GetRequiredService<HistoryManager>();
@@ -131,8 +135,6 @@ public sealed class ScriptImportViewModel : IDisposable
     public async Task Generate()
     {
         if (_disposed || IsGenerating.Value) return;
-        var paths = new List<string>();
-        bool committed = false;
         string failureContext = "台本と配置設定を確認してください。";
         using var cancellation = new CancellationTokenSource();
         _cancellation = cancellation;
@@ -140,45 +142,21 @@ public sealed class ScriptImportViewModel : IDisposable
         try
         {
             var requests = CaptureRequests();
-            int firstLayer = FirstLayer.Value;
-            var start = MediaTime.FromSeconds(StartSeconds.Value);
-            var gap = MediaTime.FromSeconds(GapSeconds.Value);
-            string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
             IsGenerating.Value = true;
-            Directory.CreateDirectory(directory);
-            var elements = new List<Element>();
-            for (int i = 0; i < requests.Length; i++)
-            {
-                token.ThrowIfCancellationRequested();
-                var request = requests[i];
-                Message.Value = $"音声を生成中… {i + 1} / {requests.Length}（{request.Speaker}）";
-                failureContext = $"{i + 1} 件目（{request.Speaker}）の音声生成を確認してください。";
-                var output = await _synthesize(request.Text, request.Preset.Settings);
-                token.ThrowIfCancellationRequested();
-                string path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
-                paths.Add(path);
-                await File.WriteAllBytesAsync(path, output.Wave, token);
-                token.ThrowIfCancellationRequested();
-                var generation = new VoiceGeneration
+            var elements = await VoiceScriptService.GenerateAsync(_scene, _history, requests,
+                StartSeconds.Value, GapSeconds.Value, FirstLayer.Value, SeparateLayers.Value, _synthesize, token,
+                (index, speaker) =>
                 {
-                    Text = request.Text, Settings = output.Settings, AudioQueryJson = output.Json,
-                    PresetId = request.Preset.Id, PresetName = request.Preset.Name
-                };
-                var element = VoiceElementFactory.Create(_scene, path, generation, start, request.Layer);
-                elements.Add(element);
-                start += element.Length.Value + gap;
-            }
-            token.ThrowIfCancellationRequested();
-            // Locks and overlaps may have changed while the native engine was working.
-            failureContext = "配置先の重なりやレイヤーのロックを確認してください。";
-            CheckLayers(requests);
-            _history.ExecuteInTransaction(() =>
-            {
-                PsdLipSyncPresets.PlaceScript(_scene, requests.Select((request, i) =>
-                    (elements[i], request.Preset.LipSync, VoiceSubtitles.Create(_scene, elements[i], request.Subtitle))).ToArray(), firstLayer);
-            }, "台本の音声を一括配置");
-            committed = true;
-            Message.Value = $"{elements.Count} 件の音声を配置しました。";
+                    if (index == requests.Length)
+                    {
+                        failureContext = "配置先の重なりやレイヤーのロックを確認してください。";
+                        return;
+                    }
+                    string displayName = _assignments[speaker].DisplayName;
+                    Message.Value = $"音声を生成中… {index + 1} / {requests.Length}（{displayName}）";
+                    failureContext = $"{index + 1} 件目（{displayName}）の音声生成を確認してください。";
+                });
+            Message.Value = $"{elements.Length} 件の音声を配置しました。";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -191,51 +169,22 @@ public sealed class ScriptImportViewModel : IDisposable
         }
         finally
         {
-            // Successful imports retain their files so that Redo can restore the batch.
-            if (!committed)
-                foreach (string path in paths)
-                    try { File.Delete(path); }
-                    catch (Exception ex) { _logger.LogWarning(ex, "Could not delete generated speech file {Path}", path); }
             _cancellation = null;
             IsGenerating.Value = false;
         }
     }
 
-    private Request[] CaptureRequests()
+    private VoiceScriptLine[] CaptureRequests()
     {
         // Generate the text currently shown in the input, including edits made after importing speakers.
         SetLines(ScriptLine.Parse(RawText.Value, HasSpeakerNames.Value));
-        if (Lines.Count == 0) throw new InvalidOperationException("台本を入力してください。");
-        if (!double.IsFinite(StartSeconds.Value) || StartSeconds.Value < 0 ||
-            !double.IsFinite(GapSeconds.Value) || GapSeconds.Value < 0 || FirstLayer.Value < 0)
-            throw new InvalidOperationException("開始位置、間隔、レイヤーには 0 以上の値を指定してください。");
-        // Load each snapshot once before synthesis and reuse it for placement.
-        var subtitles = new Dictionary<VoiceSubtitleTemplate, Element?>();
-        var requests = Lines.Select((line, i) =>
+        return Lines.Select(line =>
         {
-            if (string.IsNullOrWhiteSpace(line.Text))
-                throw new InvalidOperationException($"{i + 1} 件目のセリフを入力してください。");
             var speaker = _assignments[line.Speaker];
             var preset = speaker.SelectedPreset.Value
                 ?? throw new InvalidOperationException($"「{speaker.DisplayName}」のプリセットを選択してください。");
-            int layer = preset.LipSync == null && SeparateLayers.Value
-                ? checked(FirstLayer.Value + Speakers.Take(Speakers.IndexOf(speaker))
-                    .Sum(x => x.SelectedPreset.Value is { LipSync: null, Subtitle: not null } ? 2 : 1)) : FirstLayer.Value;
-            Element? subtitle = null;
-            if (preset.Subtitle is { } template && !subtitles.TryGetValue(template, out subtitle))
-                subtitles.Add(template, subtitle = VoiceSubtitles.Load(template));
-            return new Request(line.Text, speaker.DisplayName, preset, layer, subtitle);
+            return new VoiceScriptLine(line.Text, speaker.Name, preset);
         }).ToArray();
-        CheckLayers(requests);
-        return requests;
-    }
-
-    private void CheckLayers(Request[] requests)
-    {
-        // Subtitle pairs are placed together on available layers; plain audio retains its explicit layer.
-        foreach (int layer in requests.Where(x => x.Preset.LipSync == null).GroupBy(x => x.Layer)
-                     .Where(x => x.All(item => item.Preset.Subtitle == null)).Select(x => x.Key))
-            if (_scene.IsLayerLocked(layer)) throw new InvalidOperationException($"レイヤー {layer} はロックされています。");
     }
 
     public void WriteToJson(JsonObject json)
@@ -303,7 +252,6 @@ public sealed class ScriptImportViewModel : IDisposable
         TtsLoader.Preferences.PromptChanged -= OnConnectionsChanged;
     }
 
-    private sealed record Request(string Text, string Speaker, VoicePreset Preset, int Layer, Element? Subtitle);
     private sealed record SpeakerState(string Name, VoicePreset? Preset);
     private sealed record State
     {
