@@ -8,12 +8,12 @@ namespace Beutl.Extensions.Voice;
 
 public sealed partial class VoiceMcpToolExtension
 {
-    private static async Task<VoiceEngineConnection> DictionaryEngine(string? id, CancellationToken cancellationToken)
+    private static VoiceEngineConnection DictionaryEngine(string? id)
     {
         if (id == null || id == VoiceSettings.CoreEngineId) return VoiceEngineConnection.Core;
-        var engine = VoiceEngineStore.Load().FirstOrDefault(item => item.Id == id)
+        // Dictionary endpoints do not depend on speaker discovery; retain the registered identity and capabilities.
+        return VoiceEngineStore.Load().FirstOrDefault(item => item.Id == id)
             ?? throw new ArgumentException($"Voice engine '{id}' is not registered. Call voice_list_engines.");
-        return await HttpVoiceEngine.DiscoverAsync(engine, cancellationToken);
     }
 
     private static DictionaryWordType[] DictionaryWordTypes(VoiceEngineConnection engine) =>
@@ -24,7 +24,7 @@ public sealed partial class VoiceMcpToolExtension
         var request = arguments.Deserialize<DictionaryListRequest>(s_json)!;
         if (request.Offset < 0 || request.Limit < 1)
             throw new ArgumentException("offset must be non-negative and limit must be positive.");
-        var engine = await DictionaryEngine(request.EngineId, cancellationToken);
+        var engine = DictionaryEngine(request.EngineId);
         var words = await VoiceDictionaryService.LoadAsync(engine, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         string search = request.Search?.Trim() ?? "";
@@ -69,7 +69,7 @@ public sealed partial class VoiceMcpToolExtension
     private static async Task<McpToolResult> SaveDictionaryWord(JsonElement arguments, CancellationToken cancellationToken)
     {
         var request = arguments.Deserialize<DictionaryWordRequest>(s_json)!;
-        var engine = await DictionaryEngine(request.EngineId, cancellationToken);
+        var engine = DictionaryEngine(request.EngineId);
         var word = await DictionaryWord(engine, request, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         Guid id = await VoiceDictionaryService.SaveAsync(engine, request.WordId, word, cancellationToken);
@@ -78,7 +78,7 @@ public sealed partial class VoiceMcpToolExtension
 
     private static async Task<McpToolResult> DeleteDictionaryWord(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var engine = await DictionaryEngine(arguments.TryGetProperty("engineId", out var engineId) ? engineId.GetString() : null, cancellationToken);
+        var engine = DictionaryEngine(arguments.TryGetProperty("engineId", out var engineId) ? engineId.GetString() : null);
         Guid id = arguments.GetProperty("wordId").GetGuid();
         await VoiceDictionaryService.DeleteAsync(engine, id, cancellationToken);
         return Json(new { engineId = engine.Id, wordId = id, deleted = true });
@@ -86,7 +86,7 @@ public sealed partial class VoiceMcpToolExtension
 
     private static async Task<McpToolResult> ExportDictionary(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var engine = await DictionaryEngine(arguments.TryGetProperty("engineId", out var engineId) ? engineId.GetString() : null, cancellationToken);
+        var engine = DictionaryEngine(arguments.TryGetProperty("engineId", out var engineId) ? engineId.GetString() : null);
         var words = await VoiceDictionaryService.LoadAsync(engine, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         return Json(new { engineId = engine.Id, dictionary = VoiceDictionaryService.ToJson(words) });
@@ -95,7 +95,7 @@ public sealed partial class VoiceMcpToolExtension
     private static async Task<McpToolResult> ImportDictionary(JsonElement arguments, CancellationToken cancellationToken)
     {
         var request = arguments.Deserialize<DictionaryImportRequest>(s_json)!;
-        var engine = await DictionaryEngine(request.EngineId, cancellationToken);
+        var engine = DictionaryEngine(request.EngineId);
         var existing = await VoiceDictionaryService.LoadAsync(engine, cancellationToken);
         var entries = VoiceDictionaryService.PrepareImport(request.Dictionary.ToJsonString(), engine, existing.Select(word => word.Id));
         var applicable = entries.Where(entry => entry.Word != null && (!entry.Duplicate || request.Overwrite)).Select(entry => entry.Word!).ToArray();

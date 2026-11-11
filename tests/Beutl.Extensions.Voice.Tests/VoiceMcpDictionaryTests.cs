@@ -20,6 +20,38 @@ public partial class VoiceMcpToolTests
     [AvaloniaTest]
     [TestCase(false)]
     [TestCase(true)]
+    public async Task Dictionary_operations_remain_available_when_speaker_discovery_fails(bool aivis)
+    {
+        using var server = new EngineServer(aivis);
+        var engine = await Register(server);
+        server.FailDiscovery = true;
+        Assert.That((await Invoke("voice_list_voices", new { engineId = engine.Id })).IsError, Is.True);
+        int discoveryCount = server.DiscoveryCount;
+        var empty = Data(await Invoke("voice_list_dictionary_words", new { engineId = engine.Id }));
+        Assert.That(empty.GetProperty("supportsCompoundAccent").GetBoolean(), Is.EqualTo(aivis));
+        Assert.That(empty.GetProperty("wordTypes").GetArrayLength(), Is.EqualTo(aivis ? 10 : 5));
+        VoiceDictionaryPhrase[] phrases = aivis ? [new("新田", "アラタ", 1), new("真剣佑", "マッケンユー", 3)] : [new("試験", "シケン", 2)];
+        string type = aivis ? "PERSON_GIVEN_NAME" : "PROPER_NOUN";
+        var saved = Data(await Invoke("voice_save_dictionary_word", new { engineId = engine.Id, phrases, wordType = type }));
+        Guid id = saved.GetProperty("wordId").GetGuid();
+        Data(await Invoke("voice_save_dictionary_word", new { engineId = engine.Id, wordId = id, priority = 9 }));
+        var exported = Data(await Invoke("voice_export_dictionary", new { engineId = engine.Id })).GetProperty("dictionary");
+        Assert.That(exported.GetProperty(id.ToString()).GetProperty("priority").GetInt32(), Is.EqualTo(9));
+        Data(await Invoke("voice_delete_dictionary_word", new { engineId = engine.Id, wordId = id }));
+        Assert.That(server.Dictionary, Is.Empty);
+        var imported = Data(await Invoke("voice_import_dictionary", new { engineId = engine.Id, dictionary = exported }));
+        Assert.That(imported.GetProperty("submittedCount").GetInt32(), Is.EqualTo(1));
+        var restored = VoiceDictionaryService.Parse(server.Dictionary).Single();
+        Assert.That(restored.Id, Is.EqualTo(id));
+        Assert.That(restored.Phrases, Is.EqualTo(phrases));
+        Assert.That(restored.WordType!.Id, Is.EqualTo(type));
+        Assert.That(server.DiscoveryCount, Is.EqualTo(discoveryCount), "Dictionary tools must use the registered connection without speaker discovery.");
+        Assert.That(VoiceEngineStore.Load().Single().EngineUuid, Is.EqualTo(engine.EngineUuid));
+    }
+
+    [AvaloniaTest]
+    [TestCase(false)]
+    [TestCase(true)]
     public async Task Dictionary_crud_uses_the_selected_engine_and_preserves_omitted_word_fields(bool aivis)
     {
         using var server = new EngineServer(aivis);
