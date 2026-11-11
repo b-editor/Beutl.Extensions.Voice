@@ -43,6 +43,8 @@ public class TestApp : Application
 
 internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelection
 {
+    private bool _disposed;
+
     public TestEditor(string scenePath)
     {
         Scene.Uri = new Uri(scenePath);
@@ -68,7 +70,11 @@ internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelectio
     public T? FindToolTab<T>() where T : IToolContext => default;
     public bool OpenToolTab(IToolContext item) => false;
     public void CloseToolTab(IToolContext item) { }
-    public object? GetService(Type type) => type == typeof(Scene) ? Scene : type == typeof(HistoryManager) ? History
+    public object? GetService(Type type) => _disposed ? null : type == typeof(Scene) ? Scene : type == typeof(HistoryManager) ? History
         : type == typeof(IEditorClock) || type == typeof(IEditorSelection) ? this : null;
-    public void Dispose() => History.Dispose();
+    public void Dispose()
+    {
+        _disposed = true;
+        History.Dispose();
+    }
 }
