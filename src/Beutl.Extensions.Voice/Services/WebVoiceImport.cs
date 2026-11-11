@@ -1,3 +1,5 @@
+using Beutl.Audio;
+using Beutl.Audio.Effects;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
@@ -45,7 +47,7 @@ internal sealed class WebVoiceImport(
         }
 
         var start = (editor.GetService(typeof(IEditorClock)) as IEditorClock)?.CurrentTime.Value ?? MediaTime.Zero;
-        Place(scene, history, context.FileName, page.Text, start, assignment);
+        Place(scene, history, context.FileName, page.Text, start, assignment, site.Resampling);
         if (string.IsNullOrWhiteSpace(page.Text))
             NotificationService.ShowWarning("本文を読み取れませんでした",
                 $"{site.Name}のページから本文を読み取れなかったため、字幕を追加していません。TtsControllerに本文を入力してください。");
@@ -53,9 +55,15 @@ internal sealed class WebVoiceImport(
     }
 
     public static Element Place(Scene scene, HistoryManager history, string path, string text, MediaTime start,
-        WebVoiceAssignment assignment)
+        WebVoiceAssignment assignment, ResamplingMethod? resampling)
     {
         var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1);
+        if (resampling is { } method)
+        {
+            // First in the chain, so the effects added to the speech later run at the project's rate.
+            var effects = (AudioEffectGroup)element.Objects.OfType<SourceSound>().Single().Effect.Value!;
+            effects.Children.Insert(0, new ResamplingEffect { Method = { Value = method } });
+        }
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
         history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, null, assignment.LipSync, subtitle));

@@ -9,6 +9,7 @@ using Avalonia.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Beutl.Audio;
+using Beutl.Audio.Effects;
 using Beutl.Editor.Observers;
 using Beutl.Extensibility;
 using Beutl.Extensions.PsdTachie.Graphics;
@@ -186,6 +187,33 @@ public class WebVoiceImportTests
             Assert.That(editor.Scene.Children.Where(x => x.Objects.OfType<TtsController>().Any()), Is.Empty);
             Assert.That(editor.Scene.EnumerateAllChildren<SubtitleController>(), Is.Empty);
             Assert.That(target.LipSyncAudio.Expression, Is.Null);
+        });
+    }
+
+    [AvaloniaTest]
+    public async Task Speech_from_Yukumo_is_resampled_with_Lagrange_before_any_other_effect()
+    {
+        using var editor = Editor();
+        WebVoiceAssignmentStore.Save(StorePath, new WebVoiceAssignment { SiteId = "yukumo", VoiceId = "aqtk1-f1", VoiceName = "AT1-F1(ゆっくり)" });
+        WebVoiceAssignmentStore.Save(StorePath, new WebVoiceAssignment { SiteId = "siyukatu", VoiceId = "f1", VoiceName = "女声1 (f1)" });
+        var import = new WebVoiceImport(() => StorePath, NeverAsk);
+
+        await import.ImportAsync(new BrowserDownloadImportContext(editor, Download(), Offer(WebVoiceSites.Yukumo, "yukumo_0001.mp3"),
+            PageData(Line, "aqtk1-f1", "AT1-F1(ゆっくり)")), CancellationToken.None);
+        editor.Seek(MediaTime.FromSeconds(3));
+        await import.ImportAsync(new BrowserDownloadImportContext(editor, Download(), Offer(WebVoiceSites.YukkuriVoiceMaker),
+            PageData(Line, "f1", "女声1 (f1)")), CancellationToken.None);
+
+        var effects = editor.Scene.Children.OrderBy(x => x.Start.Value)
+            .Select(x => ((AudioEffectGroup)x.Objects.OfType<SourceSound>().Single().Effect.Value!).Children.ToArray())
+            .ToArray();
+        Assert.Multiple(() =>
+        {
+            Assert.That(effects, Has.Length.EqualTo(2));
+            Assert.That(effects[0].Select(x => (x as ResamplingEffect)?.Method.Value),
+                Is.EqualTo(new ResamplingMethod?[] { ResamplingMethod.Lagrange }));
+            // The maker's speech keeps the conversion that follows the effects.
+            Assert.That(effects[1], Is.Empty);
         });
     }
 

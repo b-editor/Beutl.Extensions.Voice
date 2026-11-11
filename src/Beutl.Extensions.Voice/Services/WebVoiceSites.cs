@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Beutl.Audio.Effects;
 using Beutl.Extensibility;
 
 namespace Beutl.Extensions.Voice.Services;
@@ -9,8 +10,10 @@ internal sealed record WebVoicePage(string Text, string VoiceId, string VoiceNam
     public static WebVoicePage Unknown { get; } = new("", "", "");
 }
 
-// A text-to-speech site whose downloads in the browser tab become speech elements.
-internal sealed record WebVoiceSite(string Id, string Name, IReadOnlyList<string> Hosts, string PageScript)
+// A text-to-speech site whose downloads in the browser tab become speech elements. Resampling, when set, is how the
+// site's speech reaches the project's sample rate, in place of the conversion that otherwise follows the effects.
+internal sealed record WebVoiceSite(
+    string Id, string Name, IReadOnlyList<string> Hosts, string PageScript, ResamplingMethod? Resampling = null)
 {
     public bool Serves(Uri page) => Hosts.Contains(page.IdnHost, StringComparer.OrdinalIgnoreCase);
 }
@@ -55,7 +58,9 @@ internal static class WebVoiceSites
         "(() => { const saveButton = 'button[title^=\"MP3\"]';"
         + " const voiceSelect = 'select[x-model=\"selected\"], select[x-model=\"setting.type\"]';"
         + ClickTracker
-        + " return JSON.stringify({ text: value('[x-model=\"kanji\"]') || value('[x-model=\"koe\"]'), voice: voice?.value ?? '', voiceName: label }); })()");
+        + " return JSON.stringify({ text: value('[x-model=\"kanji\"]') || value('[x-model=\"koe\"]'), voice: voice?.value ?? '', voiceName: label }); })()",
+        // Through the conversion that otherwise follows the effects, this site's speech sounds muffled.
+        Resampling: ResamplingMethod.Lagrange);
 
     public static IReadOnlyList<WebVoiceSite> All { get; } = [YukkuriVoiceMaker, Yukumo];
 
