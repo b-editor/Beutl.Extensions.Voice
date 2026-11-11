@@ -13,9 +13,14 @@ public partial class TtsTabView : UserControl
     public TtsTabView()
     {
         InitializeComponent();
+        DataContextChanged += (_, _) => DictionaryPage.DataContext = (DataContext as TtsTabViewModel)?.Dictionary;
+        AttachedToVisualTree += async (_, _) =>
+        {
+            if (DataContext is TtsTabViewModel { SelectedPage.Value: 2 } model) await model.Dictionary.Activate();
+        };
     }
 
-    internal void ShowSettings() => PageTabs.SelectedIndex = 2;
+    internal void ShowSettings() => PageTabs.SelectedIndex = 3;
 
     private async void PageChanged(object? sender, SelectionChangedEventArgs e)
     {
@@ -23,8 +28,9 @@ public partial class TtsTabView : UserControl
         if (tabs.SelectedIndex == 1) model.Script.RefreshPresets();
         // Carousel caches its controls; leaving a page does not detach it from the visual tree.
         if (this.FindControl<LocalEngineSetupView>("EngineSetup") is not { } setup) return;
-        if (tabs.SelectedIndex != 2) setup.CloseSession();
+        if (tabs.SelectedIndex != 3) setup.CloseSession();
         else if (TopLevel.GetTopLevel(setup) != null) await setup.RefreshSession();
+        if (tabs.SelectedIndex == 2 && TopLevel.GetTopLevel(this) != null) await model.Dictionary.Activate();
     }
 
     private void EngineConnected(object? sender, EventArgs e)

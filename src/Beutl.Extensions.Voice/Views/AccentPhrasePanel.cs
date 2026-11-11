@@ -29,9 +29,11 @@ public class AccentPhrasePanel : Control
     public static readonly StyledProperty<double> MaxPitchProperty =
         AvaloniaProperty.Register<AccentPhrasePanel, double>(nameof(MaxPitch), 6.5);
 
+    public static readonly StyledProperty<bool> ShowPitchProperty =
+        AvaloniaProperty.Register<AccentPhrasePanel, bool>(nameof(ShowPitch), true);
+
     private const double MoraWidth = 36;
     private const double PhraseGap = 16;
-    private const double PitchAreaRatio = 0.65;
     private const double AccentBarHeight = 28;
     private const double LabelHeight = 20;
     private const double TopPadding = 8;
@@ -42,7 +44,8 @@ public class AccentPhrasePanel : Control
 
     static AccentPhrasePanel()
     {
-        AffectsRender<AccentPhrasePanel>(AccentPhrasesProperty, MinPitchProperty, MaxPitchProperty, TextElement.ForegroundProperty);
+        AffectsMeasure<AccentPhrasePanel>(AccentPhrasesProperty, ShowPitchProperty);
+        AffectsRender<AccentPhrasePanel>(AccentPhrasesProperty, MinPitchProperty, MaxPitchProperty, ShowPitchProperty, TextElement.ForegroundProperty);
     }
 
     public List<AccentPhraseModel>? AccentPhrases
@@ -63,6 +66,12 @@ public class AccentPhrasePanel : Control
         set => SetValue(MaxPitchProperty, value);
     }
 
+    public bool ShowPitch
+    {
+        get => GetValue(ShowPitchProperty);
+        set => SetValue(ShowPitchProperty, value);
+    }
+
     public event EventHandler? AccentPhrasesChanged;
     public event EventHandler<AccentChangedEventArgs>? AccentChanged;
 
@@ -80,7 +89,7 @@ public class AccentPhrasePanel : Control
                 totalWidth += PhraseGap;
         }
 
-        double height = TopPadding + 160 + AccentBarHeight + LabelHeight + BottomPadding;
+        double height = TopPadding + (ShowPitch ? 160 : 0) + AccentBarHeight + LabelHeight + BottomPadding;
         return new Size(totalWidth, height);
     }
 
@@ -91,7 +100,7 @@ public class AccentPhrasePanel : Control
         var phrases = AccentPhrases;
         if (phrases == null || phrases.Count == 0) return;
 
-        double pitchAreaHeight = (Bounds.Height - TopPadding - AccentBarHeight - LabelHeight - BottomPadding);
+        double pitchAreaHeight = PitchAreaHeight;
         double pitchAreaTop = TopPadding;
         double accentBarTop = pitchAreaTop + pitchAreaHeight;
         double labelTop = accentBarTop + AccentBarHeight;
@@ -101,7 +110,7 @@ public class AccentPhrasePanel : Control
 
         // ピッチ範囲のガイドライン
         var guidePen = new Pen(new SolidColorBrush(Color.FromArgb(30, 128, 128, 128)), 1);
-        for (int i = 0; i <= 4; i++)
+        for (int i = 0; ShowPitch && i <= 4; i++)
         {
             double y = pitchAreaTop + pitchAreaHeight * i / 4.0;
             context.DrawLine(guidePen, new Point(0, y), new Point(Bounds.Width, y));
@@ -139,36 +148,39 @@ public class AccentPhrasePanel : Control
                 new Rect(phraseStartX + 1, accentBarTop, phraseWidth - 2, AccentBarHeight), 2, 2);
 
             // ピッチカーブ描画
-            var pitchPoints = new List<Point>();
-            for (int mi = 0; mi < phrase.Moras.Count; mi++)
+            if (ShowPitch)
             {
-                var mora = phrase.Moras[mi];
-                double cx = xOffset + mi * MoraWidth + MoraWidth / 2;
-                double cy = PitchToY(mora.Pitch, pitchAreaTop, pitchAreaHeight);
-                pitchPoints.Add(new Point(cx, cy));
-            }
-
-            // ピッチ折れ線
-            for (int i = 1; i < pitchPoints.Count; i++)
-            {
-                context.DrawLine(linePen, pitchPoints[i - 1], pitchPoints[i]);
-            }
-
-            // ピッチドット
-            for (int mi = 0; mi < phrase.Moras.Count; mi++)
-            {
-                var mora = phrase.Moras[mi];
-                var pt = pitchPoints[mi];
-                double radius = (globalMoraIndex + mi == _draggingMoraGlobalIndex) ? 6 : 4;
-                if (mora.Pitch > 0)
+                var pitchPoints = new List<Point>();
+                for (int mi = 0; mi < phrase.Moras.Count; mi++)
                 {
-                    context.DrawEllipse(dotBrush, null, pt, radius, radius);
+                    var mora = phrase.Moras[mi];
+                    double cx = xOffset + mi * MoraWidth + MoraWidth / 2;
+                    double cy = PitchToY(mora.Pitch, pitchAreaTop, pitchAreaHeight);
+                    pitchPoints.Add(new Point(cx, cy));
                 }
-                else
+
+                // ピッチ折れ線
+                for (int i = 1; i < pitchPoints.Count; i++)
                 {
-                    // pitch=0 (無声音) は中空ドット
-                    var hollowPen = new Pen(phraseBrush, 1.5);
-                    context.DrawEllipse(null, hollowPen, pt, radius, radius);
+                    context.DrawLine(linePen, pitchPoints[i - 1], pitchPoints[i]);
+                }
+
+                // ピッチドット
+                for (int mi = 0; mi < phrase.Moras.Count; mi++)
+                {
+                    var mora = phrase.Moras[mi];
+                    var pt = pitchPoints[mi];
+                    double radius = (globalMoraIndex + mi == _draggingMoraGlobalIndex) ? 6 : 4;
+                    if (mora.Pitch > 0)
+                    {
+                        context.DrawEllipse(dotBrush, null, pt, radius, radius);
+                    }
+                    else
+                    {
+                        // pitch=0 (無声音) は中空ドット
+                        var hollowPen = new Pen(phraseBrush, 1.5);
+                        context.DrawEllipse(null, hollowPen, pt, radius, radius);
+                    }
                 }
             }
 
@@ -213,7 +225,7 @@ public class AccentPhrasePanel : Control
         var phrases = AccentPhrases;
         if (phrases == null) return;
 
-        double pitchAreaHeight = Bounds.Height - TopPadding - AccentBarHeight - LabelHeight - BottomPadding;
+        double pitchAreaHeight = PitchAreaHeight;
         double accentBarTop = TopPadding + pitchAreaHeight;
 
         // アクセントバー領域のクリック判定
@@ -230,7 +242,7 @@ public class AccentPhrasePanel : Control
         }
 
         // ピッチ領域のドラッグ開始判定
-        if (pos.Y >= TopPadding && pos.Y < accentBarTop)
+        if (ShowPitch && pos.Y >= TopPadding && pos.Y < accentBarTop)
         {
             var (phraseIndex, moraIndex) = HitTestMora(pos.X);
             if (phraseIndex >= 0 && moraIndex >= 0)
@@ -274,13 +286,16 @@ public class AccentPhrasePanel : Control
         var (phraseIndex, moraIndex) = GlobalIndexToLocal(_draggingMoraGlobalIndex);
         if (phraseIndex < 0) return;
 
-        double pitchAreaHeight = Bounds.Height - TopPadding - AccentBarHeight - LabelHeight - BottomPadding;
+        double pitchAreaHeight = PitchAreaHeight;
         double pitch = YToPitch(pos.Y, TopPadding, pitchAreaHeight);
         pitch = Math.Clamp(pitch, MinPitch, MaxPitch);
 
         phrases[phraseIndex].Moras[moraIndex].Pitch = Math.Round(pitch, 2);
         InvalidateVisual();
     }
+
+    private double PitchAreaHeight => ShowPitch
+        ? Bounds.Height - TopPadding - AccentBarHeight - LabelHeight - BottomPadding : 0;
 
     private double PitchToY(double pitch, double areaTop, double areaHeight)
     {

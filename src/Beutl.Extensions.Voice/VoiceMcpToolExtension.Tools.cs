@@ -94,6 +94,49 @@ public sealed partial class VoiceMcpToolExtension
             """, ["elementId"]))
         {
             ReadOnlyHint = false, DestructiveHint = true, IdempotentHint = true, OpenWorldHint = false
+        },
+        new("voice_list_dictionary_words", "Searches and pages through an engine's user dictionary, returning word IDs, editable phrases and supported word types. Defaults to VOICEVOX Core and 50 words per page. Use nextOffset for the next page; voice_export_dictionary returns the complete native JSON. No open scene is needed.", Input("""
+            {"engineId":{"type":"string","default":"voicevox-core"},
+             "search":{"type":"string","description":"Case-insensitive substring search in surface or pronunciation."},
+             "offset":{"type":"integer","minimum":0,"default":0},
+             "limit":{"type":"integer","minimum":1,"default":50}}
+            """, []))
+        {
+            ReadOnlyHint = true, DestructiveHint = false, IdempotentHint = true, OpenWorldHint = true
+        },
+        new("voice_save_dictionary_word", "Creates or updates a word in an engine's user dictionary. Omit wordId to create; supply wordId to update, preserving omitted phrases, wordType and priority. Dictionary changes are global, notify the voice UI, and have no scene Undo. Existing analyzed queries and generated audio remain unchanged until explicitly analyzed/regenerated.", Input("""
+            {"engineId":{"type":"string","default":"voicevox-core"},
+             "wordId":{"type":"string","format":"uuid","description":"Existing word ID. Omit to create a new word."},
+             "phrases":{"type":"array","minItems":1,"description":"Required for a new word. Multiple phrases require compound accent support.","items":{
+               "type":"object","properties":{"surface":{"type":"string","minLength":1},
+                 "pronunciation":{"type":"string","minLength":1,"description":"Full-width katakana."},
+                 "accentType":{"type":"integer","minimum":0,"description":"0 for flat accent, otherwise the accent mora position."}},
+               "required":["surface","pronunciation","accentType"],"additionalProperties":false}},
+             "wordType":{"type":"string","description":"ID from voice_list_dictionary_words. Defaults to PROPER_NOUN for new words."},
+             "priority":{"type":"integer","minimum":0,"maximum":10,"description":"Defaults to 5 for new words. Omitted fields retain stored values on update."}}
+            """, []))
+        {
+            ReadOnlyHint = false, DestructiveHint = true, IdempotentHint = false, OpenWorldHint = true
+        },
+        new("voice_delete_dictionary_word", "Deletes a user dictionary word from the specified engine. Defaults to VOICEVOX Core. This global dictionary edit has no scene Undo; existing generated speech remains unchanged.", Input("""
+            {"engineId":{"type":"string","default":"voicevox-core"},"wordId":{"type":"string","format":"uuid"}}
+            """, ["wordId"]))
+        {
+            ReadOnlyHint = false, DestructiveHint = true, IdempotentHint = true, OpenWorldHint = true
+        },
+        new("voice_export_dictionary", "Returns an engine's complete user dictionary as a UUID-keyed JSON object. Preserves word IDs, engine-specific fields and compound accents. Pass the returned dictionary to voice_import_dictionary. No file or scene is created.", Input("""
+            {"engineId":{"type":"string","default":"voicevox-core"}}
+            """, []))
+        {
+            ReadOnlyHint = true, DestructiveHint = false, IdempotentHint = true, OpenWorldHint = true
+        },
+        new("voice_import_dictionary", "Imports a UUID-keyed dictionary JSON object using the UI's compatibility and conversion rules. Unsupported entries are reported and skipped. Existing IDs are skipped unless overwrite=true. dryRun=true reports applicability without writing. Returns per-entry errors/duplicates and submittedCount. Dictionary edits have no scene Undo.", Input("""
+            {"engineId":{"type":"string","default":"voicevox-core"},
+             "dictionary":{"type":"object","additionalProperties":true,"description":"Native UUID-keyed dictionary from voice_export_dictionary or an engine JSON export. Invalid entries are reported individually."},
+             "overwrite":{"type":"boolean","default":false},"dryRun":{"type":"boolean","default":false}}
+            """, ["dictionary"]))
+        {
+            ReadOnlyHint = false, DestructiveHint = true, IdempotentHint = true, OpenWorldHint = true
         }
     ]);
 

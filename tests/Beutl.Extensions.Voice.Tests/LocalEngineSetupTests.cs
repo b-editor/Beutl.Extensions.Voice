@@ -325,7 +325,7 @@ public class LocalEngineSetupTests
         using var model = new LocalEngineSetupViewModel([LocalVoiceEngines.Known[0] with { Url = server.Url }], _ => null);
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
         using var speech = new TtsTabViewModel(new(), editor);
-        speech.SelectedPage.Value = 2;
+        speech.SelectedPage.Value = 3;
         var view = new TtsTabView { DataContext = speech };
         var setup = view.FindControl<LocalEngineSetupView>("EngineSetup")!;
         (setup.DataContext as LocalEngineSetupViewModel)?.Dispose();
@@ -344,7 +344,7 @@ public class LocalEngineSetupTests
             Assert.That(model.IsBusy.Value, Is.False);
             Assert.That(VoiceEngineStore.Load(), Is.Empty);
             Assert.That(model.Engines[0].Connection, Is.Null);
-            view.FindControl<TabStrip>("PageTabs")!.SelectedIndex = 2;
+            view.FindControl<TabStrip>("PageTabs")!.SelectedIndex = 3;
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             window.UpdateLayout();
             Assert.That(setup.DataContext, Is.Not.SameAs(model), "Reopening settings starts a fresh search session.");
@@ -361,7 +361,7 @@ public class LocalEngineSetupTests
         using var stopped = new HttpVoiceEngineTests.EngineServer { FailDiscovery = true };
         using var editor = new TestEditor(Path.Combine(_directory, "scene.bescene"));
         using var speech = new TtsTabViewModel(new(), editor);
-        speech.SelectedPage.Value = 2;
+        speech.SelectedPage.Value = 3;
         var owner = new TtsTabView { DataContext = speech };
         var window = new Window { Width = width, Height = 600, Content = owner,
             RequestedThemeVariant = light ? ThemeVariant.Light : ThemeVariant.Dark };
@@ -388,7 +388,7 @@ public class LocalEngineSetupTests
             Assert.That(window.GetVisualDescendants().OfType<FAContentDialog>(), Is.Empty);
             Assert.That(content.Bounds.Width, Is.LessThanOrEqualTo(width));
             var tabs = owner.FindControl<TabStrip>("PageTabs")!;
-            Assert.That(tabs.Items.Cast<TabStripItem>().Select(x => x.Content), Is.EqualTo(new[] { "読み上げ", "台本", "設定" }));
+            Assert.That(tabs.Items.Cast<TabStripItem>().Select(x => x.Content), Is.EqualTo(new[] { "読み上げ", "台本", "辞書", "設定" }));
             var scroll = owner.FindControl<ScrollViewer>("SettingsScroll")!;
             if (Environment.GetEnvironmentVariable("VOICE_TEST_CAPTURES") is { } directory)
             {

@@ -65,14 +65,16 @@ public partial class VoiceMcpToolTests
     public void Definitions_are_stable_and_describe_discovery_and_generation()
     {
         Assert.That(_extension.Tools, Is.SameAs(_extension.Tools));
-        Assert.That(_extension.Tools, Has.Count.EqualTo(10));
+        Assert.That(_extension.Tools, Has.Count.EqualTo(15));
         Assert.That(_extension.Tools.Select(tool => tool.Name), Is.Unique);
         foreach (var tool in _extension.Tools)
         {
             Assert.That(tool.Name, Does.StartWith("voice_"));
             Assert.That(tool.InputSchema.GetProperty("type").GetString(), Is.EqualTo("object"));
-            Assert.That(tool.DestructiveHint, Is.EqualTo(tool.Name is "voice_regenerate" or "voice_save_preset" or "voice_set_lip_sync"));
-            Assert.That(tool.ReadOnlyHint, Is.EqualTo(tool.Name.StartsWith("voice_list_", StringComparison.Ordinal) || tool.Name == "voice_analyze"));
+            Assert.That(tool.DestructiveHint, Is.EqualTo(tool.Name is "voice_regenerate" or "voice_save_preset" or "voice_set_lip_sync"
+                or "voice_save_dictionary_word" or "voice_delete_dictionary_word" or "voice_import_dictionary"));
+            Assert.That(tool.ReadOnlyHint, Is.EqualTo(tool.Name.StartsWith("voice_list_", StringComparison.Ordinal)
+                || tool.Name is "voice_analyze" or "voice_export_dictionary"));
         }
         var generate = _extension.Tools.Single(tool => tool.Name == "voice_generate");
         Assert.That(generate.IdempotentHint, Is.False);

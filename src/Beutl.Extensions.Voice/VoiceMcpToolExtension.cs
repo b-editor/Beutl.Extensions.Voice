@@ -43,6 +43,11 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
                 "voice_analyze" => await Analyze(call.Arguments, cancellationToken),
                 "voice_register_engine" => await RegisterEngine(call.Arguments, cancellationToken),
                 "voice_set_lip_sync" => SetLipSync(call),
+                "voice_list_dictionary_words" => await ListDictionaryWords(call.Arguments, cancellationToken),
+                "voice_save_dictionary_word" => await SaveDictionaryWord(call.Arguments, cancellationToken),
+                "voice_delete_dictionary_word" => await DeleteDictionaryWord(call.Arguments, cancellationToken),
+                "voice_import_dictionary" => await ImportDictionary(call.Arguments, cancellationToken),
+                "voice_export_dictionary" => await ExportDictionary(call.Arguments, cancellationToken),
                 _ => McpToolResult.Error($"Unknown voice tool: {call.Name}")
             };
         }
@@ -84,7 +89,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             await loader.InitializationTcs.Task.WaitAsync(cancellationToken);
             if (!loader.IsLoaded)
                 throw new InvalidOperationException("VOICEVOX Core is unavailable. Use a registered HTTP engine or set up Core in Beutl.");
-            engine = VoiceEngineConnection.Core with { Voices = loader.VoiceSets.SelectMany(set => set.Metadata).ToArray() };
+            engine = VoiceEngineConnection.Core with { Voices = loader.GetVoices() };
         }
         else
         {
