@@ -72,7 +72,7 @@ internal static class HttpVoiceEngine
         return await CreateQueryAsync(connection, text, resolved.StyleId, cancellationToken);
     }
 
-    private static async Task<AudioQueryModel> CreateQueryAsync(VoiceEngineConnection connection, string text,
+    internal static async Task<AudioQueryModel> CreateQueryAsync(VoiceEngineConnection connection, string text,
         long styleId, CancellationToken cancellationToken)
     {
         using var response = await SendAsync(connection, HttpMethod.Post,
@@ -96,6 +96,12 @@ internal static class HttpVoiceEngine
         AudioQueryModel? query, CancellationToken cancellationToken)
     {
         var (connection, resolved) = await ResolveAsync(settings, cancellationToken);
+        return await SynthesizeAsync(connection, text, resolved, query, cancellationToken);
+    }
+
+    internal static async Task<VoiceSynthesisResult> SynthesizeAsync(VoiceEngineConnection connection, string text,
+        VoiceSettings resolved, AudioQueryModel? query, CancellationToken cancellationToken)
+    {
         query ??= await CreateQueryAsync(connection, text, resolved.StyleId, cancellationToken);
         resolved.ApplyTo(query, connection.Capabilities);
         string json = JsonSerializer.Serialize(query, VoiceSynthesisService.JsonOptions);
@@ -118,7 +124,7 @@ internal static class HttpVoiceEngine
         return JsonNode.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
     }
 
-    private static async Task<HttpResponseMessage> SendAsync(VoiceEngineConnection connection, HttpMethod method,
+    internal static async Task<HttpResponseMessage> SendAsync(VoiceEngineConnection connection, HttpMethod method,
         string endpoint, string? json, CancellationToken cancellationToken, bool optional = false)
     {
         using var request = new HttpRequestMessage(method, new Uri(new Uri(connection.Url), endpoint));

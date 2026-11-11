@@ -48,6 +48,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
     public ReactivePropertySlim<int> SelectedPage { get; } = new();
+    internal VoiceDictionaryViewModel Dictionary { get; } = new();
     public ScriptImportViewModel Script { get; }
     public LipSyncSelectionViewModel LipSync { get; }
     public SubtitleSelectionViewModel Subtitles { get; }
@@ -141,7 +142,9 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     public void WriteToJson(JsonObject json)
     {
-        json[nameof(SelectedPage)] = SelectedPage.Value;
+        json["SelectedPageId"] = new[] { "speech", "script", "dictionary", "settings" }[Math.Clamp(SelectedPage.Value, 0, 3)];
+        // Keep the legacy numeric field meaningful to older extension versions.
+        json[nameof(SelectedPage)] = SelectedPage.Value == 3 ? 2 : SelectedPage.Value == 2 ? 0 : SelectedPage.Value;
         Script.WriteToJson(json);
         json[nameof(Text)] = Text.Value;
         json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
@@ -155,7 +158,12 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     public async void ReadFromJson(JsonObject json)
     {
-        SelectedPage.Value = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
+        int legacyPage = Math.Clamp((int?)json[nameof(SelectedPage)] ?? 0, 0, 2);
+        SelectedPage.Value = (string?)json["SelectedPageId"] switch
+        {
+            "script" => 1, "dictionary" => 2, "settings" => 3, "speech" => 0,
+            _ => legacyPage == 2 ? 3 : legacyPage
+        };
         Script.ReadFromJson(json);
         Subtitles.SelectedId = Guid.TryParse((string?)json["SubtitleTemplateId"], out var subtitleId) ? subtitleId : null;
         if (json["SubtitleTemplate"]?.Deserialize<VoiceSubtitleTemplate>() is { } subtitleTemplate) Subtitles.Template = subtitleTemplate;
@@ -189,6 +197,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     public override void Dispose()
     {
+        Dictionary.Dispose();
         Script.Dispose();
         base.Dispose();
     }
