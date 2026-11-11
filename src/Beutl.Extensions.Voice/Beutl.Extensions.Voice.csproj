@@ -1,4 +1,4 @@
-﻿<Project Sdk="Beutl.Extensibility.Sdk/2.99.99-browserdownload.1">
+﻿<Project Sdk="Beutl.Extensibility.Sdk/2.99.99-main.1">
 
     <PropertyGroup>
         <PackageId>Beutl.Extensions.Voice</PackageId>
