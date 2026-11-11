@@ -140,9 +140,11 @@ internal sealed class VoiceDictionaryViewModel : IDisposable
         {
             var selected = SelectedEngine.Value;
             var engines = new[] { VoiceEngineConnection.Core }.Concat(VoiceEngineStore.Load()).ToArray();
+            var refreshed = engines.FirstOrDefault(x => x.Id == selected.Id && x.Url == selected.Url);
             // Retain a removed selection long enough to save/export or discard its open draft.
-            if (engines.All(x => x.Id != selected.Id || x.Url != selected.Url)) engines = [.. engines, selected];
+            if (refreshed == null) engines = [.. engines, selected];
             Engines.Value = engines;
+            SelectedEngine.Value = refreshed ?? selected;
         }
         catch (Exception ex) { Message.Value = ex.Message; }
     }

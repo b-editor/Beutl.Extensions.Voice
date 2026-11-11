@@ -353,6 +353,73 @@ public class VoiceDictionaryTests
     }
 
     [AvaloniaTest]
+    public async Task Reloading_connections_reconciles_the_selected_engine_without_resetting_the_draft()
+    {
+        using var server = new HttpVoiceEngineTests.EngineServer();
+        var engine = await Connect(server);
+        using var model = new VoiceDictionaryViewModel();
+        await model.ChooseEngine(engine);
+        await model.NewWord();
+        var draft = model.Phrases.Single();
+        draft.Surface.Value = "編集中の単語";
+        draft.Pronunciation.Value = "ヘンシュウチュウノタンゴ";
+        var view = new VoiceDictionaryView { DataContext = model };
+        var window = new Window { Width = 320, Height = 640, Content = view };
+        try
+        {
+            window.Show();
+            await Settle();
+            var selector = view.FindControl<ComboBox>("DictionaryEngineSelector")!;
+            void AssertDraftAndSelection(string name)
+            {
+                Assert.That(selector.SelectedItem, Is.SameAs(model.SelectedEngine.Value));
+                Assert.That(model.Engines.Value.Any(x => ReferenceEquals(x, model.SelectedEngine.Value)), Is.True);
+                Assert.That(model.SelectedEngine.Value.Name, Is.EqualTo(name));
+                Assert.That(model.Phrases.Single(), Is.SameAs(draft));
+                Assert.That(draft.Surface.Value, Is.EqualTo("編集中の単語"));
+                Assert.That(draft.Pronunciation.Value, Is.EqualTo("ヘンシュウチュウノタンゴ"));
+                Assert.That(model.IsEditing.Value, Is.True);
+                Assert.That(model.IsDirty.Value, Is.True);
+                Assert.That(model.ConfirmChange.Value, Is.False);
+            }
+
+            await model.Activate();
+            await Settle();
+            Capture(window, "dictionary-engine-reloaded");
+            AssertDraftAndSelection(engine.Name);
+            var refreshed = model.Engines.Value.Single(x => x.Id == engine.Id);
+            selector.SelectedItem = null;
+            selector.SelectedItem = refreshed;
+            await Settle();
+            AssertDraftAndSelection(engine.Name);
+
+            VoiceEngineStore.Save(engine with { Name = "名前を変更したエンジン" });
+            await Settle();
+            AssertDraftAndSelection("名前を変更したエンジン");
+            Capture(window, "dictionary-engine-renamed");
+
+            var retained = model.SelectedEngine.Value;
+            VoiceEngineStore.Delete(engine.Id);
+            await Settle();
+            Assert.That(model.SelectedEngine.Value, Is.SameAs(retained));
+            AssertDraftAndSelection(retained.Name);
+
+            var moved = engine with { Url = engine.Url + "moved/" };
+            VoiceEngineStore.Save(moved);
+            await Settle();
+            AssertDraftAndSelection(retained.Name);
+            Assert.That(model.Engines.Value.Any(x => x.Id == moved.Id && x.Url == moved.Url), Is.True);
+            selector.SelectedItem = model.Engines.Value.Single(x => x.Id == moved.Id && x.Url == moved.Url);
+            await Settle();
+            Assert.That(model.ConfirmChange.Value, Is.True);
+            model.CancelChange();
+            AssertDraftAndSelection(retained.Name);
+            Assert.That(server.DictionaryWriteCount, Is.Zero);
+        }
+        finally { window.Close(); }
+    }
+
+    [AvaloniaTest]
     public async Task Voice_selectors_keep_the_selected_speaker_and_style_after_switching_and_refreshing()
     {
         using var server = new HttpVoiceEngineTests.EngineServer
