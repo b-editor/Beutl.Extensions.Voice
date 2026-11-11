@@ -66,6 +66,11 @@
             </ComboBox>
         </Grid>
 
+        <StackPanel Margin="8,0,8,8" Spacing="4"
+                    IsVisible="{Binding DictionaryNotice.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+            <TextBlock Text="{Binding DictionaryNotice.Value}" TextWrapping="Wrap" FontSize="12" />
+            <Button Content="テキストを解析" Command="{Binding CreateQuery}" IsEnabled="{Binding !IsGenerating.Value}" />
+        </StackPanel>
         <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
         <Expander x:Name="TuningExpander" Theme="{StaticResource ToolTabExpanderTheme}"
                   HorizontalAlignment="Stretch" Header="調声" IsEnabled="{Binding IsEnabled.Value}">
