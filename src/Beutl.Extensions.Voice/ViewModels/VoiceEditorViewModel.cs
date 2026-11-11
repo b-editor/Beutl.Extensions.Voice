@@ -17,10 +17,13 @@ public partial class VoiceEditorViewModel : IDisposable
     private bool _updating;
     private VoiceSettings? _unavailableSettings;
     private CancellationTokenSource? _accentRequest;
+    private int _dictionaryRevision;
 
     public VoiceEditorViewModel()
     {
         InitializeEngines();
+        VoiceDictionaryService.Changed += OnDictionaryChanged;
+        Disposable.Create(() => VoiceDictionaryService.Changed -= OnDictionaryChanged).AddTo(_subscriptions);
         Text.Subscribe(_ => { if (!_updating) InvalidateQuery(); }).AddTo(_subscriptions);
         SelectedVoice.Subscribe(voice =>
         {
@@ -81,6 +84,7 @@ public partial class VoiceEditorViewModel : IDisposable
     public ReactivePropertySlim<double> PostPhonemeLength { get; } = new(0.1);
     public ReactivePropertySlim<double> TempoDynamicsScale { get; } = new(1);
     public ReactivePropertySlim<string> Message { get; } = new("");
+    public ReactivePropertySlim<string> DictionaryNotice { get; } = new("");
     protected event Action? Edited;
     protected event Action? EditCompleted;
 
@@ -101,12 +105,7 @@ public partial class VoiceEditorViewModel : IDisposable
             var query = AudioQuery.Value;
             UpdateSilently(() =>
             {
-                Voice.Value = loader.VoiceSets.SelectMany(x => x.Metadata).GroupBy(x => x.SpeakerUuid)
-                    .Select(group => new VoiceMetadata
-                    {
-                        Name = group.First().Name, Version = group.First().Version, SpeakerUuid = group.Key,
-                        Styles = group.SelectMany(x => x.Styles).ToArray()
-                    }).ToArray();
+                Voice.Value = loader.GetVoices();
                 if (previous != null) ApplySettings(previous, report: false);
                 // Replacing the choices temporarily clears ComboBox selections, not the analyzed voice.
                 AudioQuery.Value = query;
@@ -196,7 +195,24 @@ public partial class VoiceEditorViewModel : IDisposable
         finally { _updating = previous; }
     }
 
-    private void InvalidateQuery() => AudioQuery.Value = null;
+    private void InvalidateQuery()
+    {
+        AudioQuery.Value = null;
+        DictionaryNotice.Value = "";
+    }
+
+    private void OnDictionaryChanged(string engineId)
+    {
+        void Notify()
+        {
+            if (_disposed || SelectedEngine.Value?.Id != engineId) return;
+            _dictionaryRevision++;
+            if (AudioQuery.Value != null)
+                DictionaryNotice.Value = "「テキストを解析」で辞書を反映できます。";
+        }
+        if (Dispatcher.UIThread.CheckAccess()) Notify();
+        else Dispatcher.UIThread.Post(Notify);
+    }
 
     protected (string Text, VoiceSettings Settings)? CaptureRequest()
     {
@@ -210,10 +226,12 @@ public partial class VoiceEditorViewModel : IDisposable
         if (_disposed || IsGenerating.Value || CaptureRequest() is not { } request) return;
         IsGenerating.Value = true;
         Message.Value = "";
+        int dictionaryRevision = _dictionaryRevision;
         try
         {
             var query = await VoiceSynthesisService.CreateQueryAsync(request.Text, request.Settings);
             PublishQuery(request.Text, request.Settings, query);
+            if (dictionaryRevision == _dictionaryRevision && ReferenceEquals(AudioQuery.Value, query)) DictionaryNotice.Value = "";
         }
         catch (Exception ex) { Message.Value = $"テキストを解析できませんでした: {ex.Message}"; }
         finally { IsGenerating.Value = false; }

@@ -403,7 +403,7 @@ public class WebVoiceImportTests
         });
         WebVoiceAssignmentStore.Save(StorePath, new WebVoiceAssignment { SiteId = "yukumo", VoiceId = "aqtk1-f2", VoiceName = "AT1-F2" });
         using var tab = new TtsTabViewModel(new(), editor);
-        tab.SelectedPage.Value = 2;
+        tab.SelectedPage.Value = 3;
         var view = new TtsTabView { DataContext = tab };
         var window = new Window
         {

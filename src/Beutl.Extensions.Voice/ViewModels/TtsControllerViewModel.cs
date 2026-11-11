@@ -1,12 +1,10 @@
 using System.Text.Json.Nodes;
-using Beutl.Audio;
 using Beutl.Editor;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
-using Beutl.Media.Source;
 using Beutl.ProjectSystem;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
@@ -19,6 +17,7 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
     private readonly TtsController _controller;
     private readonly ILogger _logger = Log.CreateLogger<TtsControllerViewModel>();
     private HistoryManager? _history;
+    private CancellationTokenSource? _regenerationCancellation;
     private bool _writingDraft;
 
     public TtsControllerViewModel(IPropertyEditorContext inner, PropertyEditorExtension extension, TtsController controller)
@@ -157,54 +156,29 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
         if (IsGenerating.Value || _disposed) return;
         IsGenerating.Value = true;
         Message.Value = "";
-        string? path = null;
-        bool committed = false;
+        using var cancellation = new CancellationTokenSource();
+        _regenerationCancellation = cancellation;
         try
         {
-            var (element, scene) = GetEditableTarget();
-            var sound = element.Objects.OfType<SourceSound>().FirstOrDefault()
-                ?? throw new InvalidOperationException("読み上げ要素の音声が見つかりません。");
-            var source = sound.Source.Value;
+            GetEditableTarget();
             var preset = _controller.AppliedPreset.Value;
             var generation = _controller.Generation.Value;
-            var draft = _controller.Draft.Value;
             var settings = CaptureStoredSettings()
                 ?? throw new InvalidOperationException("話者を選ぶか、声のプリセットを適用してください。");
-            string text = _controller.Text.Value;
-            if (string.IsNullOrWhiteSpace(text)) throw new InvalidOperationException("テキストを入力してください。");
-
-            var query = CopyCurrentQuery();
-            var subtitleUpdates = VoiceSubtitles.PrepareUpdate(_controller, text);
-            string directory = VoiceSynthesisService.GetOutputDirectory(scene);
-            var output = await VoiceSynthesisService.SynthesizeAsync(text, settings, query);
-            if (_disposed) return;
-            Directory.CreateDirectory(directory);
-            path = Path.Combine(directory, $"{Guid.NewGuid()}.wav");
-            await File.WriteAllBytesAsync(path, output.Wave);
-            if (_disposed) return;
-            var current = GetEditableTarget();
-            if (current.Element != element || current.Scene != scene || !element.Objects.Contains(sound)
-                || sound.Source.Value != source || _controller.Text.Value != text
-                || _controller.AppliedPreset.Value != preset || _controller.Generation.Value != generation
-                || _controller.Draft.Value != draft)
-                throw new InvalidOperationException("生成中に対象の設定が変わりました。もう一度再生成してください。");
-
-            var nextSource = SoundSource.Open(path);
-            _history!.ExecuteInTransaction(() =>
+            var request = new VoiceGeneration
             {
-                VoiceSubtitles.Update(_controller, subtitleUpdates);
-                sound.Source.Value = nextSource;
-                _controller.Generation.Value = new VoiceGeneration
+                Text = _controller.Text.Value, Settings = settings,
+                PresetId = preset?.Id ?? generation?.PresetId, PresetName = preset?.Name ?? generation?.PresetName
+            };
+            await VoiceRegenerationService.RegenerateAsync(_controller, request, CopyCurrentQuery(),
+                () =>
                 {
-                    Text = text, Settings = output.Settings, AudioQueryJson = output.Json,
-                    PresetId = preset?.Id ?? generation?.PresetId,
-                    PresetName = preset?.Name ?? generation?.PresetName
-                };
-                _controller.Draft.Value = _controller.Generation.Value;
-            });
-            committed = true;
+                    var (_, scene) = GetEditableTarget();
+                    return (scene, _history!);
+                }, cancellation.Token);
             Message.Value = "音声を再生成しました。";
         }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to regenerate TTS");
@@ -212,15 +186,14 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
         }
         finally
         {
-            if (!committed && path != null)
-                try { File.Delete(path); }
-                catch (Exception ex) { _logger.LogWarning(ex, "Could not delete generated speech file {Path}", path); }
+            _regenerationCancellation = null;
             IsGenerating.Value = false;
         }
     }
 
     public override void Dispose()
     {
+        _regenerationCancellation?.Cancel();
         base.Dispose();
         Inner.Dispose();
     }

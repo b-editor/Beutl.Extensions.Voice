@@ -18,6 +18,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
     private static bool _setResolver;
     private readonly object _loadLock = new();
     private readonly HashSet<VoiceSet> _loadedVoiceModels = [];
+    private UserDict? _userDictionary;
 
     public OpenJtalk? OpenJtalk { get; private set; }
 
@@ -26,6 +27,13 @@ public class VoiceVoxLoader(string voicevoxHomePath)
     public Synthesizer? Synthesizer { get; private set; }
 
     public List<VoiceSet> VoiceSets { get; } = [];
+
+    internal VoiceMetadata[] GetVoices() => VoiceSets.SelectMany(x => x.Metadata).GroupBy(x => x.SpeakerUuid)
+        .Select(group => new VoiceMetadata
+        {
+            Name = group.First().Name, Version = group.First().Version, SpeakerUuid = group.Key,
+            Styles = group.SelectMany(x => x.Styles).ToArray()
+        }).ToArray();
 
     public TaskCompletionSource<bool> InitializationTcs { get; } = new();
 
@@ -121,6 +129,18 @@ public class VoiceVoxLoader(string voicevoxHomePath)
                 _logger.LogError("Failed to initialize OpenJtalk: {Result}", result.ToMessage());
                 InitializationTcs.TrySetResult(false);
                 return;
+            }
+
+            try
+            {
+                var dictionary = VoiceDictionaryService.LoadCoreDictionary();
+                try { ApplyUserDictionary(dictionary, () => { }); }
+                catch { dictionary.Dispose(); throw; }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to load user dictionary");
+                NotificationService.ShowError("ユーザー辞書を読み込めませんでした", ex.Message);
             }
 
             var onnxRuntimePath = GetOnnxRuntimeLibraryPath(voicevoxHomePath);
@@ -276,23 +296,48 @@ public class VoiceVoxLoader(string voicevoxHomePath)
         }
     }
 
+    internal void ApplyUserDictionary(UserDict dictionary, Action commit)
+    {
+        lock (_loadLock)
+        {
+            if (OpenJtalk == null) throw new InvalidOperationException("VOICEVOX Coreが終了しました。もう一度操作してください。");
+            var result = OpenJtalk.UseUserDict(dictionary);
+            if (result != ResultCode.RESULT_OK) throw new InvalidOperationException(result.ToMessage());
+            try { commit(); }
+            catch
+            {
+                if (_userDictionary != null)
+                {
+                    result = OpenJtalk.UseUserDict(_userDictionary);
+                    if (result != ResultCode.RESULT_OK)
+                        throw new InvalidOperationException($"辞書の保存と適用の復元に失敗しました: {result.ToMessage()}");
+                }
+                throw;
+            }
+            var previous = _userDictionary;
+            _userDictionary = dictionary;
+            previous?.Dispose();
+        }
+    }
+
     public void Unload()
     {
         lock (_loadLock)
         {
             _loadedVoiceModels.Clear();
-        }
+            foreach (var voiceModel in VoiceSets)
+            {
+                voiceModel.Model.Dispose();
+            }
 
-        foreach (var voiceModel in VoiceSets)
-        {
-            voiceModel.Model.Dispose();
+            VoiceSets.Clear();
+            Synthesizer?.Dispose();
+            OpenJtalk?.Dispose();
+            _userDictionary?.Dispose();
+            _userDictionary = null;
+            Synthesizer = null;
+            OpenJtalk = null;
+            IsLoaded = false;
         }
-
-        VoiceSets.Clear();
-        Synthesizer?.Dispose();
-        OpenJtalk?.Dispose();
-        Synthesizer = null;
-        OpenJtalk = null;
-        IsLoaded = false;
     }
 }

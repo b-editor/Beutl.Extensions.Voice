@@ -631,6 +631,16 @@ public class HttpVoiceEngineTests
         public string? LastText { get; private set; }
         public string? LastStyle { get; private set; }
         public JsonNode? LastQuery { get; private set; }
+        public JsonObject Dictionary { get; } = new();
+        public int DictionaryStatus { get; set; } = 200;
+        public int DictionaryWriteStatus { get; set; } = 204;
+        public int DictionaryWriteCount { get; private set; }
+        public bool CompoundDictionaryRequested { get; private set; }
+        public string[]? LastDictionarySurfaces { get; private set; }
+        public string[]? LastDictionaryPronunciations { get; private set; }
+        public string[]? LastDictionaryAccents { get; private set; }
+        public string? LastPreviewKana { get; private set; }
+        public VoiceMetadata[]? Speakers { get; set; }
 
         public EngineServer(bool aivis = false, long style = 7, bool manifest = true)
         {
@@ -676,7 +686,7 @@ public class HttpVoiceEngineTests
                             context.Response.StatusCode = VersionStatus;
                             if (VersionStatus == 200) result = "test-1";
                         }
-                        else if (endpoint == "/tts/speakers") result = new[] { new VoiceMetadata
+                        else if (endpoint == "/tts/speakers") result = Speakers ?? new[] { new VoiceMetadata
                         {
                             Name = "テスト話者", SpeakerUuid = "same-speaker", Version = "model-1",
                             Styles = [new() { Id = style, Name = "通常", Type = aivis ? "talk" : "streaming_talk" }, new() { Id = 999, Name = "歌唱", Type = "sing" }]
@@ -688,6 +698,55 @@ public class HttpVoiceEngineTests
                             supported_features = new { adjust_mora_pitch = !aivis, adjust_pitch_scale = AdjustPitch }
                         };
                         else if (endpoint == "/tts/engine_manifest") context.Response.StatusCode = ManifestStatus;
+                        else if (endpoint == "/tts/user_dict")
+                        {
+                            CompoundDictionaryRequested = context.Request.QueryString["enable_compound_accent"] == "true";
+                            context.Response.StatusCode = DictionaryStatus;
+                            if (DictionaryStatus == 200) result = Dictionary.DeepClone();
+                        }
+                        else if (endpoint == "/tts/import_user_dict" || endpoint.StartsWith("/tts/user_dict_word", StringComparison.Ordinal))
+                        {
+                            DictionaryWriteCount++;
+                            context.Response.StatusCode = DictionaryWriteStatus;
+                            if (DictionaryWriteStatus == 204)
+                            {
+                                if (endpoint == "/tts/import_user_dict")
+                                {
+                                    using var reader = new StreamReader(context.Request.InputStream);
+                                    var data = JsonNode.Parse(await reader.ReadToEndAsync())!.AsObject();
+                                    foreach (var pair in data)
+                                        if (!Dictionary.ContainsKey(pair.Key) || context.Request.QueryString["override"] == "true")
+                                            Dictionary[pair.Key] = pair.Value!.DeepClone();
+                                }
+                                else
+                                {
+                                    string id = endpoint == "/tts/user_dict_word" ? Guid.NewGuid().ToString() : endpoint.Split('/').Last();
+                                    if (context.Request.HttpMethod == "DELETE") Dictionary.Remove(id);
+                                    else
+                                    {
+                                        var parameters = context.Request.QueryString;
+                                        LastDictionarySurfaces = parameters.GetValues("surface")!;
+                                        LastDictionaryPronunciations = parameters.GetValues("pronunciation")!;
+                                        LastDictionaryAccents = parameters.GetValues("accent_type")!;
+                                        var phrases = LastDictionarySurfaces.Select((surface, i) => new VoiceDictionaryPhrase(
+                                            surface, LastDictionaryPronunciations[i], int.Parse(LastDictionaryAccents[i]))).ToArray();
+                                        var type = DictionaryWordType.All.Single(x => x.Id == parameters["word_type"]);
+                                        Dictionary[id] = VoiceDictionaryWord.Create(Guid.Parse(id), phrases, type, int.Parse(parameters["priority"]!), aivis).Data;
+                                        if (context.Request.HttpMethod == "POST") { context.Response.StatusCode = 200; result = id; }
+                                    }
+                                }
+                            }
+                        }
+                        else if (endpoint == "/tts/accent_phrases")
+                        {
+                            LastPreviewKana = context.Request.QueryString["text"];
+                            result = LastPreviewKana!.Split('/').Select(phrase => new AccentPhraseModel
+                            {
+                                Accent = DictionaryKana.Moras(phrase.Split('\'')[0]).Length,
+                                Moras = DictionaryKana.Moras(phrase.Replace("'", "")).Select(mora => new MoraModel
+                                    { Text = mora, Vowel = "a", VowelLength = 0.1, Pitch = 5 }).ToList()
+                            }).ToArray();
+                        }
                         else if (endpoint == "/tts/audio_query")
                         {
                             LastText = context.Request.QueryString["text"];
@@ -730,7 +789,7 @@ public class HttpVoiceEngineTests
                             manifestJson.Remove("uuid");
                             result = manifestJson;
                         }
-                        byte[] bytes = result as byte[] ?? JsonSerializer.SerializeToUtf8Bytes(result);
+                        byte[] bytes = context.Response.StatusCode == 204 ? [] : result as byte[] ?? JsonSerializer.SerializeToUtf8Bytes(result);
                         context.Response.ContentType = result is byte[] ? "audio/wav" : "application/json";
                         context.Response.ContentLength64 = bytes.Length;
                         await context.Response.OutputStream.WriteAsync(bytes);

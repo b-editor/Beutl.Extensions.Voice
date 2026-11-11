@@ -22,6 +22,7 @@
                       SelectedIndex="{Binding SelectedPage.Value, Mode=TwoWay}">
                 <TabStripItem Content="読み上げ" />
                 <TabStripItem Content="台本" />
+                <TabStripItem Content="辞書" />
                 <TabStripItem Content="設定" />
             </TabStrip>
         </controls:ToolTabBar>
@@ -95,6 +96,7 @@
                 </Border>
             </Grid>
             <views:ScriptImportView x:Name="ScriptPage" DataContext="{Binding Script}" />
+            <views:VoiceDictionaryView x:Name="DictionaryPage" />
             <ScrollViewer x:Name="SettingsScroll" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="8" Spacing="24">
                     <views:LocalEngineSetupView x:Name="EngineSetup" ShowCloseButton="False" EngineConnected="EngineConnected" />

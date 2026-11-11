@@ -73,7 +73,7 @@ public class CoreSetupTests
             prompt.FindControl<CheckBox>("NeverShowAgainCheckBox")!.IsChecked = permanent;
             prompt.FindControl<Button>("FindLocalEnginesButton")!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
-            Assert.That(speech.SelectedPage.Value, Is.EqualTo(2));
+            Assert.That(speech.SelectedPage.Value, Is.EqualTo(3));
             Assert.That(window.GetVisualDescendants().OfType<FAContentDialog>(), Is.Empty);
             Assert.That(TtsLoader.Preferences.HideCoreInstallPrompt.Value, Is.EqualTo(permanent));
         }

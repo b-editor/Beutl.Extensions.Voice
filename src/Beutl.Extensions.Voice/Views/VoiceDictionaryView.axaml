@@ -1,0 +1,307 @@
+<UserControl x:Class="Beutl.Extensions.Voice.Views.VoiceDictionaryView"
+             xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:models="using:Beutl.Extensions.Voice.Models"
+             xmlns:vm="using:Beutl.Extensions.Voice.ViewModels"
+             xmlns:views="using:Beutl.Extensions.Voice.Views"
+             xmlns:icons="using:FluentIcons.Avalonia.Fluent"
+             xmlns:ui="using:FluentAvalonia.UI.Controls"
+             x:CompileBindings="True" x:DataType="vm:VoiceDictionaryViewModel"
+             Container.Name="dictionary" Container.Sizing="Width">
+    <UserControl.Resources>
+        <Thickness x:Key="ToolTabBarPadding">8,2,4,2</Thickness>
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="Grid.dictionaryFields > StackPanel.surface">
+            <Setter Property="Margin" Value="0,0,4,0" />
+        </Style>
+        <Style Selector="Grid.dictionaryFields > StackPanel.reading">
+            <Setter Property="Grid.Column" Value="1" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+        </Style>
+        <ContainerQuery Name="dictionary" Query="max-width:380">
+            <Style Selector="Grid.dictionaryFields > StackPanel.surface">
+                <Setter Property="Grid.ColumnSpan" Value="2" />
+                <Setter Property="Margin" Value="0" />
+            </Style>
+            <Style Selector="Grid.dictionaryFields > StackPanel.reading">
+                <Setter Property="Grid.Column" Value="0" />
+                <Setter Property="Grid.Row" Value="1" />
+                <Setter Property="Grid.ColumnSpan" Value="2" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+            </Style>
+        </ContainerQuery>
+    </UserControl.Styles>
+    <Grid RowDefinitions="Auto,Auto,*,Auto">
+        <Grid Margin="8" ColumnDefinitions="Auto,*,Auto" IsEnabled="{Binding !IsBusy.Value}">
+            <Button x:Name="BackToDictionaryButton" Margin="0,0,4,0" Width="32" Height="32"
+                    Theme="{StaticResource ToolTabBarIconButtonTheme}" Command="{Binding BackToList}"
+                    IsVisible="{Binding IsEditing.Value}" ToolTip.Tip="一覧に戻る" AutomationProperties.Name="一覧に戻る">
+                <icons:FluentIcon Icon="ArrowLeft" FontSize="16" />
+            </Button>
+            <ComboBox x:Name="DictionaryEngineSelector" Grid.Column="1" HorizontalAlignment="Stretch"
+                      AutomationProperties.Name="辞書のエンジン" ToolTip.Tip="{Binding SelectedEngine.Value.Url}"
+                      ItemsSource="{Binding Engines.Value}" SelectedItem="{Binding SelectedEngine.Value, Mode=OneWay}"
+                      SelectionChanged="EngineChanged">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:VoiceEngineConnection">
+                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Url}" />
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button x:Name="DictionaryMenuButton" Grid.Column="2" Margin="4,0,0,0" Width="32" Height="32"
+                    Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                    ToolTip.Tip="辞書の操作" AutomationProperties.Name="辞書の操作">
+                <icons:FluentIcon Icon="MoreHorizontal" FontSize="16" />
+                <Button.Flyout>
+                    <ui:FAMenuFlyout>
+                        <ui:FAMenuFlyoutItem Text="再読み込み" Command="{Binding Refresh}" />
+                        <ui:FAMenuFlyoutSeparator />
+                        <ui:FAMenuFlyoutItem Text="インポート…" Click="OpenImport" IsEnabled="{Binding CanEdit.Value}" />
+                        <ui:FAMenuFlyoutItem Text="エクスポート…" Click="ExportFile" IsEnabled="{Binding HasDictionary.Value}" />
+                    </ui:FAMenuFlyout>
+                </Button.Flyout>
+            </Button>
+        </Grid>
+        <StackPanel Grid.Row="1" Margin="8,0" Spacing="4">
+            <ProgressBar Height="2" IsIndeterminate="True" IsVisible="{Binding IsBusy.Value}" />
+            <TextBlock x:Name="DictionaryStatus" Text="{Binding Message.Value}" TextWrapping="Wrap" FontSize="12"
+                       IsVisible="{Binding Message.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            <Border x:Name="UnsavedDictionaryPrompt" IsVisible="{Binding ConfirmChange.Value}"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4" Padding="8">
+                <StackPanel Spacing="8" IsEnabled="{Binding !IsBusy.Value}">
+                    <TextBlock Text="変更を保存しますか？" />
+                    <WrapPanel>
+                        <Button Content="保存" Margin="0,0,4,4" Command="{Binding SaveAndContinue}" IsEnabled="{Binding CanSave.Value}" />
+                        <Button Content="破棄" Margin="0,0,4,4" Command="{Binding DiscardAndContinue}" />
+                        <Button Content="キャンセル" Margin="0,0,0,4" Command="{Binding CancelChange}" />
+                    </WrapPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+        <Grid x:Name="DictionaryWordListPage" Grid.Row="2" Margin="8,0,8,8"
+              RowDefinitions="Auto,*" IsVisible="{Binding IsListing.Value}">
+            <Grid Margin="0,0,0,8" ColumnDefinitions="*,Auto" IsEnabled="{Binding !IsBusy.Value}">
+                <TextBox x:Name="DictionarySearch" PlaceholderText="検索" AutomationProperties.Name="辞書の検索"
+                         Text="{Binding Search.Value, Mode=TwoWay}">
+                    <TextBox.InnerLeftContent>
+                        <icons:FluentIcon Icon="Search" FontSize="14" Margin="8,0,0,0"
+                                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    </TextBox.InnerLeftContent>
+                    <TextBox.InnerRightContent>
+                        <Button x:Name="ClearDictionarySearchButton" Theme="{StaticResource ToolTabBarIconButtonTheme}"
+                                Command="{Binding ClearSearch}" Width="28" Height="28" ToolTip.Tip="検索をクリア"
+                                AutomationProperties.Name="検索をクリア"
+                                IsVisible="{Binding Search.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                            <icons:FluentIcon Icon="Dismiss" FontSize="12" />
+                        </Button>
+                    </TextBox.InnerRightContent>
+                </TextBox>
+                <Button x:Name="NewDictionaryWordButton" Grid.Column="1" Margin="8,0,0,0" Classes="accent"
+                        Command="{Binding NewWord}" IsEnabled="{Binding CanEdit.Value}">
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <icons:FluentIcon Icon="Add" FontSize="16" />
+                        <TextBlock Text="追加" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+            <ListBox x:Name="DictionaryWords" Grid.Row="1" AutoScrollToSelectedItem="False"
+                     IsEnabled="{Binding !IsBusy.Value}" ItemsSource="{Binding VisibleWords.Value}"
+                     SelectedItem="{Binding SelectedWord.Value, Mode=OneWay}" Tapped="WordTapped" KeyDown="WordKeyDown"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="辞書の単語">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="MinHeight" Value="52" />
+                        <Setter Property="Padding" Value="8,8,4,8" />
+                        <Setter Property="Margin" Value="0,1" />
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:VoiceDictionaryWord">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <StackPanel VerticalAlignment="Center" Spacing="2">
+                                <TextBlock Text="{Binding Surface}" TextTrimming="CharacterEllipsis" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Pronunciation}" TextTrimming="CharacterEllipsis" FontSize="12" FontWeight="Normal"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <Button x:Name="DeleteDictionaryWordButton" Grid.Column="1" Margin="8,0,0,0" Width="32" Height="32"
+                                    Theme="{StaticResource ToolTabBarIconButtonTheme}" Click="AskDelete"
+                                    IsEnabled="{Binding $parent[UserControl].((vm:VoiceDictionaryViewModel)DataContext).CanEdit.Value}"
+                                    ToolTip.Tip="削除" AutomationProperties.Name="{Binding Surface, StringFormat='「{0}」を削除'}">
+                                <icons:FluentIcon Icon="Delete" FontSize="16" />
+                            </Button>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock x:Name="DictionaryEmptyState" Grid.Row="1" Margin="12,48,12,0" HorizontalAlignment="Center"
+                       VerticalAlignment="Top" Text="{Binding EmptyListMessage.Value}" TextWrapping="Wrap"
+                       IsVisible="{Binding EmptyListMessage.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       IsHitTestVisible="False" FontWeight="Normal" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+        </Grid>
+        <Grid x:Name="DictionaryEditorPage" Grid.Row="2" IsVisible="{Binding IsEditing.Value}">
+            <ScrollViewer x:Name="DictionaryScroll" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="0,0,0,8" Spacing="0">
+                    <ItemsControl ItemsSource="{Binding Phrases}" IsEnabled="{Binding CanEdit.Value}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DictionaryPhraseViewModel">
+                                <Border Padding="0,0,0,8" BorderThickness="0,0,0,1"
+                                        BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+                                    <StackPanel Margin="8,8,8,0" Spacing="8">
+                                        <Grid Classes="dictionaryFields" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto">
+                                            <StackPanel Classes="surface" Spacing="4">
+                                                <TextBlock Text="表記" />
+                                                <TextBox x:Name="DictionarySurface" Text="{Binding Surface.Value, Mode=TwoWay}"
+                                                         FontWeight="Normal" AutomationProperties.Name="単語の表記" />
+                                            </StackPanel>
+                                            <StackPanel Classes="reading" Spacing="4">
+                                                <TextBlock Text="読み" />
+                                                <TextBox x:Name="DictionaryReading" PlaceholderText="カタカナ"
+                                                         Text="{Binding Pronunciation.Value, Mode=TwoWay}"
+                                                         FontWeight="Normal" AutomationProperties.Name="単語の読み" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid ColumnDefinitions="*,104,Auto">
+                                            <TextBlock Text="アクセント" VerticalAlignment="Center" ToolTip.Tip="0：平板" />
+                                            <NumericUpDown Grid.Column="1" Minimum="0" Maximum="{Binding MoraCount.Value}"
+                                                           Increment="1" FormatString="0" Value="{Binding Accent.Value, Mode=TwoWay}"
+                                                           AutomationProperties.Name="アクセント位置" ToolTip.Tip="0：平板" />
+                                            <Button Grid.Column="2" Margin="4,0,0,0" Width="28" Height="32"
+                                                    Theme="{StaticResource ToolTabBarIconButtonTheme}" Click="RemovePhrase"
+                                                    ToolTip.Tip="句を削除" AutomationProperties.Name="句を削除"
+                                                    IsVisible="{Binding $parent[UserControl].((vm:VoiceDictionaryViewModel)DataContext).CanRemovePhrase.Value}">
+                                                <icons:FluentIcon Icon="Dismiss" FontSize="14" />
+                                            </Button>
+                                        </Grid>
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                                      IsVisible="{Binding Pronunciation.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                            <views:AccentPhrasePanel x:Name="DictionaryAccentPanel" ShowPitch="False"
+                                                                    AccentPhrases="{Binding AccentPhrases.Value}" AccentChanged="DictionaryAccentChanged"
+                                                                    ToolTip.Tip="バーをクリックでアクセント位置を変更" AutomationProperties.Name="単語のアクセント" />
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Theme="{StaticResource ToolTabBarIconButtonTheme}" Padding="6,4" Margin="8"
+                            Command="{Binding AddPhrase}" IsVisible="{Binding CanUseCompound.Value}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <icons:FluentIcon Icon="Add" FontSize="14" />
+                            <TextBlock Text="句を追加" FontWeight="Normal" />
+                        </StackPanel>
+                    </Button>
+                    <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+                            IsVisible="{Binding CanUseCompound.Value}" />
+                    <Expander x:Name="DictionaryDetails" Header="詳細" Theme="{StaticResource ToolTabExpanderTheme}"
+                              HorizontalAlignment="Stretch" IsExpanded="False">
+                        <Grid Margin="8,4,8,0" ColumnDefinitions="*,8,104" RowDefinitions="Auto,4,Auto" IsEnabled="{Binding CanEdit.Value}">
+                            <TextBlock Text="品詞" />
+                            <TextBlock Grid.Column="2" Text="優先度" ToolTip.Tip="0〜10" />
+                            <ComboBox x:Name="DictionaryWordTypeSelector" Grid.Row="2" HorizontalAlignment="Stretch"
+                                      AutomationProperties.Name="品詞" ItemsSource="{Binding WordTypes.Value}"
+                                      SelectedItem="{Binding SelectedWordType.Value, Mode=TwoWay}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="models:DictionaryWordType"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" /></DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <NumericUpDown Grid.Row="2" Grid.Column="2" Minimum="0" Maximum="10" Increment="1" FormatString="0"
+                                           AutomationProperties.Name="単語の優先度" Value="{Binding Priority.Value, Mode=TwoWay}" />
+                        </Grid>
+                    </Expander>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+        <ScrollViewer x:Name="DictionaryImportScroll" Grid.Row="2" Margin="8,0,8,8"
+                      HorizontalScrollBarVisibility="Disabled" IsVisible="{Binding HasImport.Value}">
+            <Border x:Name="DictionaryImportReview" IsVisible="{Binding HasImport.Value}" Padding="8" CornerRadius="4"
+                    BorderThickness="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+                <StackPanel Spacing="8" IsEnabled="{Binding CanEdit.Value}">
+                    <TextBlock Text="インポート" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding ImportSummary.Value}" TextWrapping="Wrap" FontSize="12" />
+                    <ScrollViewer MaxHeight="260" HorizontalScrollBarVisibility="Disabled">
+                        <ItemsControl ItemsSource="{Binding ImportItems.Value}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:DictionaryImportItem">
+                                    <CheckBox IsChecked="{Binding Selected.Value, Mode=TwoWay}" IsEnabled="{Binding IsCompatible}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Name}" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding Status}" TextWrapping="Wrap" FontSize="11"
+                                                       IsVisible="{Binding Status, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                    <CheckBox IsChecked="{Binding OverwriteImport.Value, Mode=TwoWay}">
+                        <TextBlock Text="登録済みの単語を上書き" TextWrapping="Wrap" />
+                    </CheckBox>
+                    <StackPanel Orientation="Horizontal" Spacing="4">
+                        <Button Content="インポート" Classes="accent" Command="{Binding Import}" />
+                        <Button Content="キャンセル" Command="{Binding ClearImport}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </ScrollViewer>
+        <Border x:Name="DictionaryDeletePrompt" Grid.Row="3" Padding="8" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" IsEnabled="{Binding CanEdit.Value}"
+                IsVisible="{Binding WordToDelete.Value, Converter={x:Static ObjectConverters.IsNotNull}}">
+            <StackPanel Spacing="8">
+                <TextBlock Text="{Binding WordToDelete.Value.Surface, StringFormat='「{0}」を削除しますか？'}" TextWrapping="Wrap" />
+                <Grid ColumnDefinitions="*,8,*">
+                    <Button x:Name="CancelDeleteDictionaryWordButton" Content="キャンセル" Command="{Binding CancelDelete}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                    <Button x:Name="ConfirmDeleteDictionaryWordButton" Grid.Column="2" Content="削除" Command="{Binding Delete}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                </Grid>
+            </StackPanel>
+        </Border>
+        <Border x:Name="DictionaryEditorFooter" Grid.Row="3" IsVisible="{Binding IsEditing.Value}" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}">
+            <StackPanel Margin="0,0,0,8" Spacing="8">
+                <Expander x:Name="DictionaryPreviewSettings" Theme="{StaticResource ToolTabExpanderTheme}"
+                          HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False"
+                          ToolTip.Tip="試聴する声" AutomationProperties.Name="試聴する声">
+                    <Expander.Header>
+                        <Grid ColumnDefinitions="Auto,*" Margin="0,0,8,0">
+                            <icons:FluentIcon Icon="Speaker2" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock x:Name="DictionaryPreviewVoice" Grid.Column="1" VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" FontWeight="Normal" FontSize="12">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="{}{0} · {1}">
+                                        <Binding Path="SelectedVoice.Value.Name" />
+                                        <Binding Path="SelectedStyle.Value.Name" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                        </Grid>
+                    </Expander.Header>
+                    <Grid Margin="8,4,8,0" ColumnDefinitions="*,8,*" RowDefinitions="Auto,4,Auto" IsEnabled="{Binding !IsBusy.Value}">
+                        <TextBlock Text="話者" />
+                        <TextBlock Grid.Column="2" Text="スタイル" />
+                        <ComboBox x:Name="DictionaryVoiceSelector" Grid.Row="2" HorizontalAlignment="Stretch"
+                                  ItemsSource="{Binding Voices.Value}" SelectedItem="{Binding SelectedVoice.Value, Mode=TwoWay}" AutomationProperties.Name="試聴する話者">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:VoiceMetadata"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <ComboBox x:Name="DictionaryStyleSelector" Grid.Row="2" Grid.Column="2" HorizontalAlignment="Stretch" ItemsSource="{Binding Styles.Value}"
+                                  SelectedItem="{Binding SelectedStyle.Value, Mode=TwoWay}" AutomationProperties.Name="試聴するスタイル">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:VoiceStyle"><TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" /></DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                </Expander>
+                <Grid Margin="8,0" ColumnDefinitions="*,8,*">
+                    <Button x:Name="PreviewDictionaryWordButton" Content="試聴" Command="{Binding Preview}" IsEnabled="{Binding !IsBusy.Value}"
+                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" AutomationProperties.Name="試聴" />
+                    <Button x:Name="SaveDictionaryWordButton" Grid.Column="2" Content="保存" Classes="accent" Command="{Binding Save}"
+                            IsEnabled="{Binding CanSave.Value}" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                </Grid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
