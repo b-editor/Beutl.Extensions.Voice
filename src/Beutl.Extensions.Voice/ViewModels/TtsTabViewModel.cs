@@ -39,6 +39,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         LipSync = new LipSyncSelectionViewModel(_scene);
         Subtitles = new SubtitleSelectionViewModel(_scene, subtitleTemplates);
         Subtitles.Refresh();
+        WebVoices = new WebVoiceAssignmentsViewModel(_scene);
         InitializePresets();
         Script = new ScriptImportViewModel(editorContext,
             (text, settings) => synthesize(text, settings, null));
@@ -52,6 +53,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     public ScriptImportViewModel Script { get; }
     public LipSyncSelectionViewModel LipSync { get; }
     public SubtitleSelectionViewModel Subtitles { get; }
+    public WebVoiceAssignmentsViewModel WebVoices { get; }
 
     private static void ShowError(string title, string message) =>
         Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
@@ -85,18 +87,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             };
             var element = VoiceElementFactory.Create(_scene, path, generation, start, 1);
             _historyManager.ExecuteInTransaction(() =>
-            {
-                element.ZIndex.Value = PsdLipSyncPresets.FreeLayer(_scene, element.Range, element.ZIndex.Value);
-                _scene.AddChild(element, ElementOverlapHandling.ThrowException);
-                if (lipSyncTarget != null)
-                {
-                    PsdLipSync.Connect(element.Objects.OfType<TtsController>().Single(), lipSyncTarget);
-                    PsdLipSyncPresets.Extend(_scene, lipSyncTarget, element.Range);
-                }
-                else if (lipSyncPreset != null)
-                    PsdLipSyncPresets.Connect(_scene, [(element.Objects.OfType<TtsController>().Single(), lipSyncPreset)]);
-                VoiceSubtitles.Place(_scene, element, subtitleTemplate);
-            });
+                VoicePlacement.Place(_scene, element, lipSyncTarget, lipSyncPreset, subtitleTemplate));
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
         }
@@ -199,6 +190,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     {
         Dictionary.Dispose();
         Script.Dispose();
+        WebVoices.Dispose();
         base.Dispose();
     }
 }

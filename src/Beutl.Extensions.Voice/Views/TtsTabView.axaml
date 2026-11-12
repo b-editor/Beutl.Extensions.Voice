@@ -98,7 +98,10 @@
             <views:ScriptImportView x:Name="ScriptPage" DataContext="{Binding Script}" />
             <views:VoiceDictionaryView x:Name="DictionaryPage" />
             <ScrollViewer x:Name="SettingsScroll" HorizontalScrollBarVisibility="Disabled">
-                <views:LocalEngineSetupView x:Name="EngineSetup" Margin="8" ShowCloseButton="False" EngineConnected="EngineConnected" />
+                <StackPanel Margin="8" Spacing="24">
+                    <views:LocalEngineSetupView x:Name="EngineSetup" ShowCloseButton="False" EngineConnected="EngineConnected" />
+                    <views:WebVoiceAssignmentsView x:Name="WebVoiceAssignments" DataContext="{Binding WebVoices}" />
+                </StackPanel>
             </ScrollViewer>
         </Carousel>
     </Grid>
