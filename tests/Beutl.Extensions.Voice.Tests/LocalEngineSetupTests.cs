@@ -318,6 +318,42 @@ public class LocalEngineSetupTests
         Assert.That(VoiceEngineStore.Load(), Has.Length.EqualTo(1));
     }
 
+    [AvaloniaTest]
+    public async Task The_app_an_engine_is_started_from_is_kept_for_the_next_search()
+    {
+        string app = Path.Combine(_directory, "Apps", "voicevox_engine", "run");
+        Directory.CreateDirectory(Path.GetDirectoryName(app)!);
+        File.WriteAllText(app, "");
+        using var server = new HttpVoiceEngineTests.EngineServer { FailDiscovery = true };
+        var engine = LocalVoiceEngines.Known[0] with { Url = server.Url };
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null, _ => server.FailDiscovery = false))
+        {
+            var entry = model.Engines[0];
+            model.SelectApplication(entry, app);
+            Assert.That(await model.Use(entry), Is.True, model.Message.Value);
+        }
+        Assert.That(VoiceEngineStore.Load().Single().ApplicationPath, Is.EqualTo(app));
+
+        // Found nowhere else, the app is still there to start from.
+        server.FailDiscovery = true;
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null))
+        {
+            await model.Refresh();
+            var entry = model.Engines[0];
+            Assert.That(entry.ApplicationPath.Value, Is.EqualTo(app));
+            Assert.That(entry.IsRegistered.Value, Is.True);
+            Assert.That(entry.ActionText.Value, Is.EqualTo("起動して使う"));
+            Assert.That(entry.CanUse.Value, Is.True);
+        }
+
+        File.Delete(app);
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null))
+        {
+            await model.Refresh();
+            Assert.That(model.Engines[0].ApplicationPath.Value, Is.Null, "A removed app is looked for again.");
+        }
+    }
+
     [Test]
     public void A_chosen_folder_means_the_app_or_the_standalone_engine_in_it()
     {

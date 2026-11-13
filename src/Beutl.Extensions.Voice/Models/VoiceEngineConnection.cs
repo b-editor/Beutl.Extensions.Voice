@@ -10,7 +10,7 @@ public sealed record VoiceEngineConnection
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string Name { get; init; } = "";
     public string Url { get; init; } = "";
-    // The executable or app bundle of an engine run as a program instead of reached by URL.
+    // The app of the engine: the program AquesTalkPlayer is run as, or the app that starts an HTTP engine.
     public string ApplicationPath { get; init; } = "";
     public string EngineUuid { get; init; } = "";
     public string Version { get; init; } = "";
