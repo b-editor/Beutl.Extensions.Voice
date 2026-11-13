@@ -73,12 +73,13 @@ internal static class VoiceRegenerationService
             await File.WriteAllBytesAsync(path, output.Wave, cancellationToken);
             var history = ValidateTarget();
             var nextSource = SoundSource.Open(path);
-            // AquesTalkPlayer speech is resampled as when it was added; a disabled resampling stays as the user left it.
-            bool resample = output.Settings.IsAquesTalkPlayer
-                && sound.Effect.Value is AudioEffectGroup effects && !effects.Children.OfType<ResamplingEffect>().Any();
+            // Speech that its engine asks to resample is resampled as when it was added; a disabled resampling stays as
+            // the user left it.
+            var resampling = output.Resampling is { } method && sound.Effect.Value is AudioEffectGroup effects
+                && !effects.Children.OfType<ResamplingEffect>().Any() ? method : (ResamplingMethod?)null;
             history.ExecuteInTransaction(() =>
             {
-                if (resample) VoiceElementFactory.AddResampling(sound, AquesTalkPlayerEngine.Resampling);
+                if (resampling is { } added) VoiceElementFactory.AddResampling(sound, added);
                 VoiceSubtitles.Update(controller, subtitleUpdates);
                 sound.Source.Value = nextSource;
                 controller.Text.Value = request.Text;

@@ -49,12 +49,6 @@ internal static class VoiceWave
 
     public static bool IsWave(ReadOnlySpan<byte> wave) => TryReadFormat(wave, out _);
 
-    public static int? ReadSampleRate(string path)
-    {
-        try { return TryReadFormat(File.ReadAllBytes(path), out var format) ? format.SampleRate : null; }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return null; }
-    }
-
     // Replaces the silence at either end of 16-bit PCM speech with the given lengths, so that engines that pad their
     // speech themselves start and end it as the other engines do. Other formats are returned unchanged.
     public static byte[] AdjustSilence(byte[] wave, double leading, double trailing)

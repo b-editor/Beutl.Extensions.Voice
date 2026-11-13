@@ -37,6 +37,8 @@ public sealed record VoiceEngineCapabilities
     public bool AdjustIntonation { get; init; } = true;
     public bool AdjustVolume { get; init; } = true;
     public bool EditAccent { get; init; } = true;
+    // Whether the pitch of each mora can be edited along with the accents.
+    public bool EditPitch { get; init; } = true;
     public bool TempoDynamics { get; init; }
 
     [JsonIgnore]

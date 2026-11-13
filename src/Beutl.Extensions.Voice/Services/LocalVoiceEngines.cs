@@ -4,19 +4,9 @@ using Microsoft.Win32;
 
 namespace Beutl.Extensions.Voice.Services;
 
-public enum LocalVoiceEngineKind
-{
-    // An engine with a VOICEVOX-compatible HTTP API at Url.
-    Http,
-
-    // AquesTalkPlayer, which speaks through its command line and has no URL.
-    AquesTalkPlayer
-}
-
-public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url, LocalVoiceEngineKind Kind = LocalVoiceEngineKind.Http)
-{
-    public bool IsAquesTalkPlayer => Kind == LocalVoiceEngineKind.AquesTalkPlayer;
-}
+// An engine with a VOICEVOX-compatible HTTP API at Url, or AquesTalkPlayer, which speaks through its command line and
+// has no URL.
+public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url, bool IsAquesTalkPlayer = false);
 
 internal static class LocalVoiceEngines
 {
@@ -25,7 +15,7 @@ internal static class LocalVoiceEngines
         new("VOICEVOX ENGINE", "VOICEVOX", "http://127.0.0.1:50021/"),
         new("AivisSpeech Engine", "AivisSpeech", "http://127.0.0.1:10101/"),
         new("SHAREVOX Engine", "SHAREVOX", "http://127.0.0.1:50025/"),
-        new("AquesTalkPlayer", AquesTalkPlayerEngine.ApplicationName, "", LocalVoiceEngineKind.AquesTalkPlayer)
+        new("AquesTalkPlayer", AquesTalkPlayerEngine.ApplicationName, "", IsAquesTalkPlayer: true)
     ];
 
     // AquesTalkPlayer has no Linux version.

@@ -71,7 +71,7 @@ public class HttpVoiceEngineTests
         };
         var path = Path.Combine(_directory, "original.wav");
         await File.WriteAllBytesAsync(path, EngineServer.Wave());
-        var element = VoiceElementFactory.Create(editor.Scene, path, generation, MediaTime.Zero, 1);
+        var element = VoiceElementFactory.Create(editor.Scene, path, generation, MediaTime.Zero, 1, null);
         editor.Scene.AddChild(element);
         var controller = element.Objects.OfType<TtsController>().Single();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);

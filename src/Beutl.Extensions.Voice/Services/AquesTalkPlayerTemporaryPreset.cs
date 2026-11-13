@@ -21,6 +21,8 @@ internal static class AquesTalkPlayerTemporaryPreset
     public static async Task<T> UseAsync<T>(string path, AquesTalkPlayerVoice voice, Func<string, Task<T>> run,
         CancellationToken cancellationToken)
     {
+        if (!voice.HasValidVoiceType)
+            throw new InvalidOperationException($"AquesTalkPlayerの声種ではないため、調声を反映できません（{voice.StyleName}）。話者を選び直してください。");
         // Another Beutl must not replace the preset between this one writing it and the app reading it.
         using var gate = await LockAsync(cancellationToken);
         byte[]? original = File.Exists(path) ? await File.ReadAllBytesAsync(path, cancellationToken) : null;
@@ -51,7 +53,7 @@ internal static class AquesTalkPlayerTemporaryPreset
             }
             else if (Remove(current, path) is { } removed) Write(path, removed);
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             s_logger.LogWarning(ex, "Could not remove the temporary preset from {Path}", path);
         }
@@ -88,10 +90,7 @@ internal static class AquesTalkPlayerTemporaryPreset
         if (AquesTalkPlayerPresets.IsJson(path))
         {
             var presets = ParseJson(data);
-            var found = presets.Where(IsTemporary).ToArray();
-            if (found.Length == 0) return null;
-            foreach (var item in found) presets.Remove(item);
-            return Encoding.UTF8.GetBytes(presets.ToJsonString(s_json));
+            return presets.RemoveAll(IsTemporary) == 0 ? null : Encoding.UTF8.GetBytes(presets.ToJsonString(s_json));
         }
         var (text, encoding, bom) = AquesTalkPlayerPresets.DecodeCsv(data);
         var lines = SplitLines(text, out string newline);
@@ -104,26 +103,19 @@ internal static class AquesTalkPlayerTemporaryPreset
         if (AquesTalkPlayerPresets.IsJson(path))
         {
             // Without a saved file the app speaks the presets it ships with, which the file then has to list.
-            var presets = data == null ? new JsonArray([.. AquesTalkPlayerPresets.Defaults.Select(preset => ToJson(preset.Name, preset.Voice, preset.Memo))])
+            var presets = data == null
+                ? new JsonArray([.. AquesTalkPlayerPresets.Defaults.Select(preset => AquesTalkPlayerPresets.ToJson(preset.Name, preset.Voice, preset.Memo))])
                 : ParseJson(data);
-            presets.Add(ToJson(Name, voice, ""));
+            presets.Add(AquesTalkPlayerPresets.ToJson(Name, voice, ""));
             return Encoding.UTF8.GetBytes(presets.ToJsonString(s_json));
         }
         if (data == null) throw new FileNotFoundException("AquesTalkPlayerのプリセットファイルが見つかりません。", path);
         var (text, encoding, bom) = AquesTalkPlayerPresets.DecodeCsv(data);
         var lines = SplitLines(text, out string newline);
-        // The row takes the form of a preset the app wrote, keeping any columns this does not know.
-        var fields = lines.Select(line => AquesTalkPlayerPresets.ReadCsv(line).FirstOrDefault() ?? [])
+        var template = lines.Select(line => AquesTalkPlayerPresets.ReadCsv(line).FirstOrDefault() ?? [])
             .FirstOrDefault(AquesTalkPlayerPresets.IsPresetRow)
             ?? throw new FormatException("AquesTalkPlayerのプリセットファイルの形式を読み取れません。");
-        fields[0] = Name;
-        fields[1] = Flag(voice.FlatReading, fields[1].Trim());
-        fields[2] = voice.Engine;
-        fields[3] = voice.Voice;
-        int[] values = [voice.Speed, voice.Volume, voice.Height, voice.Accent, voice.Quality, voice.FrequencyScale];
-        for (int i = 0; i < values.Length && 4 + i < fields.Count; i++) fields[4 + i] = values[i].ToString(System.Globalization.CultureInfo.InvariantCulture);
-        if (fields.Count > 10) fields[10] = "";
-        string row = string.Join(",", fields.Select(Quote));
+        string row = string.Join(",", AquesTalkPlayerPresets.ToCsvFields(template, Name, voice).Select(Quote));
         // Inserted before the line break that ends the file, so that the file still ends with one.
         int end = lines.Count > 0 && lines[^1].Length == 0 ? lines.Count - 1 : lines.Count;
         lines.Insert(end, row);
@@ -137,13 +129,6 @@ internal static class AquesTalkPlayerTemporaryPreset
     private static bool IsTemporary(JsonNode? item) =>
         item is JsonObject preset && preset["name"] is JsonValue name && name.TryGetValue(out string? value) && value == Name;
 
-    private static JsonObject ToJson(string name, AquesTalkPlayerVoice voice, string memo) => new()
-    {
-        ["fsc"] = voice.FrequencyScale, ["engine"] = voice.Engine, ["spd"] = voice.Speed, ["voice"] = voice.Voice,
-        ["vol"] = voice.Volume, ["lmd"] = voice.Quality, ["acc"] = voice.Accent, ["name"] = name, ["memo"] = memo,
-        ["pit"] = voice.Height, ["boyomi"] = voice.FlatReading
-    };
-
     private static List<string> SplitLines(string text, out string newline)
     {
         newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
@@ -152,15 +137,6 @@ internal static class AquesTalkPlayerTemporaryPreset
 
     private static byte[] EncodeCsv(string text, Encoding encoding, bool bom) =>
         bom ? [0xEF, 0xBB, 0xBF, .. encoding.GetBytes(text)] : encoding.GetBytes(text);
-
-    // In the same form as the app's own rows: 0/1 or true/false.
-    private static string Flag(bool value, string sample) => sample switch
-    {
-        "0" or "1" => value ? "1" : "0",
-        _ when sample.Length > 1 && sample.All(char.IsUpper) => value ? "TRUE" : "FALSE",
-        _ when sample.Length > 0 && char.IsUpper(sample[0]) => value ? "True" : "False",
-        _ => value ? "true" : "false"
-    };
 
     private static string Quote(string field) => field.IndexOfAny([',', '"', '\r', '\n']) < 0 ? field
         : "\"" + field.Replace("\"", "\"\"") + "\"";

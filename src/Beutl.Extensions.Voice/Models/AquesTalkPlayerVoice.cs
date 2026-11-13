@@ -35,6 +35,16 @@ public sealed record AquesTalkPlayerVoice
     [JsonIgnore]
     public bool IsAquesTalk10 => Engine == "AquesTalk10";
 
+    // The voice type as the style of its speaker, such as "AquesTalk1 f1".
+    [JsonIgnore]
+    public string StyleName => $"{Engine} {Voice}".Trim();
+
+    // Values from a project or an MCP client can name anything, but only a voice type of the app may be written to its
+    // preset file, where the app looks the voice up and the Windows version separates columns and rows.
+    [JsonIgnore]
+    public bool HasValidVoiceType => Engine is "AquesTalk1" or "AquesTalk2" or "AquesTalk10"
+        && Voice.Length is > 0 and <= 32 && Voice.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
     public AquesTalkPlayerVoice Clamped() => this with
     {
         Speed = Math.Clamp(Speed, 50, 300), Volume = Math.Clamp(Volume, 0, 300), Height = Math.Clamp(Height, 20, 200),

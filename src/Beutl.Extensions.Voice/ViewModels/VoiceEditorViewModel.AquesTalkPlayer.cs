@@ -1,6 +1,5 @@
 using Beutl.Extensions.Voice.Models;
 using Reactive.Bindings;
-using Reactive.Bindings.Extensions;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
@@ -19,13 +18,8 @@ public partial class VoiceEditorViewModel
     public ReactivePropertySlim<double> AquesTalkFrequencyScale { get; } = new(100);
     // Height, accent and voice quality apply to AquesTalk10 only.
     public ReactivePropertySlim<bool> IsAquesTalk10 { get; } = new();
-
-    private void InitializeAquesTalkPlayer()
-    {
-        AquesTalkFlatReading.Subscribe(_ => { if (!_updating) Edited?.Invoke(); }).AddTo(_subscriptions);
-        foreach (var property in new[] { AquesTalkSpeed, AquesTalkVolume, AquesTalkHeight, AquesTalkAccent, AquesTalkQuality, AquesTalkFrequencyScale })
-            property.Subscribe(_ => { if (!_updating) Edited?.Invoke(); }).AddTo(_subscriptions);
-    }
+    // Beutl's own choice rather than the preset's: reading VOICEVOX's analysis, whose accents can be edited.
+    public ReactivePropertySlim<bool> AquesTalkAnalyzeWithVoiceVox { get; } = new();
 
     private AquesTalkPlayerVoice? CaptureAquesTalkPlayerVoice() => _aquesTalkPlayerVoice is not { } voice ? null : voice with
     {

@@ -89,8 +89,7 @@ public partial class VoiceEditorViewModel
     {
         if (!IsExternalEngine.Value && !engine.IsCore) _coreVoices = Voice.Value;
         SelectedEngine.Value = engine;
-        // What AquesTalkPlayer can do is up to this extension rather than the version that registered it.
-        EngineCapabilities.Value = engine.IsAquesTalkPlayer ? AquesTalkPlayerEngine.Capabilities : engine.Capabilities;
+        EngineCapabilities.Value = engine.Capabilities;
         IsExternalEngine.Value = !engine.IsCore;
         IsAquesTalkPlayer.Value = engine.IsAquesTalkPlayer;
         CanEditConnection.Value = !engine.IsCore && !engine.IsAquesTalkPlayer;
@@ -118,7 +117,7 @@ public partial class VoiceEditorViewModel
         _readingAquesTalkPlayerValues = true;
         try
         {
-            var updated = await Task.Run(() => AquesTalkPlayerEngine.Discover(engine.ApplicationPath, engine));
+            var updated = await VoiceSynthesisService.DiscoverAsync(engine);
             if (_disposed) return;
             VoiceEngineStore.UpdateMetadata(updated);
         }
@@ -191,9 +190,7 @@ public partial class VoiceEditorViewModel
         try
         {
             // AquesTalkPlayer's voices are its presets, read again for presets added or renamed since.
-            var updated = engine.IsAquesTalkPlayer
-                ? await Task.Run(() => AquesTalkPlayerEngine.Discover(engine.ApplicationPath, engine))
-                : await HttpVoiceEngine.DiscoverAsync(engine);
+            var updated = await VoiceSynthesisService.DiscoverAsync(engine);
             if (_disposed) return;
             // Refreshing metadata keeps the selection and manual query edits in every open editor.
             VoiceEngineStore.UpdateMetadata(updated);

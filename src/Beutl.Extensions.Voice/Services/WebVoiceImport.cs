@@ -1,4 +1,3 @@
-using Beutl.Audio;
 using Beutl.Audio.Effects;
 using Beutl.Editor;
 using Beutl.Editor.Services;
@@ -57,8 +56,7 @@ internal sealed class WebVoiceImport(
     public static Element Place(Scene scene, HistoryManager history, string path, string text, MediaTime start,
         WebVoiceAssignment assignment, ResamplingMethod? resampling)
     {
-        var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1);
-        if (resampling is { } method) VoiceElementFactory.AddResampling(element.Objects.OfType<SourceSound>().Single(), method);
+        var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1, resampling);
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
         history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, null, assignment.LipSync, subtitle));

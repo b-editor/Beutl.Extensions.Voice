@@ -50,7 +50,7 @@ internal static partial class AquesTalkPlayerEngine
     {
         AdjustSpeed = false, AdjustPitch = false, AdjustIntonation = false, AdjustVolume = false,
         // Accents analyzed by VOICEVOX reach the app as phonetic symbols; pitches have no way there.
-        EditAccent = true
+        EditAccent = true, EditPitch = false
     };
 
     // AquesTalkPlayer speaks at its engines' own rates, such as 8 kHz, and like the speech from the Yukumo site it
@@ -129,12 +129,12 @@ internal static partial class AquesTalkPlayerEngine
     internal static string ResolveExecutable(string applicationPath, AquesTalkPlayerHost host)
     {
         if (string.IsNullOrWhiteSpace(applicationPath))
-            throw new InvalidOperationException("AquesTalkPlayerが登録されていません。「設定」の「音声エンジンを探す」から追加してください。");
+            throw new InvalidOperationException("AquesTalkPlayerが登録されていません。「設定」の「音声エンジンを探す」で「読み上げで使う」を押してください。");
         string path = Path.GetFullPath(applicationPath);
         if (Directory.Exists(path))
             path = host.IsMacOS ? Path.Combine(path, "Contents", "MacOS", ApplicationName) : Path.Combine(path, ApplicationName + ".exe");
         if (!File.Exists(path))
-            throw new FileNotFoundException($"AquesTalkPlayerが見つかりません: {applicationPath}。「設定」の「音声エンジンを探す」でアプリを選び直してください。", path);
+            throw new FileNotFoundException($"AquesTalkPlayerが見つかりません: {applicationPath}。「設定」の「音声エンジンを探す」でアプリの場所を指定し直してください。", path);
         return path;
     }
 
@@ -142,16 +142,18 @@ internal static partial class AquesTalkPlayerEngine
         ? Path.Combine(host.Home, "Library", "Application Support", ApplicationName, "params.json")
         : Path.Combine(Path.GetDirectoryName(executable)!, ApplicationName + ".preset");
 
-    public static VoiceEngineConnection Discover(string applicationPath, VoiceEngineConnection? registered = null) =>
-        Discover(applicationPath, registered, Host);
+    // The app registered in Beutl, of which there is one.
+    internal static VoiceEngineConnection? Registered() =>
+        VoiceEngineStore.Load().FirstOrDefault(connection => connection.IsAquesTalkPlayer);
 
-    internal static VoiceEngineConnection Discover(string applicationPath, VoiceEngineConnection? registered, AquesTalkPlayerHost host)
+    public static VoiceEngineConnection Discover(string applicationPath, VoiceEngineConnection? registered = null)
     {
+        var host = Host;
         string executable = ResolveExecutable(applicationPath, host);
         string presetPath = PresetPath(executable, host);
         AquesTalkPlayerPreset[] presets;
         try { presets = AquesTalkPlayerPresets.Load(presetPath); }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or DecoderFallbackException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException)
         {
             throw new InvalidOperationException($"AquesTalkPlayerのプリセットを読み込めませんでした（{presetPath}）: {ex.Message}", ex);
         }
@@ -186,24 +188,21 @@ internal static partial class AquesTalkPlayerEngine
     private static partial Regex BundleVersion();
 
     // Without an analysis the app reads the text itself; with one, it reads the analysis as phonetic symbols.
-    public static Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
-        CancellationToken cancellationToken) =>
-        SynthesizeAsync(text, settings, query, Host, cancellationToken);
-
-    internal static async Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
-        AquesTalkPlayerHost host, CancellationToken cancellationToken)
+    public static async Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
+        CancellationToken cancellationToken)
     {
+        var host = Host;
         string spoken = query == null ? text : AquesTalkPhonetic.FromQuery(query);
         if (string.IsNullOrEmpty(settings.SpeakerUuid)) throw new InvalidOperationException("AquesTalkPlayerのプリセットを選択してください。");
-        var registered = VoiceEngineStore.Load().FirstOrDefault(connection => connection.IsAquesTalkPlayer)
-            ?? throw new InvalidOperationException("AquesTalkPlayerが登録されていません。「設定」の「音声エンジンを探す」から追加してください。");
+        var registered = Registered()
+            ?? throw new InvalidOperationException("AquesTalkPlayerが登録されていません。「設定」の「音声エンジンを探す」で「読み上げで使う」を押してください。");
         string executable = ResolveExecutable(registered.ApplicationPath, host);
         await s_gate.WaitAsync(cancellationToken);
         try
         {
             // The presets only describe the voice; the command line decides whether the preset exists.
             var connection = registered;
-            try { connection = await Task.Run(() => Discover(registered.ApplicationPath, registered, host), cancellationToken); }
+            try { connection = Discover(registered.ApplicationPath, registered); }
             catch (InvalidOperationException ex) { s_logger.LogWarning(ex, "Could not read the AquesTalkPlayer presets"); }
             var preset = connection.Voices.FirstOrDefault(item => item.SpeakerUuid == settings.SpeakerUuid);
             // Values tuned in Beutl reach the app through a temporary preset; untuned, the preset speaks as it is.
@@ -218,10 +217,9 @@ internal static partial class AquesTalkPlayerEngine
             return new(wave, query, json, settings.WithSupportedTuning() with
             {
                 EngineName = connection.Name, EngineUuid = "", EngineVersion = connection.Version,
-                SpeakerName = preset?.Name ?? settings.SpeakerName,
-                StyleName = voice != null ? $"{voice.Engine} {voice.Voice}".Trim() : settings.StyleName,
+                SpeakerName = preset?.Name ?? settings.SpeakerName, StyleName = voice?.StyleName ?? settings.StyleName,
                 ModelVersion = preset?.Version ?? settings.ModelVersion, AquesTalkPlayerVoice = voice
-            });
+            }, Resampling);
         }
         finally { s_gate.Release(); }
     }

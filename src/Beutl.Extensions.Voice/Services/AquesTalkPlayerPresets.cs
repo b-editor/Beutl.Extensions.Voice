@@ -1,5 +1,7 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Beutl.Extensions.Voice.Models;
 
 namespace Beutl.Extensions.Voice.Services;
@@ -10,12 +12,13 @@ internal sealed record AquesTalkPlayerPreset(string Name, AquesTalkPlayerVoice V
     public VoiceMetadata ToVoice() => new()
     {
         Name = Name, SpeakerUuid = Name, Version = "", AquesTalkPlayer = Voice,
-        Styles = [new VoiceStyle { Id = 0, Name = $"{Voice.Engine} {Voice.Voice}".Trim() }]
+        Styles = [new VoiceStyle { Id = 0, Name = Voice.StyleName }]
     };
 }
 
 // The Windows version keeps its presets in a Shift_JIS CSV next to the executable. The macOS version keeps them as JSON
-// in its Application Support folder, and both use the presets they ship with until one is first saved.
+// in its Application Support folder, and both use the presets they ship with until one is first saved. Presets are read
+// and written here with the same keys and columns.
 internal static class AquesTalkPlayerPresets
 {
     internal static readonly Encoding ShiftJis = CodePagesEncodingProvider.Instance.GetEncoding(932)!;
@@ -89,7 +92,7 @@ internal static class AquesTalkPlayerPresets
                 FlatReading = item.TryGetProperty("boyomi", out var flat) && flat.ValueKind == JsonValueKind.True,
                 Speed = Number(item, "spd"), Volume = Number(item, "vol"), Height = Number(item, "pit"),
                 Accent = Number(item, "acc"), Quality = Number(item, "lmd"), FrequencyScale = Number(item, "fsc")
-            }, Text(item, "memo") ?? ""));
+            }));
         }
         return presets;
 
@@ -99,6 +102,13 @@ internal static class AquesTalkPlayerPresets
         static int Number(JsonElement item, string name) =>
             item.TryGetProperty(name, out var value) && value.TryGetInt32(out int number) ? number : 100;
     }
+
+    internal static JsonObject ToJson(string name, AquesTalkPlayerVoice voice, string memo) => new()
+    {
+        ["fsc"] = voice.FrequencyScale, ["engine"] = voice.Engine, ["spd"] = voice.Speed, ["voice"] = voice.Voice,
+        ["vol"] = voice.Volume, ["lmd"] = voice.Quality, ["acc"] = voice.Accent, ["name"] = name, ["memo"] = memo,
+        ["pit"] = voice.Height, ["boyomi"] = voice.FlatReading
+    };
 
     // Columns: name, flat reading, engine, voice type, speed, volume, height, accent, voice quality, pitch and memo,
     // after a row naming them.
@@ -113,11 +123,34 @@ internal static class AquesTalkPlayerPresets
                 Engine = fields[2].Trim(), Voice = fields[3].Trim(), FlatReading = IsSet(fields[1]),
                 Speed = Number(4), Volume = Number(5), Height = Number(6), Accent = Number(7), Quality = Number(8),
                 FrequencyScale = Number(9)
-            }, fields.Count > 10 ? fields[10].Trim() : ""));
+            }));
 
             int Number(int index) => fields.Count > index && int.TryParse(fields[index].Trim(), out int value) ? value : 100;
         }
         return presets;
+    }
+
+    // A row in the form of a row the app wrote, keeping the columns this does not know and leaving the memo empty.
+    internal static List<string> ToCsvFields(List<string> template, string name, AquesTalkPlayerVoice voice)
+    {
+        var fields = template.ToList();
+        fields[0] = name;
+        fields[1] = Flag(voice.FlatReading, fields[1].Trim());
+        fields[2] = voice.Engine;
+        fields[3] = voice.Voice;
+        int[] values = [voice.Speed, voice.Volume, voice.Height, voice.Accent, voice.Quality, voice.FrequencyScale];
+        for (int i = 0; i < values.Length && 4 + i < fields.Count; i++) fields[4 + i] = values[i].ToString(CultureInfo.InvariantCulture);
+        if (fields.Count > 10) fields[10] = "";
+        return fields;
+
+        // In the same form as the app's own rows: 0/1 or true/false.
+        static string Flag(bool value, string sample) => sample switch
+        {
+            "0" or "1" => value ? "1" : "0",
+            _ when sample.Length > 1 && sample.All(char.IsUpper) => value ? "TRUE" : "FALSE",
+            _ when sample.Length > 0 && char.IsUpper(sample[0]) => value ? "True" : "False",
+            _ => value ? "true" : "false"
+        };
     }
 
     internal static bool IsPresetRow(List<string> fields) =>

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
+using Beutl.Audio.Effects;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -85,7 +86,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
-            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1);
+            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1, output.Resampling);
             _historyManager.ExecuteInTransaction(() =>
                 VoicePlacement.Place(_scene, element, lipSyncTarget, lipSyncPreset, subtitleTemplate));
             committed = true;
@@ -131,10 +132,13 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         }
     }
 
-    // AquesTalkPlayer's speech plays converted to the project's rate as its resampling effect converts it on the timeline.
-    internal byte[] PreviewWave(VoiceSynthesisResult output) => output.Settings.IsAquesTalkPlayer
-        ? VoiceWave.ResampleLagrange(output.Wave, _scene.FindHierarchicalParent<Project>().GetSampleRate())
-        : output.Wave;
+    // Speech that is resampled on the timeline plays converted to the project's rate in the same way.
+    internal byte[] PreviewWave(VoiceSynthesisResult output) => output.Resampling switch
+    {
+        null => output.Wave,
+        ResamplingMethod.Lagrange => VoiceWave.ResampleLagrange(output.Wave, _scene.FindHierarchicalParent<Project>().GetSampleRate()),
+        var method => throw new NotSupportedException($"試聴では{method}でのリサンプリングに対応していません。")
+    };
 
     public void WriteToJson(JsonObject json)
     {

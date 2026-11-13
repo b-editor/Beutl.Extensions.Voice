@@ -12,6 +12,8 @@
                 <icons:FluentIcon Icon="Dismiss" FontSize="16" />
             </Button>
         </Grid>
+        <TextBlock Text="インストール済みのアプリを探して、読み上げで使えるようにします。" TextWrapping="Wrap" FontSize="12"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
         <Button x:Name="SearchEnginesButton" Content="再検索" Command="{Binding Refresh}" IsEnabled="{Binding !IsBusy.Value}" />
         <ProgressBar Height="3" IsIndeterminate="True" IsVisible="{Binding IsBusy.Value}" />
         <TextBlock Text="{Binding Message.Value}" TextWrapping="Wrap" FontSize="12"
@@ -22,16 +24,27 @@
                     <Border BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
                             CornerRadius="8" Padding="12" Margin="0,0,0,8">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="{Binding Engine.Name}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding Engine.Url}" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       IsVisible="{Binding Engine.Url, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="{Binding Engine.Name}" FontWeight="SemiBold" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                <Border x:Name="RegisteredBadge" Grid.Column="1" IsVisible="{Binding IsRegistered.Value}"
+                                        CornerRadius="4" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                        ToolTip.Tip="「読み上げ」のエンジンに登録されています">
+                                    <TextBlock Text="登録済み" FontSize="11" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Border>
+                            </Grid>
                             <TextBlock Text="{Binding Status.Value}" FontSize="12" TextWrapping="Wrap" />
-                            <TextBlock Text="{Binding ApplicationPath.Value}" FontSize="12" TextTrimming="CharacterEllipsis"
+                            <TextBlock Text="{Binding Engine.Url, StringFormat='接続先: {0}'}" FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                       IsVisible="{Binding Engine.Url, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Text="{Binding ApplicationPath.Value, StringFormat='アプリ: {0}'}" FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                        ToolTip.Tip="{Binding ApplicationPath.Value}" IsVisible="{Binding ApplicationPath.Value, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <WrapPanel Orientation="Horizontal">
                                 <Button x:Name="UseEngineButton" Content="{Binding ActionText.Value}" IsEnabled="{Binding CanUse.Value}"
                                         Click="UseEngineClick" Classes="accent" Margin="0,0,8,4" />
-                                <Button x:Name="SelectApplicationButton" Content="アプリを選択…" Click="SelectApplicationClick" Margin="0,0,0,4" />
+                                <Button x:Name="SelectApplicationButton" Content="アプリの場所を指定…" Click="SelectApplicationClick" Margin="0,0,0,4"
+                                        ToolTip.Tip="見つからないときや、別の場所のアプリを使うときに指定します" />
                             </WrapPanel>
                         </StackPanel>
                     </Border>

@@ -31,6 +31,11 @@ public sealed record VoiceSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public AquesTalkPlayerVoice? AquesTalkPlayerVoice { get; init; }
 
+    // AquesTalkPlayer reads VOICEVOX Core's analysis of the text, whose accents can be edited, instead of reading the
+    // text itself.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AnalyzeWithVoiceVox { get; init; }
+
     [JsonIgnore]
     public bool IsAquesTalkPlayer => EngineId == AquesTalkPlayerEngineId;
 
@@ -45,7 +50,7 @@ public sealed record VoiceSettings
             SpeedScale = 1, PitchScale = 0, IntonationScale = 1, VolumeScale = 1, TempoDynamicsScale = null,
             AquesTalkPlayerVoice = AquesTalkPlayerVoice?.Clamped()
         }
-        : AquesTalkPlayerVoice == null ? this : this with { AquesTalkPlayerVoice = null };
+        : AquesTalkPlayerVoice == null && !AnalyzeWithVoiceVox ? this : this with { AquesTalkPlayerVoice = null, AnalyzeWithVoiceVox = false };
 
     public void ApplyTo(AudioQueryModel query, VoiceEngineCapabilities? capabilities = null)
     {
@@ -61,7 +66,7 @@ public sealed record VoiceSettings
 
     public string Describe() =>
         $"{EngineName} {EngineVersion} / {SpeakerName} / {StyleName}\n" +
-        (IsAquesTalkPlayer ? AquesTalkPlayerVoice is { } voice ? voice.Describe() + "\n" : "" :
+        (IsAquesTalkPlayer ? DescribeAquesTalkPlayer() is { Length: > 0 } values ? values + "\n" : "" :
             $"話速 {SpeedScale:G}・音高 {PitchScale:G}・{(TempoDynamicsScale.HasValue ? "感情" : "抑揚")} {IntonationScale:G}・音量 {VolumeScale:G}\n") +
         $"前無音 {PrePhonemeLength:G} 秒・後無音 {PostPhonemeLength:G} 秒" +
         (TempoDynamicsScale.HasValue && !IsAquesTalkPlayer ? $"・緩急 {TempoDynamicsScale:G}" : "");
@@ -76,6 +81,8 @@ public sealed record VoiceSettings
         bool tuning = !IsAquesTalkPlayer || !current.IsAquesTalkPlayer;
         if (!tuning && AquesTalkPlayerVoice != current.AquesTalkPlayerVoice)
             differences.Add($"AquesTalkPlayer: {DescribeVoice(AquesTalkPlayerVoice)} → {DescribeVoice(current.AquesTalkPlayerVoice)}");
+        if (!tuning && AnalyzeWithVoiceVox != current.AnalyzeWithVoiceVox)
+            differences.Add($"VOICEVOXで解析: {OnOff(AnalyzeWithVoiceVox)} → {OnOff(current.AnalyzeWithVoiceVox)}");
         if (tuning)
         {
             Add("話速", SpeedScale, current.SpeedScale);
@@ -95,6 +102,11 @@ public sealed record VoiceSettings
         }
 
         static string DescribeVoice(AquesTalkPlayerVoice? voice) =>
-            voice == null ? "プリセットのまま" : $"{voice.Engine} {voice.Voice}・{voice.Describe()}";
+            voice == null ? "プリセットのまま" : $"{voice.StyleName}・{voice.Describe()}";
+
+        static string OnOff(bool value) => value ? "オン" : "オフ";
     }
+
+    private string DescribeAquesTalkPlayer() => string.Join("・",
+        new[] { AquesTalkPlayerVoice?.Describe(), AnalyzeWithVoiceVox ? "VOICEVOXで解析" : null }.OfType<string>());
 }

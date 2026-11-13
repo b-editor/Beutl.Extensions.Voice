@@ -191,7 +191,8 @@ public class AquesTalkPlayerTests
             + "れいむ,0,AquesTalk1,f2,100,100,100,100,100,100,\r\n";
         File.WriteAllBytes(Path.Combine(folder, "AquesTalkPlayer.preset"), CodePagesEncodingProvider.Instance.GetEncoding(932)!.GetBytes(csv));
 
-        var connection = AquesTalkPlayerEngine.Discover(folder, null, new("windows", _home));
+        AquesTalkPlayerEngine.Host = new("windows", _home);
+        var connection = AquesTalkPlayerEngine.Discover(folder);
 
         Assert.Multiple(() =>
         {
@@ -336,17 +337,21 @@ public class AquesTalkPlayerTests
             Assert.That(tuned.WithSupportedTuning().AquesTalkPlayerVoice!.Speed, Is.EqualTo(300), "Values stay within the app's range.");
             Assert.That(tuned.WithSupportedTuning().Describe().Split('\n')[1], Is.EqualTo("話速 300・音量 100・高さ 77・アクセント 100・声質 100・音程 100・棒読み"));
             Assert.That(supported.DescribeDifferences(tuned), Does.StartWith("AquesTalkPlayer: プリセットのまま → AquesTalk10 F1E"));
-            Assert.That(JsonSerializer.Serialize(settings), Does.Not.Contain(nameof(VoiceSettings.IsAquesTalkPlayer)).And.Not.Contain(nameof(VoiceSettings.AquesTalkPlayerVoice)));
+            Assert.That(JsonSerializer.Serialize(settings), Does.Not.Contain(nameof(VoiceSettings.IsAquesTalkPlayer))
+                .And.Not.Contain(nameof(VoiceSettings.AquesTalkPlayerVoice)).And.Not.Contain(nameof(VoiceSettings.AnalyzeWithVoiceVox)));
+            Assert.That((tuned with { AnalyzeWithVoiceVox = true }).WithSupportedTuning().Describe().Split('\n')[1], Does.EndWith("・棒読み・VOICEVOXで解析"));
+            Assert.That((supported with { AnalyzeWithVoiceVox = true }).Describe().Split('\n')[1], Is.EqualTo("VOICEVOXで解析"));
+            Assert.That(supported.DescribeDifferences(supported with { AnalyzeWithVoiceVox = true }), Is.EqualTo("VOICEVOXで解析: オフ → オン"));
             Assert.That(JsonSerializer.Deserialize<VoiceSettings>(JsonSerializer.Serialize(tuned)), Is.EqualTo(tuned));
         });
         var other = new VoiceSettings { SpeedScale = 1.5 };
         Assert.That(other.WithSupportedTuning(), Is.SameAs(other));
-        Assert.That((other with { AquesTalkPlayerVoice = new() }).WithSupportedTuning().AquesTalkPlayerVoice, Is.Null,
-            "Other engines have none of AquesTalkPlayer's values.");
+        Assert.That((other with { AquesTalkPlayerVoice = new(), AnalyzeWithVoiceVox = true }).WithSupportedTuning(),
+            Is.EqualTo(other), "Other engines have none of AquesTalkPlayer's values or options.");
     }
 
     [Test]
-    public void Analysis_needs_voicevox_core()
+    public async Task Analysis_needs_voicevox_core_and_moved_accents_need_no_engine()
     {
         var previous = TtsLoader.VoiceVoxLoader.Value;
         TtsLoader.VoiceVoxLoader.Value = null;
@@ -354,8 +359,11 @@ public class AquesTalkPlayerTests
         {
             Assert.That(() => VoiceSynthesisService.CreateQueryAsync("テスト", Voice("れいむ")),
                 Throws.TypeOf<InvalidOperationException>().With.Message.Contains("VOICEVOX Core"));
-            Assert.That(() => VoiceSynthesisService.ReplaceMoraPitchAsync([], Voice("れいむ")),
-                Throws.TypeOf<InvalidOperationException>().With.Message.Contains("VOICEVOX Core"));
+            Assert.That(() => VoiceSynthesisService.SynthesizeAsync("テスト", Voice("れいむ") with { AnalyzeWithVoiceVox = true }, null),
+                Throws.TypeOf<InvalidOperationException>().With.Message.Contains("VOICEVOX Core"), "The analysis is made when there is none.");
+            // AquesTalkPlayer takes no pitches to recalculate for a moved accent.
+            List<AccentPhraseModel> phrases = [Phrase("ハ:h:a シ:sh:i", 1)];
+            Assert.That(await VoiceSynthesisService.ReplaceMoraPitchAsync(phrases, Voice("れいむ")), Is.SameAs(phrases));
         }
         finally { TtsLoader.VoiceVoxLoader.Value = previous; }
     }
@@ -388,21 +396,48 @@ public class AquesTalkPlayerTests
     }
 
     [Test, Platform(Exclude = "Win")]
+    public void Only_a_voice_type_of_the_app_is_written_to_its_preset_file()
+    {
+        WritePresets(Preset("れいむ", "AquesTalk1", "f1", flat: true));
+        byte[] before = File.ReadAllBytes(PresetPath);
+        Register(FakeApp("speak"));
+        // A path the app could look a voice up by, rows and columns for the Windows version, and names it does not have.
+        foreach (var (engine, voice) in new[] { ("AquesTalk1", "../f1"), ("AquesTalk1", "f1\r\nBeutl,1"), ("AquesTalk1", "f1\n"),
+                     ("AquesTalk1", "f1,1"), ("AquesTalk1", ""), ("AquesTalk9", "f1") })
+        {
+            var tuned = new AquesTalkPlayerVoice { Engine = engine, Voice = voice, Speed = 150 };
+            Assert.That(() => VoiceSynthesisService.SynthesizeAsync("テスト", Voice("れいむ") with { AquesTalkPlayerVoice = tuned }, null),
+                Throws.InvalidOperationException.With.Message.Contains("声種"), voice);
+        }
+        Assert.That(File.ReadAllBytes(PresetPath), Is.EqualTo(before));
+        Assert.That(File.Exists(ArgumentsPath), Is.False, "The app is not run.");
+        Assert.That(new AquesTalkPlayerVoice { Engine = "AquesTalk2", Voice = "aq_yukkuri" }.HasValidVoiceType, Is.True);
+        Assert.That(AquesTalkPlayerPresets.Defaults.Select(x => x.Voice), Has.All.Matches<AquesTalkPlayerVoice>(x => x.HasValidVoiceType));
+    }
+
+    [Test, Platform(Exclude = "Win")]
     public async Task An_analysis_speaks_as_phonetic_symbols_and_is_kept_with_the_speech()
     {
         WritePresets(Preset("れいむ", "AquesTalk1", "f1", flat: true));
         Register(FakeApp("speak"));
         var query = new AudioQueryModel { AccentPhrases = [Phrase("ハ:h:a シ:sh:i オ:-:o", 1), Phrase("ツ:ts:U カ:k:a ウ:-:u", 3)] };
 
-        var output = await VoiceSynthesisService.SynthesizeAsync("箸を使う", Voice("れいむ"), query);
+        var output = await VoiceSynthesisService.SynthesizeAsync("箸を使う", Voice("れいむ") with { AnalyzeWithVoiceVox = true }, query);
 
         Assert.That(ReadArguments()[..4], Is.EqualTo(new[] { "-P", "れいむ", "-T", "#>は'しお/つかう。" }));
         Assert.That(output.Query, Is.SameAs(query));
         Assert.That(JsonSerializer.Deserialize<AudioQueryModel>(output.Json)!.AccentPhrases[0].Accent, Is.EqualTo(1));
+        Assert.That(output.Settings.AnalyzeWithVoiceVox, Is.True);
+
+        // Without VOICEVOX's analysis chosen, the app reads the text itself.
+        var itself = await VoiceSynthesisService.SynthesizeAsync("箸を使う", Voice("れいむ"), query);
+        Assert.That(ReadArguments()[3], Is.EqualTo("箸を使う"));
+        Assert.That(itself.Query, Is.Null);
+        Assert.That(itself.Json, Is.Empty);
     }
 
     [AvaloniaTest, Platform(Exclude = "Win")]
-    public async Task Speech_tab_reads_the_text_itself_until_it_is_analyzed()
+    public async Task Speech_tab_reads_with_voicevox_analysis_only_when_chosen()
     {
         WritePresets(Preset("れいむ", "AquesTalk1", "f1", flat: true));
         Register(FakeApp("speak"));
@@ -410,10 +445,16 @@ public class AquesTalkPlayerTests
         using var model = new TtsTabViewModel(new(), editor);
         model.SelectedEngine.Value = model.Engines.Value.Single(x => x.IsAquesTalkPlayer);
         model.SelectedVoice.Value = model.Voice.Value.Single();
-        Assert.That(model.EngineCapabilities.Value.EditAccent, Is.True);
+        Assert.That(model.EngineCapabilities.Value, Is.EqualTo(AquesTalkPlayerEngine.Capabilities));
+        Assert.That(model.EngineCapabilities.Value is { EditAccent: true, EditPitch: false }, Is.True);
+        Assert.That(model.CanEditAccent.Value, Is.False, "The app decides the reading until VOICEVOX's analysis is chosen.");
+        model.AquesTalkAnalyzeWithVoiceVox.Value = true;
+        Assert.That(model.CanEditAccent.Value, Is.True);
         model.Text.Value = "箸を使う";
-        // What "テキストを解析" publishes, with the accent then moved.
-        model.AudioQuery.Value = new AudioQueryModel { AccentPhrases = [Phrase("ハ:h:a シ:sh:i オ:-:o", 1), Phrase("ツ:ts:U カ:k:a ウ:-:u", 3)] };
+        // What "テキストを解析" publishes, with the accent then moved without VOICEVOX Core, which the tests do not load.
+        model.AudioQuery.Value = new AudioQueryModel { AccentPhrases = [Phrase("ハ:h:a シ:sh:i オ:-:o", 2), Phrase("ツ:ts:U カ:k:a ウ:-:u", 3)] };
+        await model.ChangeAccent(0, 1);
+        Assert.That(model.AudioQuery.Value!.AccentPhrases[0].Accent, Is.EqualTo(1), model.Message.Value);
 
         await model.Generate();
 
@@ -421,11 +462,15 @@ public class AquesTalkPlayerTests
         Assert.That(ReadArguments()[3], Is.EqualTo("#>は'しお/つかう。"));
         var generation = editor.Scene.Children.Single().Objects.OfType<TtsController>().Single().Generation.Value!;
         Assert.That(generation.AudioQueryJson, Is.Not.Empty, "Regenerating keeps the accents.");
+        Assert.That(generation.Settings.AnalyzeWithVoiceVox, Is.True);
 
         model.Text.Value = "箸を使います";
         Assert.That(model.AudioQuery.Value, Is.Null, "New text drops the analysis of the old.");
+        model.AquesTalkAnalyzeWithVoiceVox.Value = false;
         await model.Generate();
+        Assert.That(model.Message.Value, Is.Empty);
         Assert.That(ReadArguments()[3], Is.EqualTo("箸を使います"));
+        Assert.That(editor.Scene.Children.Last().Objects.OfType<TtsController>().Single().Generation.Value!.Settings.AnalyzeWithVoiceVox, Is.False);
     }
 
     [AvaloniaTest, Platform(Exclude = "Win")]
@@ -509,7 +554,8 @@ public class AquesTalkPlayerTests
         using var editor = Editor();
         using var model = new TtsTabViewModel(new(), editor);
         byte[] wave = Wave(8000, 0, 400, 0);
-        var aquesTalk = new VoiceSynthesisResult(wave, null, "", Voice("れいむ"));
+        // As AquesTalkPlayerEngine returns its speech.
+        var aquesTalk = new VoiceSynthesisResult(wave, null, "", Voice("れいむ"), AquesTalkPlayerEngine.Resampling);
         var http = new VoiceSynthesisResult(wave, null, "", new VoiceSettings { EngineId = "http-engine" });
 
         Assert.That(model.PreviewWave(http), Is.SameAs(wave), "Other engines play as they speak.");
@@ -636,7 +682,7 @@ public class AquesTalkPlayerTests
         string original = Path.Combine(_directory, "original.wav");
         File.WriteAllBytes(original, Wave(24000, 2400, 2400, 2400));
         var http = new VoiceSettings { EngineId = "http-engine", SpeakerUuid = "speaker", StyleId = 1 };
-        var element = VoiceElementFactory.Create(editor.Scene, original, new VoiceGeneration { Text = "元の本文", Settings = http }, MediaTime.Zero, 1);
+        var element = VoiceElementFactory.Create(editor.Scene, original, new VoiceGeneration { Text = "元の本文", Settings = http }, MediaTime.Zero, 1, null);
         editor.Scene.AddChild(element);
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
@@ -724,12 +770,13 @@ public class AquesTalkPlayerTests
             await model.Refresh();
             var entry = model.Engines.Single();
             Assert.That(entry.CanUse.Value, Is.False);
-            Assert.That(entry.Status.Value, Does.Contain("アプリを選択"));
+            Assert.That(entry.Status.Value, Does.Contain("場所を指定"));
+            Assert.That(entry.IsRegistered.Value, Is.False);
             found = bundle;
             await model.Refresh();
             Assert.That(entry.CanUse.Value, Is.True);
-            Assert.That(entry.Status.Value, Does.Contain("1.0.2（プリセット 2 件）"));
-            Assert.That(entry.ActionText.Value, Is.EqualTo("追加"));
+            Assert.That(entry.Status.Value, Does.Contain("1.0.2・プリセット 2 件）"));
+            Assert.That(entry.ActionText.Value, Is.EqualTo("読み上げで使う"));
             Assert.That(await model.Use(entry), Is.True, model.Message.Value);
             Assert.That(model.SelectedConnection!.IsAquesTalkPlayer, Is.True);
         }
@@ -744,7 +791,8 @@ public class AquesTalkPlayerTests
             await model.Refresh();
             var entry = model.Engines.Single();
             Assert.That(entry.ApplicationPath.Value, Is.EqualTo(bundle), "The registered app is kept over another copy.");
-            Assert.That(entry.ActionText.Value, Is.EqualTo("更新"));
+            Assert.That(entry.IsRegistered.Value, Is.True);
+            Assert.That(entry.ActionText.Value, Is.EqualTo("読み上げで使う"), "Using a registered app brings it up to date.");
             WritePresets(Preset("れいむ", "AquesTalk1", "f1", flat: true));
             Assert.That(await model.Use(entry), Is.True, model.Message.Value);
         }
@@ -776,11 +824,14 @@ public class AquesTalkPlayerTests
     {
         WritePresets(Preset("れいむ", "AquesTalk1", "f1", flat: true));
         var registered = Register(FakeApp("speak"));
-        // What an earlier version kept: the presets without their values.
+        // What an earlier version kept: the presets without their values, and what it could do then.
         VoiceEngineStore.UpdateMetadata(registered with
         {
+            Capabilities = new() { AdjustSpeed = false, AdjustPitch = false, AdjustIntonation = false, AdjustVolume = false, EditAccent = false },
             Voices = [.. registered.Voices.Select(x => new VoiceMetadata { Name = x.Name, Version = x.Version, SpeakerUuid = x.SpeakerUuid, Styles = x.Styles })]
         });
+        Assert.That(VoiceEngineStore.Load().Single().Capabilities, Is.EqualTo(AquesTalkPlayerEngine.Capabilities),
+            "What AquesTalkPlayer can do comes from this version.");
         using var editor = Editor();
         using var model = new TtsTabViewModel(new(), editor);
         model.SelectedEngine.Value = model.Engines.Value.Single(x => x.IsAquesTalkPlayer);
@@ -874,20 +925,26 @@ public class AquesTalkPlayerTests
             await Settle();
             string?[] VisibleSliders() => editorView.GetVisualDescendants().OfType<Slider>().Where(x => x.IsEffectivelyVisible)
                 .Select(x => Avalonia.Automation.AutomationProperties.GetName(x)).ToArray();
-            var flat = editorView.GetVisualDescendants().OfType<CheckBox>().Single(x => x.IsEffectivelyVisible);
+            var options = editorView.GetVisualDescendants().OfType<CheckBox>().Where(x => x.IsEffectivelyVisible).ToArray();
+            var flat = options[0];
+            var accent = editorView.FindControl<Expander>("AccentExpander")!;
             Assert.Multiple(() =>
             {
                 Assert.That(VisibleSliders(), Is.EqualTo(new[] { "話速", "音量", "音程", "前無音（秒）", "後無音（秒）" }),
                     "AquesTalk1 has no height, accent or voice quality.");
-                Assert.That(flat.Content, Is.EqualTo("棒読み"));
+                Assert.That(options.Select(x => x.Content), Is.EqualTo(new[] { "棒読み", "VOICEVOXで解析" }));
                 Assert.That(flat.IsChecked, Is.True);
-                Assert.That(editorView.FindControl<Expander>("AccentExpander")!.IsVisible, Is.True);
+                Assert.That(options[1].IsChecked, Is.False);
+                Assert.That(accent.IsVisible, Is.False, "The app decides the reading.");
             });
+            options[1].IsChecked = true;
+            await Settle();
+            Assert.That(speech.AquesTalkAnalyzeWithVoiceVox.Value, Is.True);
+            Assert.That(accent.IsVisible, Is.True);
             Capture(window, $"aquestalkplayer-speech-{width}");
 
             // Analyzed accents without the pitches, which AquesTalkPlayer does not take.
             editorView.FindControl<Expander>("TuningExpander")!.IsExpanded = false;
-            var accent = editorView.FindControl<Expander>("AccentExpander")!;
             accent.IsExpanded = true;
             speech.AudioQuery.Value = new AudioQueryModel
             {
@@ -896,6 +953,7 @@ public class AquesTalkPlayerTests
             await Settle();
             var panel = editorView.FindControl<AccentPhrasePanel>("AccentPanel")!;
             Assert.That(panel.ShowPitch, Is.False);
+            Assert.That(accent.Header, Is.EqualTo("アクセント"));
             Assert.That(panel.Bounds.Height, Is.LessThan(100));
             bool FlatNotice() => accent.GetVisualDescendants().OfType<TextBlock>()
                 .Any(x => x.IsEffectivelyVisible && x.Text == "棒読みでは、アクセントは読みに反映されません。");
@@ -929,7 +987,8 @@ public class AquesTalkPlayerTests
             Assert.That(card.Status.Value, Does.Contain("プリセット 2 件"));
             Capture(window, $"aquestalkplayer-settings-{width}");
             var use = content.GetVisualDescendants().OfType<Button>().Single(x => x.Name == "UseEngineButton");
-            Assert.That(use.Content, Is.EqualTo("更新"));
+            Assert.That(use.Content, Is.EqualTo("読み上げで使う"));
+            Assert.That(content.GetVisualDescendants().OfType<Border>().Single(x => x.Name == "RegisteredBadge").IsEffectivelyVisible, Is.True);
             use.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var deadline = DateTime.UtcNow.AddSeconds(5);
             while (speech.SelectedPage.Value != 0 && DateTime.UtcNow < deadline) await Settle();
@@ -958,14 +1017,16 @@ public class AquesTalkPlayerTests
             await Task.Run(loader.Load);
             TtsLoader.VoiceVoxLoader.Value = loader;
             // A preset reading flat (棒読み), such as れいむ, speaks every accent alike.
-            var settings = Voice("デフォルト");
-            var query = await VoiceSynthesisService.CreateQueryAsync("箸を使う", settings);
+            var settings = Voice("デフォルト") with { AnalyzeWithVoiceVox = true };
+            Assert.That(AquesTalkPhonetic.FromQuery(await VoiceSynthesisService.CreateQueryAsync("箸を使う", settings)),
+                Is.EqualTo("#>は'しお/つかう。"));
+            // Without an analysis given, one is made and kept with the speech.
+            var asAnalyzed = await VoiceSynthesisService.SynthesizeAsync("箸を使う", settings, null);
+            var query = asAnalyzed.Query!;
             Assert.That(AquesTalkPhonetic.FromQuery(query), Is.EqualTo("#>は'しお/つかう。"));
-            var asAnalyzed = await VoiceSynthesisService.SynthesizeAsync("箸を使う", settings, query);
 
-            // Moving the accent as the panel does draws it again and makes the app speak differently.
+            // Moving the accent, as the panel does, makes the app speak differently.
             query.AccentPhrases[0].Accent = 2;
-            query.AccentPhrases = await VoiceSynthesisService.ReplaceMoraPitchAsync(query.AccentPhrases, settings);
             Assert.That(AquesTalkPhonetic.FromQuery(query), Is.EqualTo("#>はし'お/つかう。"));
             var moved = await VoiceSynthesisService.SynthesizeAsync("箸を使う", settings, query);
             Assert.That(Samples(moved.Wave), Is.Not.EqualTo(Samples(asAnalyzed.Wave)));

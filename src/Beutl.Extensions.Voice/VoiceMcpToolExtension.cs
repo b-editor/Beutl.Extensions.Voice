@@ -73,8 +73,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
                 kind = engine.IsCore ? "core" : engine.IsAquesTalkPlayer ? "aquestalkplayer" : "http",
                 url = engine.IsCore || engine.IsAquesTalkPlayer ? null : engine.Url,
                 applicationPath = engine.IsAquesTalkPlayer ? engine.ApplicationPath : null,
-                engine.Version,
-                Capabilities = engine.IsAquesTalkPlayer ? AquesTalkPlayerEngine.Capabilities : engine.Capabilities,
+                engine.Version, engine.Capabilities,
                 isInstalled = engine.IsCore ? (bool?)(loader?.IsInstalled == true) : null,
                 isLoaded = engine.IsCore ? (bool?)(loader?.IsLoaded == true) : null
             }).ToArray()
@@ -100,9 +99,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             var registered = VoiceEngineStore.Load().FirstOrDefault(connection => connection.Id == engineId)
                 ?? throw new InvalidOperationException($"Voice engine '{engineId}' is not registered. Call voice_list_engines.");
             // AquesTalkPlayer's voices are its presets, read from the app's settings.
-            engine = registered.IsAquesTalkPlayer
-                ? await Task.Run(() => AquesTalkPlayerEngine.Discover(registered.ApplicationPath, registered), cancellationToken)
-                : await HttpVoiceEngine.DiscoverAsync(registered, cancellationToken);
+            engine = await VoiceSynthesisService.DiscoverAsync(registered, cancellationToken);
         }
         return Json(new
         {
@@ -156,7 +153,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
                 Text = request.Text, Settings = output.Settings, AudioQueryJson = output.Json,
                 PresetId = preset?.Id, PresetName = preset?.Name
             };
-            var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer);
+            var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer, output.Resampling);
             history.ExecuteInTransaction(() =>
             {
                 element.ZIndex.Value = PsdLipSyncPresets.FreeLayer(scene, element.Range, request.Layer);

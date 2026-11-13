@@ -10,9 +10,16 @@ namespace Beutl.Extensions.Voice.Views;
 
 public partial class VoiceEditorView : UserControl
 {
-    // AquesTalkPlayer takes the accents but not the pitches drawn from them.
-    public static readonly IValueConverter AccentPanelTip = new FuncValueConverter<bool, string>(aquesTalkPlayer => aquesTalkPlayer
-        ? "バーをクリックでアクセント位置を変更" : "ドラッグでピッチを調整、バーをクリックでアクセント位置を変更");
+    // An engine that takes the pitch of each mora edits it with the accents; AquesTalkPlayer takes the accents alone,
+    // analyzed by VOICEVOX.
+    public static readonly IValueConverter AccentHeader = Choose("アクセント / ピッチ", "アクセント");
+    public static readonly IValueConverter AccentPanelTip =
+        Choose("ドラッグでピッチを調整、バーをクリックでアクセント位置を変更", "バーをクリックでアクセント位置を変更");
+    public static readonly IValueConverter AccentHint =
+        Choose("解析すると、発音ごとのアクセントとピッチを編集できます。", "解析すると、アクセントの位置を編集できます。");
+
+    private static IValueConverter Choose(string whenTrue, string whenFalse) =>
+        new FuncValueConverter<bool, string>(value => value ? whenTrue : whenFalse);
 
     public VoiceEditorView()
     {

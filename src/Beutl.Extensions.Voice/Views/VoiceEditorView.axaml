@@ -106,8 +106,13 @@
                     <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Text="{Binding VolumeScale.Value, StringFormat={}{0:F2}}" />
                 </Grid>
                 <StackPanel x:Name="AquesTalkPlayerTuning" IsVisible="{Binding IsAquesTalkPlayer.Value}">
-                    <CheckBox Content="棒読み" IsChecked="{Binding AquesTalkFlatReading.Value, Mode=TwoWay}"
-                              AutomationProperties.Name="棒読み" ToolTip.Tip="アクセントを付けずに平板に読みます" />
+                    <WrapPanel>
+                        <CheckBox Content="棒読み" IsChecked="{Binding AquesTalkFlatReading.Value, Mode=TwoWay}" Margin="0,0,16,0"
+                                  AutomationProperties.Name="棒読み" ToolTip.Tip="アクセントを付けずに平板に読みます" />
+                        <CheckBox Content="VOICEVOXで解析" IsChecked="{Binding AquesTalkAnalyzeWithVoiceVox.Value, Mode=TwoWay}"
+                                  AutomationProperties.Name="VOICEVOXで解析"
+                                  ToolTip.Tip="読みとアクセントをVOICEVOXで解析します。アクセントを編集できます" />
+                    </WrapPanel>
                     <Grid ColumnDefinitions="72,*,44">
                         <TextBlock VerticalAlignment="Center" Text="話速" />
                         <Slider Grid.Column="1" Minimum="50" Maximum="300" TickFrequency="1" IsSnapToTickEnabled="True"
@@ -161,22 +166,14 @@
         </Expander>
         <Expander x:Name="AccentExpander" Theme="{StaticResource ToolTabExpanderTheme}"
                   HorizontalAlignment="Stretch" IsEnabled="{Binding IsEnabled.Value}"
-                  IsVisible="{Binding EngineCapabilities.Value.EditAccent}">
-            <Expander.Header>
-                <Panel>
-                    <TextBlock Text="アクセント / ピッチ" IsVisible="{Binding !IsAquesTalkPlayer.Value}" />
-                    <TextBlock Text="アクセント" IsVisible="{Binding IsAquesTalkPlayer.Value}" />
-                </Panel>
-            </Expander.Header>
+                  Header="{Binding EngineCapabilities.Value.EditPitch, Converter={x:Static views:VoiceEditorView.AccentHeader}}"
+                  IsVisible="{Binding CanEditAccent.Value}">
             <StackPanel Margin="8" Spacing="8">
                 <Button Content="テキストを解析" Command="{Binding CreateQuery}"
                         ToolTip.Tip="テキストからアクセントを解析し直します。手動のアクセント編集は置き換わります。" />
-                <Panel IsVisible="{Binding !HasAudioQuery.Value}">
-                    <TextBlock IsVisible="{Binding !IsAquesTalkPlayer.Value}" Text="解析すると、発音ごとのアクセントとピッチを編集できます。"
-                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                    <TextBlock IsVisible="{Binding IsAquesTalkPlayer.Value}" Text="VOICEVOXで解析すると、アクセントの位置を編集できます。解析しないときはAquesTalkPlayerが読みを決めます。"
-                               TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                </Panel>
+                <TextBlock IsVisible="{Binding !HasAudioQuery.Value}"
+                           Text="{Binding EngineCapabilities.Value.EditPitch, Converter={x:Static views:VoiceEditorView.AccentHint}}"
+                           TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 <TextBlock Text="棒読みでは、アクセントは読みに反映されません。" TextWrapping="Wrap" FontSize="12"
                            Foreground="{DynamicResource SystemFillColorCautionBrush}">
                     <TextBlock.IsVisible>
@@ -190,9 +187,9 @@
                               IsVisible="{Binding HasAudioQuery.Value}">
                     <!-- Without its pitches the panel is as tall as its accent bars. -->
                     <views:AccentPhrasePanel x:Name="AccentPanel"
-                                             ShowPitch="{Binding !IsAquesTalkPlayer.Value}"
+                                             ShowPitch="{Binding EngineCapabilities.Value.EditPitch}"
                                              IsEnabled="{Binding !IsGenerating.Value}"
-                                             ToolTip.Tip="{Binding IsAquesTalkPlayer.Value, Converter={x:Static views:VoiceEditorView.AccentPanelTip}}"
+                                             ToolTip.Tip="{Binding EngineCapabilities.Value.EditPitch, Converter={x:Static views:VoiceEditorView.AccentPanelTip}}"
                                              AccentPhrases="{Binding AudioQuery.Value.AccentPhrases}"
                                              AccentPhrasesChanged="OnAccentPhrasesChanged" AccentChanged="OnAccentChanged" />
                 </ScrollViewer>
