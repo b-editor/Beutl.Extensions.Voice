@@ -13,7 +13,8 @@ namespace Beutl.Extensions.Voice.Services;
 // Places speech downloaded from a text-to-speech site as the speech tab's Add button places generated speech.
 internal sealed class WebVoiceImport(
     Func<string> storePath,
-    Func<WebVoiceAssignmentViewModel, CancellationToken, Task<WebVoiceAssignment?>> chooseAssignment)
+    Func<WebVoiceAssignmentViewModel, CancellationToken, Task<WebVoiceAssignment?>> chooseAssignment,
+    Func<IEnumerable<ObjectTemplateItem>>? templates = null)
 {
     public static WebVoiceImport Default { get; } = new(() => WebVoiceAssignmentStore.GlobalPath, WebVoiceAssignmentDialog.ShowAsync);
 
@@ -35,7 +36,7 @@ internal sealed class WebVoiceImport(
         if (assignment == null)
         {
             var model = new WebVoiceAssignmentViewModel(scene, site, page.VoiceId, page.VoiceName,
-                defaults: editor.FindToolTab<TtsTabViewModel>());
+                defaults: editor.FindToolTab<TtsTabViewModel>(), templates: templates);
             assignment = await chooseAssignment(model, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             // Declining keeps the saved file out of the timeline, as when the user cancels a download.
@@ -59,7 +60,7 @@ internal sealed class WebVoiceImport(
         var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1, resampling);
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
-        history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, null, assignment.LipSync, subtitle));
+        history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, assignment.LipSync, subtitle));
         return element;
     }
 }

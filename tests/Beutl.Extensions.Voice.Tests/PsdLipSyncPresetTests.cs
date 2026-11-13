@@ -26,10 +26,12 @@ public partial class PsdLipSyncTests
         target.LipSyncOffset.Value = At(0.4);
         var speech = Speech(editor.Scene, 1);
         PsdLipSync.Connect(speech.Controller, target);
-        using var model = new TtsTabViewModel(new(), editor);
+        // Saved while linked, the template still carries the link to this scene's speech.
+        var templates = new List<ObjectTemplateItem> { SavedTemplate(target, "立ち絵") };
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => templates);
         ConfigureSpeech(model, GenerationPreset());
         model.PresetName.Value = "立ち絵付き";
-        model.LipSync.SelectedId = target.Id.Value;
+        model.LipSync.SelectedId = templates[0].Id;
         model.AddPreset();
         Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:"));
         var preset = VoicePresetStore.Load(VoicePresetStore.GlobalPath).Single();
@@ -57,8 +59,9 @@ public partial class PsdLipSyncTests
         model.PresetName.Value = "別の立ち絵設定";
         model.RenamePreset();
         Assert.That(model.SelectedPreset.Value!.LipSync, Is.EqualTo(preset.LipSync));
-        model.LipSync.SelectedId = target.Id.Value;
-        Assert.That(model.PresetDetails.Value, Does.Contain("口パクの変更:").And.Contain(PsdLipSync.TargetName(target)));
+        templates.Add(SavedTemplate(target, "パーツを変えた立ち絵"));
+        model.LipSync.SelectedId = templates[1].Id;
+        Assert.That(model.PresetDetails.Value, Does.Contain("口パクの変更:").And.Contain("パーツを変えた立ち絵"));
         model.UpdatePreset();
         Assert.That(model.PresetDetails.Value, Does.Not.Contain("口パクの変更:"));
         Assert.That(model.SelectedPreset.Value!.LipSync!.ObjectJson, Does.Contain("変更したパーツ"));
@@ -413,9 +416,10 @@ public partial class PsdLipSyncTests
             editor.Scene.AddChild(blocker, ElementOverlapHandling.Allow);
             editor.Scene.Layers.Add(new TimelineLayer { ZIndex = { Value = 7 }, IsLocked = { Value = true } });
         }
-        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        var template = SavedTemplate(character, "会話の立ち絵");
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [template]);
         ConfigureSpeech(model, GenerationPreset());
-        model.LipSync.SelectedId = character.Id.Value;
+        model.LipSync.SelectedId = template.Id;
         model.Subtitles.SelectedId = Guid.Empty;
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);

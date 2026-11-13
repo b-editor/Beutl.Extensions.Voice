@@ -24,7 +24,6 @@ using Beutl.Media;
 using Beutl.Media.Source;
 using Beutl.ProjectSystem;
 using Beutl.Serialization;
-using Microsoft.Extensions.Logging.Abstractions;
 using TextBlock = Beutl.Graphics.Shapes.TextBlock;
 
 namespace Beutl.Extensions.Voice.Tests;
@@ -99,16 +98,7 @@ public class SubtitleTests
 
     private static Element Caption(Scene scene) => scene.EnumerateAllChildren<SubtitleController>().Single().FindHierarchicalParent<Element>()!;
 
-    private ObjectTemplateItem SavedTemplate(ICoreSerializable source, string name)
-    {
-        var item = ObjectTemplateItem.CreateFromInstance(source, name);
-        string path = Path.Combine(_directory, name + ".json");
-        var json = ObjectTemplateItem.ToJson(item);
-        json[nameof(ObjectTemplateItem.Json)] = CoreSerializer.SerializeToJsonObject(source,
-            new CoreSerializerOptions { BaseUri = new Uri(path) });
-        File.WriteAllText(path, json.ToJsonString());
-        return ObjectTemplateItem.FromJson(JsonNode.Parse(File.ReadAllText(path))!, name, path, NullLogger.Instance)!;
-    }
+    private ObjectTemplateItem SavedTemplate(ICoreSerializable source, string name) => TestTemplates.Save(_directory, source, name);
 
     private static TextBlock Body(Element caption)
     {

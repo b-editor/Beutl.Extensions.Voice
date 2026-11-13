@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using Beutl.Editor;
+using Beutl.Editor.Services;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -21,17 +22,22 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
     private bool _writingDraft;
 
     public TtsControllerViewModel(IPropertyEditorContext inner, PropertyEditorExtension extension, TtsController controller)
+        : this(inner, extension, controller, null) { }
+
+    internal TtsControllerViewModel(IPropertyEditorContext inner, PropertyEditorExtension extension, TtsController controller,
+        Func<IEnumerable<ObjectTemplateItem>>? templates)
     {
         Inner = inner;
         Extension = extension;
         _controller = controller;
+        _loadTemplates = templates;
         _lipSyncHistory.AddTo(_subscriptions);
         SelectedPreset.Subscribe(value => HasSelectedPreset.Value = value != null).AddTo(_subscriptions);
         controller.AppliedPreset.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Draft.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Generation.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
         controller.Text.GetObservable().Subscribe(_ => RefreshDetails()).AddTo(_subscriptions);
-        controller.LipSyncGroupId.GetObservable().Subscribe(_ => RefreshLipSyncTargets()).AddTo(_subscriptions);
+        controller.LipSyncGroupId.GetObservable().Subscribe(_ => RefreshLipSyncStatus()).AddTo(_subscriptions);
         Edited += SaveDraft;
         EditCompleted += () => _history?.Commit();
         RefreshPresets();
@@ -216,9 +222,10 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
         {
             _history = services.GetService(typeof(HistoryManager)) as HistoryManager;
             // The target expressions and the group can replay in either order during Undo/Redo.
-            _lipSyncHistory.Disposable = _history?.StateChanged.Subscribe(_ => RefreshLipSyncTargets());
+            _lipSyncHistory.Disposable = _history?.StateChanged.Subscribe(_ => RefreshLipSyncStatus());
             HasEditor.Value = _history != null;
-            RefreshLipSyncTargets();
+            RefreshLipSyncStatus();
+            RefreshLipSyncTemplates();
         }
     }
 }

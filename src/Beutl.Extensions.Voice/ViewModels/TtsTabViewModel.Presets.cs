@@ -152,7 +152,7 @@ public partial class TtsTabViewModel
             (preset.LipSync is { } lipSync ? $"\n口パク: {Path.GetFileNameWithoutExtension(lipSync.PsdPath)}" : "") +
             (preset.Subtitle is { } subtitle ? $"\n字幕: {subtitle.Name}" : "") + "\n\n" +
             (CaptureSettings() is { } current ? preset.Settings.DescribeDifferences(current) : "現在の話者が未選択です。") +
-            // A scene target is an explicit choice; a saved preset can also create or reuse a character.
+            // A template is an explicit choice; a saved preset can also create or reuse a character.
             (LipSync.SelectedId != null || LipSync.Preset != preset.LipSync
                 ? $"\n口パクの変更: {(preset.LipSync is { } saved ? Path.GetFileNameWithoutExtension(saved.PsdPath) : "連携しない")} → {LipSync.Selected.Value?.Name ?? "連携しない"}"
                 : "") +

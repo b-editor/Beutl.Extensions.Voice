@@ -10,6 +10,8 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
 using Beutl.Editor.Observers;
+using Beutl.Editor.Services;
+using Beutl.Extensions.PsdTachie.Graphics;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -68,16 +70,18 @@ public partial class PsdLipSyncTests
         using var editor = Editor();
         var target = Character(editor.Scene);
         target.LipSyncOffset.Value = At(0.35);
-        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        var template = SavedTemplate(target, "会話の立ち絵");
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [template]);
         ConfigureSpeech(model, GenerationPreset());
-        model.LipSync.SelectedId = target.Id.Value;
+        model.LipSync.SelectedId = template.Id;
         var state = new JsonObject();
         model.WriteToJson(state);
-        using var restored = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        Assert.That(state["LipSyncTemplateId"]!.GetValue<string>(), Is.EqualTo(template.Id.ToString()));
+        using var restored = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [template]);
         restored.Voice.Value = model.Voice.Value;
         restored.ReadFromJson(state);
         await Settle();
-        Assert.That(restored.LipSync.SelectedId, Is.EqualTo(target.Id.Value));
+        Assert.That(restored.LipSync.SelectedId, Is.EqualTo(template.Id));
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         editor.Time.Value = At(1);
@@ -85,6 +89,8 @@ public partial class PsdLipSyncTests
         editor.Time.Value = At(3.5);
         await restored.Generate();
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Count(), Is.EqualTo(2), restored.Message.Value);
+        // The template's PSD is already on the timeline, so speech links that character instead of adding another.
+        Assert.That(PsdLipSync.Targets(editor.Scene).Single(), Is.SameAs(target));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().All(x => x.LipSyncGroupId.Value == PsdLipSync.GroupOf(target)), Is.True);
         using (var render = new RenderProbe(editor.Scene))
         {
@@ -107,6 +113,42 @@ public partial class PsdLipSyncTests
         await restored.Generate();
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Count(), Is.EqualTo(3),
             "An existing link can accept another voice without editing the locked character. " + restored.Message.Value);
+
+        // A character an older version chose from the timeline is not brought back as a choice.
+        state.Remove("LipSyncTemplateId");
+        state["LipSyncTargetId"] = target.Id.Value.ToString();
+        restored.ReadFromJson(state);
+        Assert.That(restored.LipSync.SelectedId, Is.Null);
+        Assert.That(restored.LipSync.Choices.Value.Select(x => x.Id), Does.Not.Contain(target.Id.Value));
+    }
+
+    [AvaloniaTest]
+    public async Task A_template_adds_its_character_when_the_scene_has_none()
+    {
+        using var source = Editor();
+        var original = Character(source.Scene);
+        original.OpenThreshold.Value = -18;
+        // Saved from the timeline, the template is the whole element.
+        var template = SavedTemplate(original.FindHierarchicalParent<Element>()!, "会話の立ち絵");
+        using var editor = new TestEditor(Path.Combine(_directory, "other-scene.bescene"));
+        editor.Scene.FrameSize.Value = source.Scene.FrameSize.Value;
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => [template]);
+        ConfigureSpeech(model, GenerationPreset());
+        model.LipSync.SelectedId = template.Id;
+        using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
+        using var subscription = editor.History.Subscribe(observer);
+        editor.Time.Value = At(2);
+        await model.Generate();
+        var target = (PsdTachieDrawable)PsdLipSync.Targets(editor.Scene).Single();
+        var speech = editor.Scene.EnumerateAllChildren<TtsController>().Single();
+        Assert.That(target.Id.Value, Is.Not.EqualTo(original.Id.Value), model.Message.Value);
+        Assert.That(target.Source.Value!.FullName, Is.EqualTo(original.Source.Value!.FullName));
+        Assert.That(target.OpenThreshold.Value, Is.EqualTo(-18));
+        Assert.That(speech.LipSyncGroupId.Value, Is.EqualTo(PsdLipSync.GroupOf(target)).And.Not.EqualTo(Guid.Empty));
+        Assert.That(target.FindHierarchicalParent<Element>()!.Range, Is.EqualTo(speech.FindHierarchicalParent<Element>()!.Range));
+        Assert.That(editor.History.UndoCount, Is.EqualTo(1));
+        Assert.That(editor.History.Undo(), Is.True);
+        Assert.That(editor.Scene.Children, Is.Empty);
     }
 
     [AvaloniaTest]
@@ -167,37 +209,31 @@ public partial class PsdLipSyncTests
     }
 
     [AvaloniaTest]
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task Speech_generation_rechecks_a_removed_or_locked_target_and_can_retry(bool remove)
+    public async Task Speech_generation_rechecks_a_character_locked_during_synthesis_and_can_retry()
     {
         using var editor = Editor();
         var target = Character(editor.Scene);
         var element = target.FindHierarchicalParent<Element>()!;
-        bool changeTarget = true;
+        var template = SavedTemplate(target, "会話の立ち絵");
+        bool lockTarget = true;
         using var model = new TtsTabViewModel(new(), editor, (text, settings, _) =>
         {
-            if (changeTarget)
-            {
-                if (remove) editor.Scene.RemoveChild(element);
-                else element.IsLocked.Value = true;
-            }
+            if (lockTarget) element.IsLocked.Value = true;
             return Synthesize(text, settings);
-        });
+        }, () => [template]);
         ConfigureSpeech(model, GenerationPreset());
-        model.LipSync.SelectedId = target.Id.Value;
+        model.LipSync.SelectedId = template.Id;
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         await model.Generate();
-        Assert.That(model.Message.Value, Does.Contain(remove ? "見つかりません" : "ロック"));
+        Assert.That(model.Message.Value, Does.Contain("ロック"));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>(), Is.Empty);
         Assert.That(target.LipSyncAudio.Expression, Is.Null);
         Assert.That(Directory.GetFiles(Path.Combine(_directory, "resources", "tts")), Is.Empty);
-        Assert.That(model.LipSync.SelectedId, Is.EqualTo(target.Id.Value));
-        Assert.That(editor.History.UndoCount, Is.EqualTo(1), "The user's target edit remains, but failed placement does not.");
-        changeTarget = false;
-        if (remove) editor.Scene.AddChild(element);
-        else element.IsLocked.Value = false;
+        Assert.That(model.LipSync.SelectedId, Is.EqualTo(template.Id));
+        Assert.That(editor.History.UndoCount, Is.EqualTo(1), "The user's lock remains, but failed placement does not.");
+        lockTarget = false;
+        element.IsLocked.Value = false;
         await model.Generate();
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Single().LipSyncGroupId.Value,
             Is.EqualTo(PsdLipSync.GroupOf(target)).And.Not.EqualTo(Guid.Empty));
@@ -251,7 +287,7 @@ public partial class PsdLipSyncTests
     [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Generation_views_select_targets_and_keep_actions_visible(int width, bool light)
+    public async Task Generation_views_select_templates_and_keep_actions_visible(int width, bool light)
     {
         using var editor = Editor();
         var first = Character(editor.Scene);
@@ -259,7 +295,8 @@ public partial class PsdLipSyncTests
         second.FindHierarchicalParent<Element>()!.Start.Value = At(10);
         var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
-        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        var templates = new List<ObjectTemplateItem>();
+        using var model = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings), () => templates);
         ConfigureSpeech(model, preset);
         ConfigureScript(model.Script, preset);
         var view = new TtsTabView { DataContext = model };
@@ -270,7 +307,7 @@ public partial class PsdLipSyncTests
             window.Show();
             await Settle();
             var picker = view.FindControl<LipSyncSelectionView>("GenerationLipSync")!;
-            var combo = picker.FindControl<ComboBox>("TargetSelector")!;
+            var combo = picker.FindControl<ComboBox>("LipSyncTemplateSelector")!;
             picker.BringIntoView();
             await Settle();
             Capture("reading-collapsed", picker, view.FindControl<Button>("AddSpeechButton")!);
@@ -278,14 +315,26 @@ public partial class PsdLipSyncTests
             await Settle();
             combo.BringIntoView();
             await Settle();
+            // Templates saved after opening the tab appear on the next dropdown open; characters on the timeline never do.
+            var drawable = SavedTemplate(first, "霊夢");
+            var element = SavedTemplate(second.FindHierarchicalParent<Element>()!, "魔理沙");
+            var pair = new Element();
+            pair.AddObject(new PsdTachieDrawable { Source = { Value = first.Source.Value } });
+            pair.AddObject(new PsdTachieDrawable { Source = { Value = first.Source.Value } });
+            var shape = new Element();
+            shape.AddObject(new Beutl.Graphics.Shapes.RectShape());
+            templates.AddRange([drawable, element, SavedTemplate(pair, "二人の立ち絵"),
+                SavedTemplate(new PsdTachieDrawable(), "PSD未指定"), SavedTemplate(shape, "図形")]);
             combo.IsDropDownOpen = true;
             await Settle();
-            Assert.That(model.LipSync.Targets.Value.Where(x => x.Id != null).Select(x => x.Name).Distinct().Count(), Is.EqualTo(2));
-            combo.SelectedItem = model.LipSync.Targets.Value.Single(x => x.Id == first.Id.Value);
+            Assert.That(model.LipSync.Choices.Value.Select(x => x.Name), Is.EqualTo(new[] { "連携しない", "霊夢", "魔理沙" }),
+                "Only templates holding one PSD character with its file are offered.");
+            combo.SelectedItem = model.LipSync.Choices.Value.Single(x => x.Id == drawable.Id);
             combo.IsDropDownOpen = false;
             await Settle();
-            Assert.That(model.LipSync.SelectedId, Is.EqualTo(first.Id.Value));
-            Capture("reading-target", picker, view.FindControl<Button>("AddSpeechButton")!);
+            Assert.That(model.LipSync.SelectedId, Is.EqualTo(drawable.Id));
+            Assert.That(model.LipSync.CapturePreset()!.PsdPath, Is.EqualTo(first.Source.Value!.FullName));
+            Capture("reading-template", picker, view.FindControl<Button>("AddSpeechButton")!);
             model.SelectedPreset.Value = preset;
             model.ApplyPreset();
             combo.IsDropDownOpen = true;

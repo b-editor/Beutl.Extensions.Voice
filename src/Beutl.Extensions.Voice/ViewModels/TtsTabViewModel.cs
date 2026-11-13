@@ -30,15 +30,15 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
 
     internal TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext,
         Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize,
-        Func<IEnumerable<ObjectTemplateItem>>? subtitleTemplates = null)
+        Func<IEnumerable<ObjectTemplateItem>>? templates = null)
     {
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
         _synthesize = synthesize;
         Extension = extension;
-        LipSync = new LipSyncSelectionViewModel(_scene);
-        Subtitles = new SubtitleSelectionViewModel(_scene, subtitleTemplates);
+        LipSync = new LipSyncSelectionViewModel(templates);
+        Subtitles = new SubtitleSelectionViewModel(_scene, templates);
         Subtitles.Refresh();
         WebVoices = new WebVoiceAssignmentsViewModel(_scene);
         InitializePresets();
@@ -70,8 +70,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         bool committed = false;
         try
         {
-            var lipSyncTarget = LipSync.CaptureTarget();
-            var lipSyncPreset = LipSync.Preset;
+            var lipSync = LipSync.CapturePreset();
             var subtitleTemplate = VoiceSubtitles.Load(Subtitles.CaptureTemplate());
             Message.Value = "";
             string directory = VoiceSynthesisService.GetOutputDirectory(_scene);
@@ -87,8 +86,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
             var element = VoiceElementFactory.Create(_scene, path, generation, start, 1, output.Resampling);
-            _historyManager.ExecuteInTransaction(() =>
-                VoicePlacement.Place(_scene, element, lipSyncTarget, lipSyncPreset, subtitleTemplate));
+            _historyManager.ExecuteInTransaction(() => VoicePlacement.Place(_scene, element, lipSync, subtitleTemplate));
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
         }
@@ -150,7 +148,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         json["VoiceSettings"] = JsonSerializer.SerializeToNode(CaptureStoredSettings());
         json["SelectedPresetId"] = SelectedPreset.Value?.Id.ToString();
         json["AppliedPreset"] = JsonSerializer.SerializeToNode(_appliedPreset);
-        json["LipSyncTargetId"] = LipSync.SelectedId?.ToString();
+        json["LipSyncTemplateId"] = LipSync.SelectedId?.ToString();
         json["LipSyncPreset"] = JsonSerializer.SerializeToNode(LipSync.Preset);
         json["SubtitleTemplateId"] = Subtitles.SelectedId?.ToString();
         json["SubtitleTemplate"] = JsonSerializer.SerializeToNode(Subtitles.Template);
@@ -167,7 +165,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         Script.ReadFromJson(json);
         Subtitles.SelectedId = Guid.TryParse((string?)json["SubtitleTemplateId"], out var subtitleId) ? subtitleId : null;
         if (json["SubtitleTemplate"]?.Deserialize<VoiceSubtitleTemplate>() is { } subtitleTemplate) Subtitles.Template = subtitleTemplate;
-        LipSync.SelectedId = Guid.TryParse((string?)json["LipSyncTargetId"], out var targetId) ? targetId : null;
+        // A character chosen from the timeline by an older version is not offered as a template.
+        LipSync.SelectedId = Guid.TryParse((string?)json["LipSyncTemplateId"], out var lipSyncId) ? lipSyncId : null;
         if (json["LipSyncPreset"]?.Deserialize<VoiceLipSyncPreset>() is { } lipSyncPreset) LipSync.Preset = lipSyncPreset;
         Text.Value = (string?)json[nameof(Text)] ?? "";
         if (Guid.TryParse((string?)json["SelectedPresetId"], out var id))

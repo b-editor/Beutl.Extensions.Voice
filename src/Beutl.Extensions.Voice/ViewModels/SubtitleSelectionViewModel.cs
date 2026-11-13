@@ -1,7 +1,6 @@
 using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
-using Beutl.Graphics;
 using Beutl.ProjectSystem;
 using Reactive.Bindings;
 
@@ -46,18 +45,16 @@ public sealed class SubtitleSelectionViewModel(Scene scene, Func<IEnumerable<Obj
         if (id == Guid.Empty) return VoiceSubtitles.Default(scene);
         var template = GetTemplates().FirstOrDefault(x => x.Id == id)
             ?? throw new InvalidOperationException("保存された字幕テンプレートが見つかりません。選び直してください。");
-        var element = CreateTemplateElement(template)
+        var element = VoiceTemplates.CreateElement(template)
             ?? throw new InvalidOperationException("字幕テンプレートを読み込めませんでした。");
         return VoiceSubtitles.Capture(element);
     }
 
-    private IEnumerable<ObjectTemplateItem> GetTemplates() => loadTemplates?.Invoke()
-        ?? ObjectTemplateService.Instance.FindByBaseType(typeof(Element))
-            .Concat(ObjectTemplateService.Instance.FindByBaseType(typeof(Drawable)));
+    private IEnumerable<ObjectTemplateItem> GetTemplates() => (loadTemplates ?? VoiceTemplates.Load)();
 
     private static bool CanUseTemplate(ObjectTemplateItem template)
     {
-        if (CreateTemplateElement(template) is not { } element) return false;
+        if (VoiceTemplates.CreateElement(template) is not { } element) return false;
         try
         {
             // Capture also restores placeholders from a generated caption's saved bindings.
@@ -65,21 +62,5 @@ public sealed class SubtitleSelectionViewModel(Scene scene, Func<IEnumerable<Obj
             return true;
         }
         catch (InvalidOperationException) { return false; }
-    }
-
-    private static Element? CreateTemplateElement(ObjectTemplateItem template)
-    {
-        // CreateInstance also resolves packaged template assets relative to the template file.
-        var instance = template.CreateInstance();
-        Element element;
-        if (instance is Element savedElement) element = savedElement;
-        else if (instance is Drawable drawable)
-        {
-            element = new Element { Length = { Value = MediaTime.FromSeconds(1) } };
-            element.AddObject(drawable);
-        }
-        else return null;
-        element.Name.Value = template.Name.Value;
-        return element;
     }
 }
