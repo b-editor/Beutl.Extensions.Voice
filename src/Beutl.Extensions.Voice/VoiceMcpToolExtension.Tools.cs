@@ -7,7 +7,7 @@ namespace Beutl.Extensions.Voice;
 public sealed partial class VoiceMcpToolExtension
 {
     private const string VoiceSchema = """
-        {"type":"object","description":"Voice selection and optional tuning.","properties":{
+        {"type":"object","description":"Voice selection and optional tuning. AquesTalkPlayer applies prePhonemeLength, postPhonemeLength and aquesTalkPlayerVoice instead of the other scales.","properties":{
           "engineId":{"type":"string","default":"voicevox-core"},
           "speakerUuid":{"type":"string","minLength":1},
           "styleId":{"type":"integer"},
@@ -17,17 +17,28 @@ public sealed partial class VoiceMcpToolExtension
           "volumeScale":{"type":"number","minimum":0,"default":1},
           "prePhonemeLength":{"type":"number","minimum":0,"default":0.1},
           "postPhonemeLength":{"type":"number","minimum":0,"default":0.1},
-          "tempoDynamicsScale":{"type":"number","minimum":0,"description":"AivisSpeech tempo dynamics."}
+          "tempoDynamicsScale":{"type":"number","minimum":0,"description":"AivisSpeech tempo dynamics."},
+          "analyzeWithVoiceVox":{"type":"boolean","default":false,"description":"AquesTalkPlayer only: speak VOICEVOX Core's analysis of the text (the edited analysis passed to voice_generate or voice_regenerate, or one made when none is) instead of the app's own reading."},
+          "aquesTalkPlayerVoice":{"type":"object","description":"AquesTalkPlayer values in the app's units, spoken through a temporary preset. Omit to speak the preset as the app has it; voice_list_voices returns each preset's values to start from.","properties":{
+            "engine":{"type":"string","enum":["AquesTalk1","AquesTalk2","AquesTalk10"]},
+            "voice":{"type":"string","pattern":"^[A-Za-z0-9_-]{1,32}$","description":"Voice type of the engine, such as f1 or F1E."},
+            "flatReading":{"type":"boolean"},
+            "speed":{"type":"integer","minimum":50,"maximum":300},"volume":{"type":"integer","minimum":0,"maximum":300},
+            "height":{"type":"integer","minimum":20,"maximum":200,"description":"AquesTalk10 only."},
+            "accent":{"type":"integer","minimum":0,"maximum":200,"description":"AquesTalk10 only."},
+            "quality":{"type":"integer","minimum":0,"maximum":200,"description":"AquesTalk10 only."},
+            "frequencyScale":{"type":"integer","minimum":50,"maximum":200,"description":"Pitch by sample rate; also changes the speed."}
+          },"required":["engine","voice"],"additionalProperties":false}
         },"required":["speakerUuid","styleId"],"additionalProperties":false}
         """;
 
     private static IReadOnlyList<McpToolDefinition> CreateTools() => Array.AsReadOnly<McpToolDefinition>(
     [
-        new("voice_list_engines", "Lists VOICEVOX Core and registered HTTP voice engines without connecting to them.")
+        new("voice_list_engines", "Lists VOICEVOX Core, registered HTTP voice engines and a registered AquesTalkPlayer without connecting to them.")
         {
             ReadOnlyHint = true, DestructiveHint = false, IdempotentHint = true, OpenWorldHint = false
         },
-        new("voice_list_voices", "Lists live speakers, speech styles and capabilities. Does not install or start engines.", Input("""
+        new("voice_list_voices", "Lists live speakers, speech styles and capabilities. AquesTalkPlayer lists each of its presets as a speaker with styleId 0 and the preset's aquesTalkPlayerVoice. Does not install or start engines.", Input("""
             {"engineId":{"type":"string","default":"voicevox-core","description":"ID from voice_list_engines."}}
             """, []))
         {
@@ -77,7 +88,7 @@ public sealed partial class VoiceMcpToolExtension
         {
             ReadOnlyHint = false, DestructiveHint = true, IdempotentHint = false, OpenWorldHint = false
         },
-        new("voice_analyze", "Analyzes text into an AudioQuery without generating audio or editing the scene. Supply exactly one of presetId or voice. Returns analysis with text, voice settings and audioQuery; edit accent_phrases/moras/pitch and pass analysis to voice_generate or voice_regenerate. Keep the text and voice IDs associated with the query.", Input("""
+        new("voice_analyze", "Analyzes text into an AudioQuery without generating audio or editing the scene. Supply exactly one of presetId or voice. Returns analysis with text, voice settings and audioQuery; edit accent_phrases/moras/pitch and pass analysis to voice_generate or voice_regenerate. Keep the text and voice IDs associated with the query. For AquesTalkPlayer, VOICEVOX Core analyzes the text without pitches or lengths, and only accent positions, accent phrase boundaries, pauses, readings and interrogatives reach the app (as phonetic symbols), when the voice sets analyzeWithVoiceVox; otherwise AquesTalkPlayer reads the text itself.", Input("""
             {"text":{"type":"string","minLength":1},"presetId":{"type":"string","format":"uuid"}}
             """, ["text"], voice: true))
         {

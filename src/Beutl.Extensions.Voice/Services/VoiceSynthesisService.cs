@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Beutl.Audio.Effects;
 using Beutl.Extensions.Voice.Models;
 using Beutl.ProjectSystem;
 using VoicevoxCoreSharp.Core.Enum;
@@ -6,7 +7,10 @@ using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.Services;
 
-internal sealed record VoiceSynthesisResult(byte[] Wave, AudioQueryModel Query, string Json, VoiceSettings Settings);
+// Query and Json are empty for an engine that reads the text itself without an editable query. Resampling is how speech
+// at an engine's own rate is converted to the project's, on the timeline and in the preview alike.
+internal sealed record VoiceSynthesisResult(byte[] Wave, AudioQueryModel? Query, string Json, VoiceSettings Settings,
+    ResamplingMethod? Resampling = null);
 
 internal static class VoiceSynthesisService
 {
@@ -26,14 +30,20 @@ internal static class VoiceSynthesisService
     public static Task<AudioQueryModel> CreateQueryAsync(string text, VoiceSettings settings,
         CancellationToken cancellationToken = default)
     {
+        if (settings.IsAquesTalkPlayer) return Task.Run(() => AnalyzeAccents(text), cancellationToken);
         if (settings.EngineId != VoiceSettings.CoreEngineId)
             return HttpVoiceEngine.CreateQueryAsync(text, settings, cancellationToken);
         return Task.Run(() => CreateCoreQuery(text, settings), cancellationToken);
     }
 
+    // AquesTalkPlayer reads the text itself, or with VOICEVOX's analysis on, the analysis given or one made here. Starting
+    // the app and writing its preset file stay off the caller's thread, as Core's synthesis does.
     public static Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
         CancellationToken cancellationToken = default)
     {
+        if (settings.IsAquesTalkPlayer)
+            return Task.Run(() => AquesTalkPlayerEngine.SynthesizeAsync(text, settings,
+                settings.AnalyzeWithVoiceVox ? query ?? AnalyzeAccents(text) : null, cancellationToken), cancellationToken);
         if (settings.EngineId != VoiceSettings.CoreEngineId)
             return HttpVoiceEngine.SynthesizeAsync(text, settings, query, cancellationToken);
         return Task.Run(() => SynthesizeCore(text, settings, query), cancellationToken);
@@ -42,6 +52,8 @@ internal static class VoiceSynthesisService
     public static Task<List<AccentPhraseModel>> ReplaceMoraPitchAsync(List<AccentPhraseModel> phrases,
         VoiceSettings settings, CancellationToken cancellationToken = default)
     {
+        // AquesTalkPlayer takes the accents without pitches, which stay as they are.
+        if (settings.IsAquesTalkPlayer) return Task.FromResult(phrases);
         if (settings.EngineId != VoiceSettings.CoreEngineId)
             return HttpVoiceEngine.ReplaceMoraPitchAsync(phrases, settings, cancellationToken);
         return Task.Run(() =>
@@ -54,6 +66,12 @@ internal static class VoiceSynthesisService
                 ?? throw new JsonException("VOICEVOXの応答を解析できませんでした。");
         }, cancellationToken);
     }
+
+    // A registered engine's voices as the engine has them now: AquesTalkPlayer's presets or an HTTP engine's speakers.
+    public static Task<VoiceEngineConnection> DiscoverAsync(VoiceEngineConnection connection,
+        CancellationToken cancellationToken = default) => connection.IsAquesTalkPlayer
+        ? Task.Run(() => AquesTalkPlayerEngine.Discover(connection.ApplicationPath, connection), cancellationToken)
+        : HttpVoiceEngine.DiscoverAsync(connection, cancellationToken);
 
     private static AudioQueryModel CreateCoreQuery(string text, VoiceSettings settings)
     {
@@ -71,6 +89,21 @@ internal static class VoiceSynthesisService
         var result = loader.Synthesizer!.Synthesis(json, checked((uint)resolved.StyleId), SynthesisOptions.Default(), out _, out var wave);
         if (result != ResultCode.RESULT_OK || wave == null) throw new InvalidOperationException(result.ToMessage());
         return new(wave, query, json, resolved);
+    }
+
+    // AquesTalkPlayer takes only the readings and accents of VOICEVOX's text analysis, which needs no voice model and
+    // leaves the pitches and lengths empty.
+    private static AudioQueryModel AnalyzeAccents(string text)
+    {
+        if (TtsLoader.VoiceVoxLoader.Value is not { IsLoaded: true, OpenJtalk: { } openJtalk })
+            throw new InvalidOperationException(AquesTalkPlayerEngine.AnalysisNeedsCore);
+        var result = openJtalk.Analyze(text, out var json);
+        if (result != ResultCode.RESULT_OK) throw new InvalidOperationException(result.ToMessage());
+        return new AudioQueryModel
+        {
+            AccentPhrases = JsonSerializer.Deserialize<List<AccentPhraseModel>>(json!, JsonOptions)
+                ?? throw new JsonException("VOICEVOXの応答を解析できませんでした。")
+        };
     }
 
     private static (VoiceVoxLoader Loader, VoiceSettings Settings) ResolveVoice(VoiceSettings settings)

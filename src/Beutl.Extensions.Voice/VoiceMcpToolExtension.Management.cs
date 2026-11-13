@@ -41,7 +41,7 @@ public sealed partial class VoiceMcpToolExtension
         bool setSubtitle = call.Arguments.TryGetProperty("subtitleElementId", out _) || request.UseDefaultSubtitle || request.ElementId != null;
         if (request.UseDefaultSubtitle && call.Arguments.TryGetProperty("subtitleElementId", out _))
             throw new ArgumentException("Supply either useDefaultSubtitle or subtitleElementId.");
-        VoiceSettings? settings = request.Voice;
+        VoiceSettings? settings = request.Voice?.WithSupportedTuning();
         if (settings != null) ValidateVoice(settings, call.Arguments.GetProperty("voice"));
         VoiceLipSyncPreset? lipSync = null;
         VoiceSubtitleTemplate? subtitle = null;

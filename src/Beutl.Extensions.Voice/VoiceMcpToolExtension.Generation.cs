@@ -21,7 +21,7 @@ public sealed partial class VoiceMcpToolExtension
                 ?? throw new ArgumentException($"Voice preset '{id}' was not found. Call voice_list_presets.")
             : null;
         if (request.Voice != null) ValidateVoice(request.Voice, arguments.GetProperty("voice"));
-        return (preset?.Settings ?? request.Voice!, preset);
+        return (preset?.Settings ?? request.Voice!.WithSupportedTuning(), preset);
     }
 
     private static void ValidateVoice(VoiceSettings settings, JsonElement voice)

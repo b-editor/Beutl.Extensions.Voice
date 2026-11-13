@@ -15,4 +15,9 @@ public class VoiceMetadata
 
     [JsonPropertyName("styles")]
     public required VoiceStyle[] Styles { get; init; }
+
+    // The values of the AquesTalkPlayer preset this speaker stands for.
+    [JsonPropertyName("aquestalkplayer")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public AquesTalkPlayerVoice? AquesTalkPlayer { get; init; }
 }

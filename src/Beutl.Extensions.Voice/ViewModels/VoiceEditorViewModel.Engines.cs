@@ -14,7 +14,11 @@ public partial class VoiceEditorViewModel
     public ReactivePropertySlim<VoiceEngineConnection[]> Engines { get; } = new([VoiceEngineConnection.Core]);
     public ReactivePropertySlim<VoiceEngineConnection?> SelectedEngine { get; } = new(VoiceEngineConnection.Core);
     public ReactivePropertySlim<VoiceEngineCapabilities> EngineCapabilities { get; } = new(new());
-    public ReactivePropertySlim<bool> IsHttpEngine { get; } = new();
+    // Any engine other than the bundled Core: an HTTP engine or AquesTalkPlayer.
+    public ReactivePropertySlim<bool> IsExternalEngine { get; } = new();
+    public ReactivePropertySlim<bool> IsAquesTalkPlayer { get; } = new();
+    // Only an HTTP engine has a URL to edit.
+    public ReactivePropertySlim<bool> CanEditConnection { get; } = new();
     public ReactivePropertySlim<bool> IsConnecting { get; } = new();
     public ReactivePropertySlim<bool> ShowCoreInstallPrompt { get; } = new();
     public ReactivePropertySlim<string> ConnectionMessage { get; } = new("");
@@ -32,6 +36,7 @@ public partial class VoiceEditorViewModel
                 _unavailableSettings = null;
                 SelectedVoice.Value = null;
                 SelectedStyle.Value = null;
+                ShowAquesTalkPlayerVoice(null);
                 UseEngine(engine);
             });
             InvalidateQuery();
@@ -52,7 +57,7 @@ public partial class VoiceEditorViewModel
     }
 
     private void UpdateInstallPrompt() => ShowCoreInstallPrompt.Value =
-        TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value && !IsHttpEngine.Value;
+        TtsLoader.Preferences.ShouldPrompt && !IsVoiceVoxInstalled.Value && !IsExternalEngine.Value;
 
     private void OnInstallPromptChanged()
     {
@@ -73,7 +78,8 @@ public partial class VoiceEditorViewModel
         engine = new()
         {
             Id = settings.EngineId, Name = settings.EngineName, EngineUuid = settings.EngineUuid,
-            Capabilities = new() { TempoDynamics = settings.TempoDynamicsScale.HasValue, EditAccent = !settings.TempoDynamicsScale.HasValue }
+            Capabilities = settings.IsAquesTalkPlayer ? AquesTalkPlayerEngine.Capabilities
+                : new() { TempoDynamics = settings.TempoDynamicsScale.HasValue, EditAccent = !settings.TempoDynamicsScale.HasValue }
         };
         Engines.Value = [.. Engines.Value, engine];
         return engine;
@@ -81,10 +87,12 @@ public partial class VoiceEditorViewModel
 
     private void UseEngine(VoiceEngineConnection engine)
     {
-        if (!IsHttpEngine.Value && !engine.IsCore) _coreVoices = Voice.Value;
+        if (!IsExternalEngine.Value && !engine.IsCore) _coreVoices = Voice.Value;
         SelectedEngine.Value = engine;
         EngineCapabilities.Value = engine.Capabilities;
-        IsHttpEngine.Value = !engine.IsCore;
+        IsExternalEngine.Value = !engine.IsCore;
+        IsAquesTalkPlayer.Value = engine.IsAquesTalkPlayer;
+        CanEditConnection.Value = !engine.IsCore && !engine.IsAquesTalkPlayer;
         UpdateInstallPrompt();
         if (engine.IsCore)
         {
@@ -95,6 +103,27 @@ public partial class VoiceEditorViewModel
         {
             Voice.Value = engine.Voices;
             IsEnabled.Value = true;
+            if (engine.IsAquesTalkPlayer && engine.Voices.Any(x => x.AquesTalkPlayer == null))
+                _ = ReadAquesTalkPlayerValues(engine);
+        }
+    }
+
+    private bool _readingAquesTalkPlayerValues;
+
+    // Presets registered by a version that did not keep their values cannot be tuned, so they are read again once.
+    private async Task ReadAquesTalkPlayerValues(VoiceEngineConnection engine)
+    {
+        if (_readingAquesTalkPlayerValues || string.IsNullOrEmpty(engine.ApplicationPath)) return;
+        _readingAquesTalkPlayerValues = true;
+        try
+        {
+            var updated = await VoiceSynthesisService.DiscoverAsync(engine);
+            if (_disposed) return;
+            VoiceEngineStore.UpdateMetadata(updated);
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed) Message.Value = $"プリセットを読み込めませんでした: {ex.Message}";
         }
     }
 
@@ -160,14 +189,20 @@ public partial class VoiceEditorViewModel
         IsConnecting.Value = true;
         try
         {
-            var updated = await HttpVoiceEngine.DiscoverAsync(engine);
+            // AquesTalkPlayer's voices are its presets, read again for presets added or renamed since.
+            var updated = await VoiceSynthesisService.DiscoverAsync(engine);
             if (_disposed) return;
             // Refreshing metadata keeps the selection and manual query edits in every open editor.
             VoiceEngineStore.UpdateMetadata(updated);
             if (SelectedEngine.Value?.Id == engine.Id)
-                Message.Value = $"{SelectedEngine.Value.Name} {updated.Version} に接続しました。";
+                Message.Value = engine.IsAquesTalkPlayer
+                    ? $"{SelectedEngine.Value.Name} {updated.Version} のプリセットを読み込みました（{updated.Voices.Length} 件）。"
+                    : $"{SelectedEngine.Value.Name} {updated.Version} に接続しました。";
         }
-        catch (Exception ex) { Message.Value = $"接続できませんでした: {ex.Message}"; }
+        catch (Exception ex)
+        {
+            Message.Value = engine.IsAquesTalkPlayer ? $"プリセットを読み込めませんでした: {ex.Message}" : $"接続できませんでした: {ex.Message}";
+        }
         finally { IsConnecting.Value = false; }
     }
 

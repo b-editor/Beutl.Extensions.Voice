@@ -963,11 +963,11 @@ public class VoiceDictionaryTests
             Assert.That(preview.Settings.SpeakerUuid, Is.EqualTo(selectedSpeaker.Key));
             Assert.That(preview.Settings.StyleId, Is.EqualTo(selectedStyleId));
             Assert.That(preview.Settings.StyleName, Is.EqualTo(dictionaryModel.SelectedStyle.Value!.Name));
-            Assert.That(string.Concat(preview.Query.AccentPhrases.SelectMany(x => x.Moras).Select(x => x.Text)), Is.EqualTo("テストジショ"));
+            Assert.That(string.Concat(preview.Query!.AccentPhrases.SelectMany(x => x.Moras).Select(x => x.Text)), Is.EqualTo("テストジショ"));
             var longVowelWord = VoiceDictionaryWord.Create(Guid.NewGuid(), [new("珈琲", "コーヒー", 0)], DictionaryWordType.All[0], 5, false);
             var longVowelPreview = await VoiceDictionaryService.PreviewAsync(VoiceEngineConnection.Core, longVowelWord, settings);
             Assert.That(longVowelPreview.Wave.Length, Is.GreaterThan(44));
-            Assert.That(string.Concat(longVowelPreview.Query.AccentPhrases.SelectMany(x => x.Moras).Select(x => x.Text)), Is.EqualTo("コオヒイ"));
+            Assert.That(string.Concat(longVowelPreview.Query!.AccentPhrases.SelectMany(x => x.Moras).Select(x => x.Text)), Is.EqualTo("コオヒイ"));
             foreach (int accent in new[] { 0, 1, 2, 4 })
             {
                 var kana = DictionaryKana.Preview([new("珈琲", "コーヒー", accent)]).Kana;

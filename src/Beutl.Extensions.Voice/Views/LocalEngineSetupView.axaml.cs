@@ -98,7 +98,7 @@ public partial class LocalEngineSetupView : UserControl
         {
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = entry.Engine.ApplicationName + "のアプリ・エンジンを選択",
+                Title = entry.Engine.ApplicationName + (entry.Engine.IsAquesTalkPlayer ? "のアプリの場所を指定" : "のアプリ・エンジンの場所を指定"),
                 AllowMultiple = false,
                 FileTypeFilter = [new("アプリ・実行ファイル")
                 {
@@ -108,6 +108,6 @@ public partial class LocalEngineSetupView : UserControl
             });
             if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) model.SelectApplication(entry, path);
         }
-        catch (Exception ex) { model.Message.Value = $"アプリを選択できませんでした: {ex.Message}"; }
+        catch (Exception ex) { model.Message.Value = $"アプリの場所を指定できませんでした: {ex.Message}"; }
     }
 }

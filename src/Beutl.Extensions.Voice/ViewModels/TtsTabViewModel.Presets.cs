@@ -32,8 +32,7 @@ public partial class TtsTabViewModel
         SelectedEngine.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         LipSync.Selected.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
         Subtitles.Selected.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
-        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
-            property.Subscribe(_ => RefreshPresetDetails()).AddTo(_subscriptions);
+        SubscribeTuning(RefreshPresetDetails);
     }
 
     public void RefreshPresets()
