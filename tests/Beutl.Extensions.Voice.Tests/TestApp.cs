@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Avalonia;
 using Avalonia.Headless;
 using Avalonia.Markup.Xaml.Styling;
@@ -8,7 +9,9 @@ using Beutl.Extensibility;
 using Beutl.Media.Decoding;
 using Beutl.Media.Wave;
 using Beutl.ProjectSystem;
+using Beutl.Serialization;
 using FluentAvalonia.Styling;
+using Microsoft.Extensions.Logging.Abstractions;
 using Reactive.Bindings;
 
 [assembly: AvaloniaTestApplication(typeof(Beutl.Extensions.Voice.Tests.TestApp))]
@@ -39,6 +42,21 @@ public class TestApp : Application
     }
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<TestApp>()
         .UseSkia().UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false });
+}
+
+internal static class TestTemplates
+{
+    // A template as the library loads it from its file, with paths relative to the file as a packaged template has them.
+    public static ObjectTemplateItem Save(string directory, ICoreSerializable source, string name)
+    {
+        var item = ObjectTemplateItem.CreateFromInstance(source, name);
+        string path = Path.Combine(directory, name + ".json");
+        var json = ObjectTemplateItem.ToJson(item);
+        json[nameof(ObjectTemplateItem.Json)] = CoreSerializer.SerializeToJsonObject(source,
+            new CoreSerializerOptions { BaseUri = new Uri(path) });
+        File.WriteAllText(path, json.ToJsonString());
+        return ObjectTemplateItem.FromJson(JsonNode.Parse(File.ReadAllText(path))!, name, path, NullLogger.Instance)!;
+    }
 }
 
 internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelection

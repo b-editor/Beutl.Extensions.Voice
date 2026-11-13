@@ -46,10 +46,11 @@ public class TtsControllerTests
         Directory.Delete(_directory, true);
     }
 
-    internal static TtsControllerViewModel CreateModel(TestEditor editor, TtsController controller)
+    internal static TtsControllerViewModel CreateModel(TestEditor editor, TtsController controller,
+        Func<IEnumerable<Beutl.Editor.Services.ObjectTemplateItem>>? templates = null)
     {
         var inner = new TextContext(controller);
-        var model = new TtsControllerViewModel(inner, new CustomPropertyEditorExtension(), controller);
+        var model = new TtsControllerViewModel(inner, new CustomPropertyEditorExtension(), controller, templates);
         model.Accept(new ServiceVisitor(editor));
         return model;
     }

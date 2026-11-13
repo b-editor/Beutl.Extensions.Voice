@@ -10,12 +10,12 @@ public partial class WebVoiceAssignmentView : UserControl
 {
     public WebVoiceAssignmentView() => InitializeComponent();
 
-    private void RefreshTargets(object? sender, EventArgs e)
+    private void RefreshLipSync(object? sender, EventArgs e)
     {
         if (DataContext is WebVoiceAssignmentViewModel model) model.LipSync.Refresh();
     }
 
-    private void RefreshTemplates(object? sender, EventArgs e)
+    private void RefreshSubtitles(object? sender, EventArgs e)
     {
         if (DataContext is WebVoiceAssignmentViewModel model) model.Subtitles.Refresh();
     }

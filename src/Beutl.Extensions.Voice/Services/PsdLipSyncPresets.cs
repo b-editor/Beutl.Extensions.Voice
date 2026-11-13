@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.Json.Nodes;
 using Beutl.Editor.Services;
 using Beutl.Engine;
@@ -12,9 +13,30 @@ namespace Beutl.Extensions.Voice.Services;
 
 internal static class PsdLipSyncPresets
 {
+    // The library replaces a template whose file changes with a new item, so each item is read once.
+    private static readonly ConditionalWeakTable<ObjectTemplateItem, StrongBox<VoiceLipSyncPreset?>> s_templates = new();
+
     private static string? SourcePath(EngineObject target) => target.Properties
         .OfType<IExpressionProperty<FileInfo?>>()
         .FirstOrDefault(x => x.Name == "Source")?.Value?.FullName;
+
+    // A character comes from a template holding it by itself, or as the only one in a saved element or group.
+    public static IEnumerable<ObjectTemplateItem> CharacterTemplates(IEnumerable<ObjectTemplateItem> templates) =>
+        templates.Where(x => FromTemplate(x) != null);
+
+    public static VoiceLipSyncPreset Capture(IEnumerable<ObjectTemplateItem> templates, Guid id) =>
+        FromTemplate(templates.FirstOrDefault(x => x.Id == id)
+            ?? throw new InvalidOperationException("保存された立ち絵のテンプレートが見つかりません。選び直してください。"))
+        ?? throw new InvalidOperationException("このテンプレートは使用できません。PSDファイルを指定したPSD立ち絵を1つ含むテンプレートを選んでください。");
+
+    private static VoiceLipSyncPreset? FromTemplate(ObjectTemplateItem template) => s_templates.GetValue(template, item =>
+    {
+        var characters = VoiceTemplates.CreateElement(item)?.EnumerateAllChildren<EngineObject>()
+            .Where(x => PsdLipSync.TryGetProperties(x, out _, out _)).Take(2).ToArray();
+        try { return new(characters is [var character] ? Capture(character) : null); }
+        // Generation uses the same capture, so offer only what it accepts, such as a character with its PSD file set.
+        catch (InvalidOperationException) { return new(null); }
+    }).Value;
 
     public static VoiceLipSyncPreset Capture(EngineObject target)
     {
@@ -42,8 +64,11 @@ internal static class PsdLipSyncPresets
                     group.Max(x => x.Controller.TimeRange.Value.End));
                 targets = [CreateCharacter(scene, group.First().Preset, range, FreeLayer(scene, range, 0))];
             }
-            // Select per speech interval before extending any character's range.
-            var assignments = group.GroupBy(binding => SelectTarget(targets, binding.Controller.TimeRange.Value)).ToArray();
+            // Select per speech interval before extending any character's range. Speech already linked to one of
+            // these characters stays with it, so linking an existing line again changes nothing.
+            var assignments = group.GroupBy(binding => targets.FirstOrDefault(x => binding.Controller.LipSyncGroupId.Value != Guid.Empty
+                    && PsdLipSync.GroupOf(x) == binding.Controller.LipSyncGroupId.Value)
+                ?? SelectTarget(targets, binding.Controller.TimeRange.Value)).ToArray();
             foreach (var assignment in assignments)
             {
                 foreach (var binding in assignment) PsdLipSync.Connect(binding.Controller, assignment.Key, created);
@@ -118,7 +143,7 @@ internal static class PsdLipSyncPresets
         PsdLipSync.Targets(scene).Where(x => SourcePath(x) is { } path
             && FilePathComparison.ResolveCanonicalPath(path) == canonicalPath).ToArray();
 
-    private static EngineObject SelectTarget(EngineObject[] targets, TimeRange range) => targets
+    internal static EngineObject SelectTarget(IEnumerable<EngineObject> targets, TimeRange range) => targets
         .OrderByDescending(x => x.TimeRange.Value.Intersects(range))
         .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - range.Start).ToSeconds())).First();
 

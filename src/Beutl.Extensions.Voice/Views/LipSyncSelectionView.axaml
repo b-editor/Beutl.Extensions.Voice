@@ -7,9 +7,10 @@
     <Expander x:Name="LipSyncExpander" Header="口パク" HorizontalAlignment="Stretch"
               Theme="{StaticResource ToolTabExpanderTheme}">
         <Grid Margin="8" ColumnDefinitions="*,Auto">
-            <ComboBox x:Name="TargetSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTargets"
+            <ComboBox x:Name="LipSyncTemplateSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTemplates"
                       AutomationProperties.Name="生成時の口パク連携"
-                      ItemsSource="{Binding Targets.Value}" SelectedItem="{Binding Selected.Value, Mode=TwoWay}">
+                      ToolTip.Tip="PSD立ち絵を保存したテンプレートから選択します。同じPSDファイルの立ち絵がシーンにあれば連携し、なければテンプレートの立ち絵を追加します。"
+                      ItemsSource="{Binding Choices.Value}" SelectedItem="{Binding Selected.Value, Mode=TwoWay}">
                 <ComboBox.ItemTemplate>
                     <DataTemplate x:DataType="vm:LipSyncChoice">
                         <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
@@ -17,7 +18,8 @@
                 </ComboBox.ItemTemplate>
             </ComboBox>
             <Button Grid.Column="1" Theme="{StaticResource ToolTabBarIconButtonTheme}"
-                    Command="{Binding Refresh}" ToolTip.Tip="立ち絵を再読み込み" AutomationProperties.Name="立ち絵を再読み込み">
+                    Command="{Binding Refresh}" ToolTip.Tip="立ち絵のテンプレートを再読み込み"
+                    AutomationProperties.Name="立ち絵のテンプレートを再読み込み">
                 <icons:FluentIcon Icon="ArrowClockwise" FontSize="16" />
             </Button>
         </Grid>
