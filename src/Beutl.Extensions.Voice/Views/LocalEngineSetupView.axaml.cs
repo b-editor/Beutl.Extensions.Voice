@@ -114,9 +114,9 @@ public partial class LocalEngineSetupView : UserControl
             || TopLevel.GetTopLevel(this) is not { } topLevel) return;
         try
         {
-            if (await PickApplication(topLevel.StorageProvider, entry.Engine.ApplicationName + "のアプリ・エンジンを選択") is { } path)
-                model.SelectApplication(entry, path);
+            string title = entry.Engine.ApplicationName + (entry.Engine.IsAquesTalkPlayer ? "のアプリの場所を指定" : "のアプリ・エンジンの場所を指定");
+            if (await PickApplication(topLevel.StorageProvider, title) is { } path) model.SelectApplication(entry, path);
         }
-        catch (Exception ex) { model.Message.Value = $"アプリを選択できませんでした: {ex.Message}"; }
+        catch (Exception ex) { model.Message.Value = $"アプリの場所を指定できませんでした: {ex.Message}"; }
     }
 }

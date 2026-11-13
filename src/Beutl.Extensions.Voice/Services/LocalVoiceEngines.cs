@@ -4,7 +4,9 @@ using Microsoft.Win32;
 
 namespace Beutl.Extensions.Voice.Services;
 
-public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url);
+// An engine with a VOICEVOX-compatible HTTP API at Url, or AquesTalkPlayer, which speaks through its command line and
+// has no URL.
+public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url, bool IsAquesTalkPlayer = false);
 
 internal static class LocalVoiceEngines
 {
@@ -12,13 +14,19 @@ internal static class LocalVoiceEngines
     [
         new("VOICEVOX ENGINE", "VOICEVOX", "http://127.0.0.1:50021/"),
         new("AivisSpeech Engine", "AivisSpeech", "http://127.0.0.1:10101/"),
-        new("SHAREVOX Engine", "SHAREVOX", "http://127.0.0.1:50025/")
+        new("SHAREVOX Engine", "SHAREVOX", "http://127.0.0.1:50025/"),
+        new("AquesTalkPlayer", AquesTalkPlayerEngine.ApplicationName, "", IsAquesTalkPlayer: true)
     ];
+
+    // AquesTalkPlayer has no Linux version.
+    internal static LocalVoiceEngine[] Available => Known
+        .Where(engine => !engine.IsAquesTalkPlayer || AquesTalkPlayerEngine.Host.IsSupported).ToArray();
 
     internal static string CurrentPlatform => OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
 
     internal static string? FindApplication(LocalVoiceEngine engine)
     {
+        if (engine.IsAquesTalkPlayer) return AquesTalkPlayerEngine.FindApplication();
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string platform = CurrentPlatform;
         string[] roots = platform switch

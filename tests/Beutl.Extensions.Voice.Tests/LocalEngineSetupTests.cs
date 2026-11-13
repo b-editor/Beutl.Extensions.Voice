@@ -423,6 +423,13 @@ public class LocalEngineSetupTests
             Assert.That(model.IsBusy.Value, Is.False);
             Assert.That(window.GetVisualDescendants().OfType<FAContentDialog>(), Is.Empty);
             Assert.That(content.Bounds.Width, Is.LessThanOrEqualTo(width));
+            // Each card says what its engine is doing and what using it will do.
+            Assert.That(model.Engines.Select(x => x.ActionText.Value), Is.EqualTo(new[] { "読み上げで使う", "起動して使う", "起動して使う" }));
+            Assert.That(model.Engines[0].Status.Value, Is.EqualTo("起動しています（バージョン test-1）"));
+            Assert.That(model.Engines[1].Status.Value, Is.EqualTo("起動していません。"));
+            Assert.That(model.Engines[2].Status.Value, Does.Contain("アプリの場所を指定"));
+            Assert.That(model.Engines.Select(x => x.CanUse.Value), Is.EqualTo(new[] { true, true, false }));
+            Assert.That(model.Engines.Select(x => x.IsRegistered.Value), Has.All.False);
             var tabs = owner.FindControl<TabStrip>("PageTabs")!;
             Assert.That(tabs.Items.Cast<TabStripItem>().Select(x => x.Content), Is.EqualTo(new[] { "読み上げ", "台本", "辞書", "設定" }));
             var scroll = owner.FindControl<ScrollViewer>("SettingsScroll")!;

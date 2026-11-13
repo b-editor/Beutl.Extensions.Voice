@@ -25,6 +25,8 @@ internal static class VoiceDictionaryService
     private static void RequireConnection(VoiceEngineConnection engine)
     {
         if (engine.IsCore) return;
+        if (engine.IsAquesTalkPlayer)
+            throw new NotSupportedException("AquesTalkPlayerのユーザ辞書は、AquesTalkPlayerのユーザ辞書設定で編集してください。");
         var current = VoiceEngineStore.Load().FirstOrDefault(x => x.Id == engine.Id);
         if (current == null || current.Url != engine.Url)
             throw new InvalidOperationException("接続先が変更・削除されています。辞書のエンジンを選び直してください。");

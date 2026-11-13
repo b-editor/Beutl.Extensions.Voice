@@ -48,7 +48,7 @@ internal static class VoiceScriptService
                     Text = request.Line.Text, Settings = output.Settings, AudioQueryJson = output.Json,
                     PresetId = request.Line.Preset.Id, PresetName = request.Line.Preset.Name
                 };
-                var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer);
+                var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer, output.Resampling);
                 elements.Add(element);
                 start += element.Length.Value + gap;
             }

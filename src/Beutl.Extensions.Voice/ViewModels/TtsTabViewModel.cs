@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
+using Beutl.Audio.Effects;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -84,7 +85,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
-            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1);
+            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1, output.Resampling);
             _historyManager.ExecuteInTransaction(() => VoicePlacement.Place(_scene, element, lipSync, subtitleTemplate));
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
@@ -114,7 +115,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             var output = await _synthesize(request.Text, request.Settings, query);
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
-            using var player = new SimpleWavePlayer(output.Wave);
+            using var player = new SimpleWavePlayer(PreviewWave(output));
             await player.Play(default);
         }
         catch (Exception ex)
@@ -128,6 +129,14 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             IsGenerating.Value = false;
         }
     }
+
+    // Speech that is resampled on the timeline plays converted to the project's rate in the same way.
+    internal byte[] PreviewWave(VoiceSynthesisResult output) => output.Resampling switch
+    {
+        null => output.Wave,
+        ResamplingMethod.Lagrange => VoiceWave.ResampleLagrange(output.Wave, _scene.FindHierarchicalParent<Project>().GetSampleRate()),
+        var method => throw new NotSupportedException($"試聴では{method}でのリサンプリングに対応していません。")
+    };
 
     public void WriteToJson(JsonObject json)
     {
@@ -168,7 +177,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             // A newer HTTP selection supersedes a pending legacy Core migration.
-            if (_disposed || settings == null && IsHttpEngine.Value) return;
+            if (_disposed || settings == null && IsExternalEngine.Value) return;
             if (settings != null) ApplySettings(settings);
             else
             {

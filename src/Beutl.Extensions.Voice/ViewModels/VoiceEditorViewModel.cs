@@ -1,4 +1,5 @@
 using System.Reactive.Disposables;
+using System.Reactive.Linq;
 using System.Text.Json;
 using Avalonia.Threading;
 using Beutl.Extensions.Voice.Models;
@@ -22,17 +23,30 @@ public partial class VoiceEditorViewModel : IDisposable
     public VoiceEditorViewModel()
     {
         InitializeEngines();
+        // AquesTalkPlayer takes accents only from VOICEVOX's analysis.
+        CanEditAccent = EngineCapabilities.CombineLatest(IsAquesTalkPlayer, AquesTalkAnalyzeWithVoiceVox,
+                (capabilities, aquesTalkPlayer, analyze) => capabilities.EditAccent && (!aquesTalkPlayer || analyze))
+            .ToReadOnlyReactivePropertySlim().AddTo(_subscriptions);
         VoiceDictionaryService.Changed += OnDictionaryChanged;
         Disposable.Create(() => VoiceDictionaryService.Changed -= OnDictionaryChanged).AddTo(_subscriptions);
         Text.Subscribe(_ => { if (!_updating) InvalidateQuery(); }).AddTo(_subscriptions);
         SelectedVoice.Subscribe(voice =>
         {
-            if (_updating) return;
+            // The style choices change before a style is chosen from them: a style missing from the choices would be
+            // cleared by the selector.
+            if (_updating)
+            {
+                Styles.Value = voice?.Styles ?? [];
+                return;
+            }
             _unavailableSettings = null;
             UpdateSilently(() =>
             {
+                Styles.Value = voice?.Styles ?? [];
                 if (voice?.Styles.Contains(SelectedStyle.Value!) != true)
                     SelectedStyle.Value = voice?.Styles.FirstOrDefault();
+                // Choosing an AquesTalkPlayer preset starts from its values, as choosing it in the app does.
+                if (IsAquesTalkPlayer.Value) ShowAquesTalkPlayerVoice(voice?.AquesTalkPlayer);
             });
             InvalidateQuery();
             Edited?.Invoke();
@@ -45,8 +59,7 @@ public partial class VoiceEditorViewModel : IDisposable
             Edited?.Invoke();
             ConfirmEdit();
         }).AddTo(_subscriptions);
-        foreach (var property in new[] { SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale })
-            property.Subscribe(_ => { if (!_updating) Edited?.Invoke(); }).AddTo(_subscriptions);
+        SubscribeTuning(() => { if (!_updating) Edited?.Invoke(); });
         AudioQuery.Subscribe(query =>
         {
             _accentRequest?.Cancel();
@@ -70,12 +83,14 @@ public partial class VoiceEditorViewModel : IDisposable
     public ReactivePropertySlim<string> Text { get; } = new("");
     public ReactivePropertySlim<VoiceMetadata[]> Voice { get; } = new([]);
     public ReactivePropertySlim<VoiceMetadata?> SelectedVoice { get; } = new();
+    public ReactivePropertySlim<VoiceStyle[]> Styles { get; } = new([]);
     public ReactivePropertySlim<VoiceStyle?> SelectedStyle { get; } = new();
     public ReactivePropertySlim<bool> IsGenerating { get; } = new();
     public ReactivePropertySlim<bool> IsEnabled { get; } = new();
     public ReactivePropertySlim<bool> IsVoiceVoxInstalled { get; } = new(true);
     public ReactivePropertySlim<AudioQueryModel?> AudioQuery { get; } = new();
     public ReactivePropertySlim<bool> HasAudioQuery { get; } = new();
+    public ReadOnlyReactivePropertySlim<bool> CanEditAccent { get; }
     public ReactivePropertySlim<double> SpeedScale { get; } = new(1);
     public ReactivePropertySlim<double> PitchScale { get; } = new();
     public ReactivePropertySlim<double> IntonationScale { get; } = new(1);
@@ -90,6 +105,19 @@ public partial class VoiceEditorViewModel : IDisposable
 
     public void ConfirmEdit() => EditCompleted?.Invoke();
 
+    // Every value of the tuning section, for what has to follow a change to any of them.
+    protected void SubscribeTuning(Action changed)
+    {
+        foreach (var property in new[]
+                 {
+                     SpeedScale, PitchScale, IntonationScale, VolumeScale, PrePhonemeLength, PostPhonemeLength, TempoDynamicsScale,
+                     AquesTalkSpeed, AquesTalkVolume, AquesTalkHeight, AquesTalkAccent, AquesTalkQuality, AquesTalkFrequencyScale
+                 })
+            property.Subscribe(_ => changed()).AddTo(_subscriptions);
+        foreach (var option in new[] { AquesTalkFlatReading, AquesTalkAnalyzeWithVoiceVox })
+            option.Subscribe(_ => changed()).AddTo(_subscriptions);
+    }
+
     public void OnLoaded() => LoadCoreMetadata(restoreSettings: true);
 
     private void LoadCoreMetadata(bool restoreSettings)
@@ -98,7 +126,7 @@ public partial class VoiceEditorViewModel : IDisposable
         {
             var loader = TtsLoader.VoiceVoxLoader.Value;
             IsVoiceVoxInstalled.Value = loader?.IsInstalled == true;
-            if (IsHttpEngine.Value) return;
+            if (IsExternalEngine.Value) return;
             IsEnabled.Value = loader?.IsLoaded == true;
             if (loader?.IsLoaded != true) return;
             var previous = restoreSettings ? CaptureStoredSettings() : null;
@@ -132,12 +160,14 @@ public partial class VoiceEditorViewModel : IDisposable
     // Tuning can be edited and saved before a voice has been selected.
     protected VoiceSettings CaptureDraftSettings() => CaptureStoredSettings() ?? WithTuning(SelectedEngineSettings());
 
-    private VoiceSettings WithTuning(VoiceSettings settings) => settings with
+    // The sliders an engine hides keep their values for the next engine, but are saved only with the engine they suit.
+    private VoiceSettings WithTuning(VoiceSettings settings) => (settings with
     {
         SpeedScale = SpeedScale.Value, PitchScale = PitchScale.Value, IntonationScale = IntonationScale.Value,
         VolumeScale = VolumeScale.Value, PrePhonemeLength = PrePhonemeLength.Value, PostPhonemeLength = PostPhonemeLength.Value,
-        TempoDynamicsScale = EngineCapabilities.Value.TempoDynamics ? TempoDynamicsScale.Value : settings.TempoDynamicsScale
-    };
+        TempoDynamicsScale = EngineCapabilities.Value.TempoDynamics ? TempoDynamicsScale.Value : settings.TempoDynamicsScale,
+        AquesTalkPlayerVoice = CaptureAquesTalkPlayerVoice(), AnalyzeWithVoiceVox = AquesTalkAnalyzeWithVoiceVox.Value
+    }).WithSupportedTuning();
 
     protected bool ApplySettings(VoiceSettings settings, bool report = true)
     {
@@ -159,6 +189,12 @@ public partial class VoiceEditorViewModel : IDisposable
             PrePhonemeLength.Value = settings.PrePhonemeLength;
             PostPhonemeLength.Value = settings.PostPhonemeLength;
             TempoDynamicsScale.Value = settings.TempoDynamicsScale ?? 1;
+            // Saved values win over the preset's, which the app may have changed since.
+            if (settings.IsAquesTalkPlayer)
+            {
+                ShowAquesTalkPlayerVoice(settings.AquesTalkPlayerVoice ?? voice?.AquesTalkPlayer);
+                AquesTalkAnalyzeWithVoiceVox.Value = settings.AnalyzeWithVoiceVox;
+            }
             _unavailableSettings = style == null && !string.IsNullOrEmpty(settings.SpeakerUuid) ? settings : null;
         });
         if (!sameVoice) InvalidateQuery();
@@ -237,9 +273,10 @@ public partial class VoiceEditorViewModel : IDisposable
         finally { IsGenerating.Value = false; }
     }
 
-    protected void PublishQuery(string text, VoiceSettings settings, AudioQueryModel query)
+    // An engine without a query, such as AquesTalkPlayer, leaves nothing to publish.
+    protected void PublishQuery(string text, VoiceSettings settings, AudioQueryModel? query)
     {
-        if (_disposed || Text.Value != text || CaptureSettings()?.UsesSameVoice(settings) != true) return;
+        if (query == null || _disposed || Text.Value != text || CaptureSettings()?.UsesSameVoice(settings) != true) return;
         AudioQuery.Value = query;
         Edited?.Invoke();
         ConfirmEdit();
@@ -260,7 +297,7 @@ public partial class VoiceEditorViewModel : IDisposable
 
     public async Task ChangeAccent(int phraseIndex, int accent)
     {
-        if (_disposed || IsGenerating.Value || !EngineCapabilities.Value.EditAccent
+        if (_disposed || IsGenerating.Value || !CanEditAccent.Value
             || AudioQuery.Value is not { } original || CaptureRequest() is not { } request) return;
         if ((uint)phraseIndex >= original.AccentPhrases.Count || accent < 1
             || accent > original.AccentPhrases[phraseIndex].Moras.Count
@@ -268,6 +305,12 @@ public partial class VoiceEditorViewModel : IDisposable
         string originalJson = SerializeQuery();
         var query = JsonSerializer.Deserialize<AudioQueryModel>(originalJson)!;
         query.AccentPhrases[phraseIndex].Accent = accent;
+        // Without pitches to follow the accent, the engine has nothing to recalculate.
+        if (!EngineCapabilities.Value.EditPitch)
+        {
+            PublishQuery(request.Text, request.Settings, query);
+            return;
+        }
         using var cancellation = new CancellationTokenSource();
         _accentRequest = cancellation;
         IsGenerating.Value = true;

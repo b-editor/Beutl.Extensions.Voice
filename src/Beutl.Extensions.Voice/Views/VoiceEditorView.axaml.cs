@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Beutl.Extensions.Voice.ViewModels;
@@ -9,6 +10,17 @@ namespace Beutl.Extensions.Voice.Views;
 
 public partial class VoiceEditorView : UserControl
 {
+    // An engine that takes the pitch of each mora edits it with the accents; AquesTalkPlayer takes the accents alone,
+    // analyzed by VOICEVOX.
+    public static readonly IValueConverter AccentHeader = Choose("アクセント / ピッチ", "アクセント");
+    public static readonly IValueConverter AccentPanelTip =
+        Choose("ドラッグでピッチを調整、バーをクリックでアクセント位置を変更", "バーをクリックでアクセント位置を変更");
+    public static readonly IValueConverter AccentHint =
+        Choose("解析すると、発音ごとのアクセントとピッチを編集できます。", "解析すると、アクセントの位置を編集できます。");
+
+    private static IValueConverter Choose(string whenTrue, string whenFalse) =>
+        new FuncValueConverter<bool, string>(value => value ? whenTrue : whenFalse);
+
     public VoiceEditorView()
     {
         InitializeComponent();
@@ -40,7 +52,7 @@ public partial class VoiceEditorView : UserControl
     {
         if (DataContext is not VoiceEditorViewModel model) return;
         var connection = edit ? model.SelectedEngine.Value : null;
-        if (connection?.IsCore == true) return;
+        if (connection is { IsCore: true } or { IsAquesTalkPlayer: true }) return;
         bool restoreMissing = connection != null && model.IsMissingConnection(connection.Id);
         var name = new TextBox { Name = "ConnectionNameInput", Text = connection?.Name, PlaceholderText = "表示名（省略可）" };
         var url = new TextBox { Name = "ConnectionUrlInput", Text = connection?.Url, PlaceholderText = "http://127.0.0.1:50021" };

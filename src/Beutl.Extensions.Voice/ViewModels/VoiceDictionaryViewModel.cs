@@ -139,7 +139,8 @@ internal sealed class VoiceDictionaryViewModel : IDisposable
         try
         {
             var selected = SelectedEngine.Value;
-            var engines = new[] { VoiceEngineConnection.Core }.Concat(VoiceEngineStore.Load()).ToArray();
+            // AquesTalkPlayer edits its user dictionary in its own window.
+            var engines = new[] { VoiceEngineConnection.Core }.Concat(VoiceEngineStore.Load().Where(x => !x.IsAquesTalkPlayer)).ToArray();
             var refreshed = engines.FirstOrDefault(x => x.Id == selected.Id && x.Url == selected.Url);
             // Retain a removed selection long enough to save/export or discard its open draft.
             if (refreshed == null) engines = [.. engines, selected];

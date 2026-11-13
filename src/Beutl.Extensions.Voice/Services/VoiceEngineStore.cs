@@ -18,8 +18,11 @@ public static class VoiceEngineStore
             if (!File.Exists(GlobalPath)) return [];
             // An atomic replacement by another process must not invalidate an open reader.
             using var stream = new FileStream(GlobalPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
-            return JsonSerializer.Deserialize<VoiceEngineConnection[]>(stream)
+            var connections = JsonSerializer.Deserialize<VoiceEngineConnection[]>(stream)
                 ?? throw new JsonException("接続先を読み込めませんでした。");
+            // What AquesTalkPlayer can do is up to this extension, not the version that registered it.
+            return [.. connections.Select(connection => connection.IsAquesTalkPlayer
+                ? connection with { Capabilities = AquesTalkPlayerEngine.Capabilities } : connection)];
         }
     }
 

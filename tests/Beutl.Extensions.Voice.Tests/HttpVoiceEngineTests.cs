@@ -71,7 +71,7 @@ public class HttpVoiceEngineTests
         };
         var path = Path.Combine(_directory, "original.wav");
         await File.WriteAllBytesAsync(path, EngineServer.Wave());
-        var element = VoiceElementFactory.Create(editor.Scene, path, generation, MediaTime.Zero, 1);
+        var element = VoiceElementFactory.Create(editor.Scene, path, generation, MediaTime.Zero, 1, null);
         editor.Scene.AddChild(element);
         var controller = element.Objects.OfType<TtsController>().Single();
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
@@ -116,6 +116,35 @@ public class HttpVoiceEngineTests
             Assert.That(server.MoraPitchCount, Is.EqualTo(1));
         }
         finally { server.Resume.TrySetResult(); window.Close(); }
+    }
+
+    [AvaloniaTest]
+    public async Task Choosing_another_speaker_in_the_selector_selects_its_first_style()
+    {
+        using var server = new EngineServer
+        {
+            Speakers =
+            [
+                new VoiceMetadata { Name = "A", SpeakerUuid = "a", Version = "1", Styles = [new VoiceStyle { Id = 1, Name = "ノーマル" }] },
+                new VoiceMetadata { Name = "B", SpeakerUuid = "b", Version = "1", Styles = [new VoiceStyle { Id = 2, Name = "ノーマル" }] }
+            ]
+        };
+        using var editor = Editor();
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(await model.SaveConnection("Test", server.Url), Is.True);
+        model.SelectedVoice.Value = model.Voice.Value[0];
+        var view = new VoiceEditorView { DataContext = model };
+        var window = new Window { Width = 360, Height = 640, Content = view };
+        try
+        {
+            window.Show();
+            await Settle();
+            view.FindControl<ComboBox>("VoiceSelector")!.SelectedItem = model.Voice.Value[1];
+            await Settle();
+            Assert.That(model.SelectedStyle.Value?.Id, Is.EqualTo(2));
+            Assert.That(view.FindControl<ComboBox>("StyleSelector")!.SelectedItem, Is.SameAs(model.SelectedStyle.Value));
+        }
+        finally { window.Close(); }
     }
 
     [AvaloniaTest]
@@ -513,7 +542,7 @@ public class HttpVoiceEngineTests
             model.SelectedEngine.Value = model.Engines.Value.Single(x => x.IsCore);
             Assert.That(voiceView.FindControl<Expander>("AccentExpander")!.IsVisible, Is.True);
             model.ApplyPreset();
-            Assert.That(model.IsHttpEngine.Value, Is.True);
+            Assert.That(model.IsExternalEngine.Value, Is.True);
             Assert.That(model.TempoDynamicsScale.Value, Is.EqualTo(1.5));
 
             var connectionId = model.SelectedEngine.Value!.Id;
