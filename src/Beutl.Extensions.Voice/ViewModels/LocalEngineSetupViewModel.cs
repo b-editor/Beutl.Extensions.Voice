@@ -93,7 +93,12 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     public void SelectApplication(LocalEngineCandidateViewModel entry, string path)
     {
         if (_disposed || IsBusy.Value) return;
-        entry.ApplicationPath.Value = path;
+        if (LocalVoiceEngines.ResolveChosenApplication(entry.Engine, path, LocalVoiceEngines.CurrentPlatform) is not { } application)
+        {
+            entry.Status.Value = "選択したフォルダーにアプリが見つかりません。";
+            return;
+        }
+        entry.ApplicationPath.Value = application;
         entry.IsUserSelected = true;
         if (entry.Connection == null)
         {
