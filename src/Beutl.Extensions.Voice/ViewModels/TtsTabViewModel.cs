@@ -116,7 +116,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             var output = await _synthesize(request.Text, request.Settings, query);
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
-            using var player = new SimpleWavePlayer(output.Wave);
+            using var player = new SimpleWavePlayer(PreviewWave(output));
             await player.Play(default);
         }
         catch (Exception ex)
@@ -130,6 +130,11 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             IsGenerating.Value = false;
         }
     }
+
+    // AquesTalkPlayer's speech plays converted to the project's rate as its resampling effect converts it on the timeline.
+    internal byte[] PreviewWave(VoiceSynthesisResult output) => output.Settings.IsAquesTalkPlayer
+        ? VoiceWave.ResampleLagrange(output.Wave, _scene.FindHierarchicalParent<Project>().GetSampleRate())
+        : output.Wave;
 
     public void WriteToJson(JsonObject json)
     {
@@ -169,7 +174,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             // A newer HTTP selection supersedes a pending legacy Core migration.
-            if (_disposed || settings == null && IsHttpEngine.Value) return;
+            if (_disposed || settings == null && IsExternalEngine.Value) return;
             if (settings != null) ApplySettings(settings);
             else
             {

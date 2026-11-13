@@ -70,7 +70,11 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             engines = new[] { VoiceEngineConnection.Core }.Concat(VoiceEngineStore.Load()).Select(engine => new
             {
                 engineId = engine.Id, engine.Name, engine.IsCore,
-                url = engine.IsCore ? null : engine.Url, engine.Version, engine.Capabilities,
+                kind = engine.IsCore ? "core" : engine.IsAquesTalkPlayer ? "aquestalkplayer" : "http",
+                url = engine.IsCore || engine.IsAquesTalkPlayer ? null : engine.Url,
+                applicationPath = engine.IsAquesTalkPlayer ? engine.ApplicationPath : null,
+                engine.Version,
+                Capabilities = engine.IsAquesTalkPlayer ? AquesTalkPlayerEngine.Capabilities : engine.Capabilities,
                 isInstalled = engine.IsCore ? (bool?)(loader?.IsInstalled == true) : null,
                 isLoaded = engine.IsCore ? (bool?)(loader?.IsLoaded == true) : null
             }).ToArray()
@@ -93,18 +97,28 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
         }
         else
         {
-            engine = VoiceEngineStore.Load().FirstOrDefault(connection => connection.Id == engineId)
+            var registered = VoiceEngineStore.Load().FirstOrDefault(connection => connection.Id == engineId)
                 ?? throw new InvalidOperationException($"Voice engine '{engineId}' is not registered. Call voice_list_engines.");
-            engine = await HttpVoiceEngine.DiscoverAsync(engine, cancellationToken);
+            // AquesTalkPlayer's voices are its presets, read from the app's settings.
+            engine = registered.IsAquesTalkPlayer
+                ? await Task.Run(() => AquesTalkPlayerEngine.Discover(registered.ApplicationPath, registered), cancellationToken)
+                : await HttpVoiceEngine.DiscoverAsync(registered, cancellationToken);
         }
         return Json(new
         {
             engineId = engine.Id, engineName = engine.Name, engineVersion = engine.Version, engine.Capabilities,
-            voices = engine.Voices.Select(voice => new
-            {
-                speakerUuid = voice.SpeakerUuid, speakerName = voice.Name, modelVersion = voice.Version,
-                styles = voice.Styles.Select(style => new { styleId = style.Id, styleName = style.Name }).ToArray()
-            }).ToArray()
+            voices = engine.Voices.Select(voice => voice.AquesTalkPlayer is { } values
+                ? (object)new
+                {
+                    speakerUuid = voice.SpeakerUuid, speakerName = voice.Name, modelVersion = voice.Version,
+                    styles = voice.Styles.Select(style => new { styleId = style.Id, styleName = style.Name }).ToArray(),
+                    aquesTalkPlayerVoice = values
+                }
+                : new
+                {
+                    speakerUuid = voice.SpeakerUuid, speakerName = voice.Name, modelVersion = voice.Version,
+                    styles = voice.Styles.Select(style => new { styleId = style.Id, styleName = style.Name }).ToArray()
+                }).ToArray()
         });
     }
 

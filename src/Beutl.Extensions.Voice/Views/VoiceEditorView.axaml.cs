@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Data;
+using Avalonia.Data.Converters;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Beutl.Extensions.Voice.ViewModels;
@@ -9,6 +10,10 @@ namespace Beutl.Extensions.Voice.Views;
 
 public partial class VoiceEditorView : UserControl
 {
+    // AquesTalkPlayer takes the accents but not the pitches drawn from them.
+    public static readonly IValueConverter AccentPanelTip = new FuncValueConverter<bool, string>(aquesTalkPlayer => aquesTalkPlayer
+        ? "バーをクリックでアクセント位置を変更" : "ドラッグでピッチを調整、バーをクリックでアクセント位置を変更");
+
     public VoiceEditorView()
     {
         InitializeComponent();
@@ -40,7 +45,7 @@ public partial class VoiceEditorView : UserControl
     {
         if (DataContext is not VoiceEditorViewModel model) return;
         var connection = edit ? model.SelectedEngine.Value : null;
-        if (connection?.IsCore == true) return;
+        if (connection is { IsCore: true } or { IsAquesTalkPlayer: true }) return;
         bool restoreMissing = connection != null && model.IsMissingConnection(connection.Id);
         var name = new TextBox { Name = "ConnectionNameInput", Text = connection?.Name, PlaceholderText = "表示名（省略可）" };
         var url = new TextBox { Name = "ConnectionUrlInput", Text = connection?.Url, PlaceholderText = "http://127.0.0.1:50021" };

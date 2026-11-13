@@ -22,17 +22,27 @@ public partial class VoiceEditorViewModel : IDisposable
     public VoiceEditorViewModel()
     {
         InitializeEngines();
+        InitializeAquesTalkPlayer();
         VoiceDictionaryService.Changed += OnDictionaryChanged;
         Disposable.Create(() => VoiceDictionaryService.Changed -= OnDictionaryChanged).AddTo(_subscriptions);
         Text.Subscribe(_ => { if (!_updating) InvalidateQuery(); }).AddTo(_subscriptions);
         SelectedVoice.Subscribe(voice =>
         {
-            if (_updating) return;
+            // The style choices change before a style is chosen from them: a style missing from the choices would be
+            // cleared by the selector.
+            if (_updating)
+            {
+                Styles.Value = voice?.Styles ?? [];
+                return;
+            }
             _unavailableSettings = null;
             UpdateSilently(() =>
             {
+                Styles.Value = voice?.Styles ?? [];
                 if (voice?.Styles.Contains(SelectedStyle.Value!) != true)
                     SelectedStyle.Value = voice?.Styles.FirstOrDefault();
+                // Choosing an AquesTalkPlayer preset starts from its values, as choosing it in the app does.
+                if (IsAquesTalkPlayer.Value) ShowAquesTalkPlayerVoice(voice?.AquesTalkPlayer);
             });
             InvalidateQuery();
             Edited?.Invoke();
@@ -70,6 +80,7 @@ public partial class VoiceEditorViewModel : IDisposable
     public ReactivePropertySlim<string> Text { get; } = new("");
     public ReactivePropertySlim<VoiceMetadata[]> Voice { get; } = new([]);
     public ReactivePropertySlim<VoiceMetadata?> SelectedVoice { get; } = new();
+    public ReactivePropertySlim<VoiceStyle[]> Styles { get; } = new([]);
     public ReactivePropertySlim<VoiceStyle?> SelectedStyle { get; } = new();
     public ReactivePropertySlim<bool> IsGenerating { get; } = new();
     public ReactivePropertySlim<bool> IsEnabled { get; } = new();
@@ -98,7 +109,7 @@ public partial class VoiceEditorViewModel : IDisposable
         {
             var loader = TtsLoader.VoiceVoxLoader.Value;
             IsVoiceVoxInstalled.Value = loader?.IsInstalled == true;
-            if (IsHttpEngine.Value) return;
+            if (IsExternalEngine.Value) return;
             IsEnabled.Value = loader?.IsLoaded == true;
             if (loader?.IsLoaded != true) return;
             var previous = restoreSettings ? CaptureStoredSettings() : null;
@@ -132,12 +143,14 @@ public partial class VoiceEditorViewModel : IDisposable
     // Tuning can be edited and saved before a voice has been selected.
     protected VoiceSettings CaptureDraftSettings() => CaptureStoredSettings() ?? WithTuning(SelectedEngineSettings());
 
-    private VoiceSettings WithTuning(VoiceSettings settings) => settings with
+    // The sliders an engine hides keep their values for the next engine, but are saved only with the engine they suit.
+    private VoiceSettings WithTuning(VoiceSettings settings) => (settings with
     {
         SpeedScale = SpeedScale.Value, PitchScale = PitchScale.Value, IntonationScale = IntonationScale.Value,
         VolumeScale = VolumeScale.Value, PrePhonemeLength = PrePhonemeLength.Value, PostPhonemeLength = PostPhonemeLength.Value,
-        TempoDynamicsScale = EngineCapabilities.Value.TempoDynamics ? TempoDynamicsScale.Value : settings.TempoDynamicsScale
-    };
+        TempoDynamicsScale = EngineCapabilities.Value.TempoDynamics ? TempoDynamicsScale.Value : settings.TempoDynamicsScale,
+        AquesTalkPlayerVoice = settings.IsAquesTalkPlayer ? CaptureAquesTalkPlayerVoice() : null
+    }).WithSupportedTuning();
 
     protected bool ApplySettings(VoiceSettings settings, bool report = true)
     {
@@ -159,6 +172,8 @@ public partial class VoiceEditorViewModel : IDisposable
             PrePhonemeLength.Value = settings.PrePhonemeLength;
             PostPhonemeLength.Value = settings.PostPhonemeLength;
             TempoDynamicsScale.Value = settings.TempoDynamicsScale ?? 1;
+            // Saved values win over the preset's, which the app may have changed since.
+            if (settings.IsAquesTalkPlayer) ShowAquesTalkPlayerVoice(settings.AquesTalkPlayerVoice ?? voice?.AquesTalkPlayer);
             _unavailableSettings = style == null && !string.IsNullOrEmpty(settings.SpeakerUuid) ? settings : null;
         });
         if (!sameVoice) InvalidateQuery();
@@ -237,9 +252,10 @@ public partial class VoiceEditorViewModel : IDisposable
         finally { IsGenerating.Value = false; }
     }
 
-    protected void PublishQuery(string text, VoiceSettings settings, AudioQueryModel query)
+    // An engine without a query, such as AquesTalkPlayer, leaves nothing to publish.
+    protected void PublishQuery(string text, VoiceSettings settings, AudioQueryModel? query)
     {
-        if (_disposed || Text.Value != text || CaptureSettings()?.UsesSameVoice(settings) != true) return;
+        if (query == null || _disposed || Text.Value != text || CaptureSettings()?.UsesSameVoice(settings) != true) return;
         AudioQuery.Value = query;
         Edited?.Invoke();
         ConfirmEdit();

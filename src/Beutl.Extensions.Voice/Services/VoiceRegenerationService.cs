@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Beutl.Audio;
+using Beutl.Audio.Effects;
 using Beutl.Editor;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -72,8 +73,12 @@ internal static class VoiceRegenerationService
             await File.WriteAllBytesAsync(path, output.Wave, cancellationToken);
             var history = ValidateTarget();
             var nextSource = SoundSource.Open(path);
+            // AquesTalkPlayer speech is resampled as when it was added; a disabled resampling stays as the user left it.
+            bool resample = output.Settings.IsAquesTalkPlayer
+                && sound.Effect.Value is AudioEffectGroup effects && !effects.Children.OfType<ResamplingEffect>().Any();
             history.ExecuteInTransaction(() =>
             {
+                if (resample) VoiceElementFactory.AddResampling(sound, AquesTalkPlayerEngine.Resampling);
                 VoiceSubtitles.Update(controller, subtitleUpdates);
                 sound.Source.Value = nextSource;
                 controller.Text.Value = request.Text;

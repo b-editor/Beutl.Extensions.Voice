@@ -98,7 +98,7 @@ public partial class LocalEngineSetupView : UserControl
         {
             var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
             {
-                Title = entry.Engine.ApplicationName + "のアプリ・エンジンを選択",
+                Title = entry.Engine.ApplicationName + (entry.Engine.IsAquesTalkPlayer ? "のアプリを選択" : "のアプリ・エンジンを選択"),
                 AllowMultiple = false,
                 FileTypeFilter = [new("アプリ・実行ファイル")
                 {

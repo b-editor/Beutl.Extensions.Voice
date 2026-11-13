@@ -6,7 +6,8 @@ using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.Services;
 
-internal sealed record VoiceSynthesisResult(byte[] Wave, AudioQueryModel Query, string Json, VoiceSettings Settings);
+// Query and Json are empty for an engine that reads the text itself without an editable query.
+internal sealed record VoiceSynthesisResult(byte[] Wave, AudioQueryModel? Query, string Json, VoiceSettings Settings);
 
 internal static class VoiceSynthesisService
 {
@@ -26,14 +27,23 @@ internal static class VoiceSynthesisService
     public static Task<AudioQueryModel> CreateQueryAsync(string text, VoiceSettings settings,
         CancellationToken cancellationToken = default)
     {
+        if (settings.IsAquesTalkPlayer)
+            return Task.Run(() =>
+            {
+                var (loader, styleId) = ResolveAnalysisVoice();
+                return CreateQuery(loader, text, styleId);
+            }, cancellationToken);
         if (settings.EngineId != VoiceSettings.CoreEngineId)
             return HttpVoiceEngine.CreateQueryAsync(text, settings, cancellationToken);
         return Task.Run(() => CreateCoreQuery(text, settings), cancellationToken);
     }
 
+    // AquesTalkPlayer reads the text itself unless it is given an analysis.
     public static Task<VoiceSynthesisResult> SynthesizeAsync(string text, VoiceSettings settings, AudioQueryModel? query,
         CancellationToken cancellationToken = default)
     {
+        if (settings.IsAquesTalkPlayer)
+            return AquesTalkPlayerEngine.SynthesizeAsync(text, settings, query, cancellationToken);
         if (settings.EngineId != VoiceSettings.CoreEngineId)
             return HttpVoiceEngine.SynthesizeAsync(text, settings, query, cancellationToken);
         return Task.Run(() => SynthesizeCore(text, settings, query), cancellationToken);
@@ -42,13 +52,15 @@ internal static class VoiceSynthesisService
     public static Task<List<AccentPhraseModel>> ReplaceMoraPitchAsync(List<AccentPhraseModel> phrases,
         VoiceSettings settings, CancellationToken cancellationToken = default)
     {
-        if (settings.EngineId != VoiceSettings.CoreEngineId)
+        if (settings.EngineId != VoiceSettings.CoreEngineId && !settings.IsAquesTalkPlayer)
             return HttpVoiceEngine.ReplaceMoraPitchAsync(phrases, settings, cancellationToken);
         return Task.Run(() =>
         {
-            var (loader, _) = ResolveVoice(settings);
+            // AquesTalkPlayer's pitches only draw its accents, so the voice that analyzed them draws them.
+            var (loader, styleId) = settings.IsAquesTalkPlayer
+                ? ResolveAnalysisVoice() : (ResolveVoice(settings).Loader, checked((uint)settings.StyleId));
             var result = loader.Synthesizer!.ReplaceMoraPitch(JsonSerializer.Serialize(phrases, JsonOptions),
-                checked((uint)settings.StyleId), out var json);
+                styleId, out var json);
             if (result != ResultCode.RESULT_OK) throw new InvalidOperationException(result.ToMessage());
             return JsonSerializer.Deserialize<List<AccentPhraseModel>>(json!, JsonOptions)
                 ?? throw new JsonException("VOICEVOXの応答を解析できませんでした。");
@@ -71,6 +83,21 @@ internal static class VoiceSynthesisService
         var result = loader.Synthesizer!.Synthesis(json, checked((uint)resolved.StyleId), SynthesisOptions.Default(), out _, out var wave);
         if (result != ResultCode.RESULT_OK || wave == null) throw new InvalidOperationException(result.ToMessage());
         return new(wave, query, json, resolved);
+    }
+
+    // Accents come from VOICEVOX's dictionary whichever voice is asked, so the first voice that loads analyzes the text
+    // of engines without an analysis of their own.
+    private static (VoiceVoxLoader Loader, uint StyleId) ResolveAnalysisVoice()
+    {
+        var loader = TtsLoader.VoiceVoxLoader.Value;
+        if (loader?.IsLoaded != true || loader.Synthesizer == null)
+            throw new InvalidOperationException(AquesTalkPlayerEngine.AnalysisNeedsCore);
+        foreach (var style in loader.VoiceSets.SelectMany(x => x.Metadata).SelectMany(x => x.Styles).Where(x => x.Type is null or "talk"))
+        {
+            uint styleId = checked((uint)style.Id);
+            if (loader.EnsureVoiceModelLoaded(styleId)) return (loader, styleId);
+        }
+        throw new InvalidOperationException(AquesTalkPlayerEngine.AnalysisNeedsCore);
     }
 
     private static (VoiceVoxLoader Loader, VoiceSettings Settings) ResolveVoice(VoiceSettings settings)

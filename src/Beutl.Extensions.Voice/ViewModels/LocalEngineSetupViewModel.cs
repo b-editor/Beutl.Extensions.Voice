@@ -22,16 +22,19 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     private readonly CancellationTokenSource _lifetime = new();
     private readonly Func<LocalVoiceEngine, string?> _findApplication;
     private readonly Action<string> _startApplication;
+    private readonly Func<string, VoiceEngineConnection?, VoiceEngineConnection> _discoverAquesTalkPlayer;
     private bool _disposed;
 
-    public LocalEngineSetupViewModel() : this(LocalVoiceEngines.Known) { }
+    public LocalEngineSetupViewModel() : this(LocalVoiceEngines.Available) { }
 
     internal LocalEngineSetupViewModel(IEnumerable<LocalVoiceEngine> engines,
-        Func<LocalVoiceEngine, string?>? findApplication = null, Action<string>? startApplication = null)
+        Func<LocalVoiceEngine, string?>? findApplication = null, Action<string>? startApplication = null,
+        Func<string, VoiceEngineConnection?, VoiceEngineConnection>? discoverAquesTalkPlayer = null)
     {
         Engines = engines.Select(x => new LocalEngineCandidateViewModel(x)).ToArray();
         _findApplication = findApplication ?? LocalVoiceEngines.FindApplication;
         _startApplication = startApplication ?? LocalVoiceEngines.StartApplication;
+        _discoverAquesTalkPlayer = discoverAquesTalkPlayer ?? AquesTalkPlayerEngine.Discover;
     }
 
     public LocalEngineCandidateViewModel[] Engines { get; }
@@ -50,10 +53,18 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             await Task.WhenAll(Engines.Select(async entry =>
             {
                 entry.Status.Value = "確認中…";
+                // A registered AquesTalkPlayer stays where the user put it, even when another copy is found.
                 string? path = entry.IsUserSelected ? entry.ApplicationPath.Value
+                    : entry.Engine.IsAquesTalkPlayer && StoredAquesTalkPlayer()?.ApplicationPath is { } stored
+                        && (File.Exists(stored) || Directory.Exists(stored)) ? stored
                     : await Task.Run(() => _findApplication(entry.Engine), cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
+                if (entry.Engine.IsAquesTalkPlayer)
+                {
+                    await CheckAquesTalkPlayer(entry, cancellationToken);
+                    return;
+                }
                 var seed = FindStoredConnection(entry) ?? new VoiceEngineConnection { Url = entry.Engine.Url };
                 await Check(entry, seed, cancellationToken);
             }));
@@ -65,6 +76,36 @@ public sealed class LocalEngineSetupViewModel : IDisposable
 
     private static VoiceEngineConnection? FindStoredConnection(LocalEngineCandidateViewModel entry) =>
         VoiceEngineStore.FindByUrl(VoiceEngineStore.Load(), entry.Engine.Url);
+
+    private static VoiceEngineConnection? StoredAquesTalkPlayer() =>
+        VoiceEngineStore.Load().FirstOrDefault(connection => connection.IsAquesTalkPlayer);
+
+    // AquesTalkPlayer runs only to speak, so finding it and reading its presets is all there is to check.
+    private async Task CheckAquesTalkPlayer(LocalEngineCandidateViewModel entry, CancellationToken cancellationToken)
+    {
+        entry.Connection = null;
+        var stored = StoredAquesTalkPlayer();
+        entry.ActionText.Value = stored == null ? "追加" : "更新";
+        if (entry.ApplicationPath.Value is not { } path)
+        {
+            entry.Status.Value = "アプリを選択してください。";
+            entry.CanUse.Value = false;
+            return;
+        }
+        try
+        {
+            var connection = await Task.Run(() => _discoverAquesTalkPlayer(path, stored), cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            entry.Connection = connection;
+            entry.Status.Value = $"利用可能: {connection.Name} {connection.Version}（プリセット {connection.Voices.Length} 件）";
+            entry.CanUse.Value = true;
+        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            entry.Status.Value = ex.Message;
+            entry.CanUse.Value = false;
+        }
+    }
 
     private async Task<bool> Check(LocalEngineCandidateViewModel entry, VoiceEngineConnection seed,
         CancellationToken cancellationToken)
@@ -95,7 +136,14 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         if (_disposed || IsBusy.Value) return;
         entry.ApplicationPath.Value = path;
         entry.IsUserSelected = true;
-        if (entry.Connection == null)
+        if (entry.Engine.IsAquesTalkPlayer)
+        {
+            // The presets are read when it is added.
+            entry.Connection = null;
+            entry.Status.Value = "アプリを選択しました。";
+            entry.CanUse.Value = true;
+        }
+        else if (entry.Connection == null)
         {
             entry.Status.Value = "アプリを選択しました。";
             entry.ActionText.Value = "起動して追加";
@@ -108,6 +156,11 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         if (_disposed || IsBusy.Value) return false;
         IsBusy.Value = true;
         Message.Value = "";
+        if (entry.Engine.IsAquesTalkPlayer)
+        {
+            try { return await UseAquesTalkPlayer(entry); }
+            finally { IsBusy.Value = false; }
+        }
         try
         {
             // Keep the original identity and creation permission throughout startup polling.
@@ -138,6 +191,26 @@ public sealed class LocalEngineSetupViewModel : IDisposable
         }
         catch (Exception ex) { if (!_disposed) Message.Value = entry.Status.Value = $"接続できませんでした: {ex.Message}"; }
         finally { IsBusy.Value = false; }
+        return false;
+    }
+
+    private async Task<bool> UseAquesTalkPlayer(LocalEngineCandidateViewModel entry)
+    {
+        try
+        {
+            string path = entry.ApplicationPath.Value
+                ?? throw new InvalidOperationException("AquesTalkPlayerの場所を「アプリを選択…」で指定してください。");
+            // Read the presets again: they may have changed in the app since the search. The fixed ID replaces an
+            // earlier registration, so there is one AquesTalkPlayer.
+            var connection = await Task.Run(() => _discoverAquesTalkPlayer(path, StoredAquesTalkPlayer()), _lifetime.Token);
+            _lifetime.Token.ThrowIfCancellationRequested();
+            VoiceEngineStore.Save(connection);
+            entry.Connection = connection;
+            SelectedConnection = connection;
+            return true;
+        }
+        catch (OperationCanceledException) when (_disposed) { }
+        catch (Exception ex) { if (!_disposed) Message.Value = entry.Status.Value = $"追加できませんでした: {ex.Message}"; }
         return false;
     }
 

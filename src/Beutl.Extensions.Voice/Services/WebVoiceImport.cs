@@ -58,12 +58,7 @@ internal sealed class WebVoiceImport(
         WebVoiceAssignment assignment, ResamplingMethod? resampling)
     {
         var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1);
-        if (resampling is { } method)
-        {
-            // First in the chain, so the effects added to the speech later run at the project's rate.
-            var effects = (AudioEffectGroup)element.Objects.OfType<SourceSound>().Single().Effect.Value!;
-            effects.Children.Insert(0, new ResamplingEffect { Method = { Value = method } });
-        }
+        if (resampling is { } method) VoiceElementFactory.AddResampling(element.Objects.OfType<SourceSound>().Single(), method);
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
         history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, null, assignment.LipSync, subtitle));

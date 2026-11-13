@@ -1,4 +1,5 @@
 using Beutl.Audio;
+using Beutl.Audio.Effects;
 using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -10,8 +11,13 @@ namespace Beutl.Extensions.Voice.Services;
 
 internal static class VoiceElementFactory
 {
-    public static Element Create(Scene scene, string path, VoiceGeneration generation, MediaTime start, int layer) =>
-        Create(scene, path, generation.Text, generation, start, layer);
+    public static Element Create(Scene scene, string path, VoiceGeneration generation, MediaTime start, int layer)
+    {
+        var element = Create(scene, path, generation.Text, generation, start, layer);
+        if (generation.Settings.IsAquesTalkPlayer)
+            AddResampling(element.Objects.OfType<SourceSound>().Single(), AquesTalkPlayerEngine.Resampling);
+        return element;
+    }
 
     // Speech made elsewhere, such as on a text-to-speech site, has no settings to regenerate it with.
     public static Element Create(Scene scene, string path, string text, VoiceGeneration? generation, MediaTime start, int layer)
@@ -31,4 +37,8 @@ internal static class VoiceElementFactory
         element.Length.Value = duration;
         return element;
     }
+
+    // First in the chain, so the effects added to the speech later run at the project's rate.
+    internal static void AddResampling(SourceSound sound, ResamplingMethod method) =>
+        ((AudioEffectGroup)sound.Effect.Value!).Children.Insert(0, new ResamplingEffect { Method = { Value = method } });
 }

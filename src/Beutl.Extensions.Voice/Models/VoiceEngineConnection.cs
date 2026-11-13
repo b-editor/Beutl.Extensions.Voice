@@ -10,6 +10,8 @@ public sealed record VoiceEngineConnection
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
     public string Name { get; init; } = "";
     public string Url { get; init; } = "";
+    // The executable or app bundle of an engine run as a program instead of reached by URL.
+    public string ApplicationPath { get; init; } = "";
     public string EngineUuid { get; init; } = "";
     public string Version { get; init; } = "";
     public VoiceEngineCapabilities Capabilities { get; init; } = new();
@@ -17,6 +19,13 @@ public sealed record VoiceEngineConnection
 
     [JsonIgnore]
     public bool IsCore => Id == VoiceSettings.CoreEngineId;
+
+    [JsonIgnore]
+    public bool IsAquesTalkPlayer => Id == VoiceSettings.AquesTalkPlayerEngineId;
+
+    // Where the engine is: its URL, or the app that speaks.
+    [JsonIgnore]
+    public string Location => IsAquesTalkPlayer ? ApplicationPath : Url;
 }
 
 public sealed record VoiceEngineCapabilities

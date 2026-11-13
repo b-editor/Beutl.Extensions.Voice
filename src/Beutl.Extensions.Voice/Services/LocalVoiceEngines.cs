@@ -4,7 +4,19 @@ using Microsoft.Win32;
 
 namespace Beutl.Extensions.Voice.Services;
 
-public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url);
+public enum LocalVoiceEngineKind
+{
+    // An engine with a VOICEVOX-compatible HTTP API at Url.
+    Http,
+
+    // AquesTalkPlayer, which speaks through its command line and has no URL.
+    AquesTalkPlayer
+}
+
+public sealed record LocalVoiceEngine(string Name, string ApplicationName, string Url, LocalVoiceEngineKind Kind = LocalVoiceEngineKind.Http)
+{
+    public bool IsAquesTalkPlayer => Kind == LocalVoiceEngineKind.AquesTalkPlayer;
+}
 
 internal static class LocalVoiceEngines
 {
@@ -12,11 +24,17 @@ internal static class LocalVoiceEngines
     [
         new("VOICEVOX ENGINE", "VOICEVOX", "http://127.0.0.1:50021/"),
         new("AivisSpeech Engine", "AivisSpeech", "http://127.0.0.1:10101/"),
-        new("SHAREVOX Engine", "SHAREVOX", "http://127.0.0.1:50025/")
+        new("SHAREVOX Engine", "SHAREVOX", "http://127.0.0.1:50025/"),
+        new("AquesTalkPlayer", AquesTalkPlayerEngine.ApplicationName, "", LocalVoiceEngineKind.AquesTalkPlayer)
     ];
+
+    // AquesTalkPlayer has no Linux version.
+    internal static LocalVoiceEngine[] Available => Known
+        .Where(engine => !engine.IsAquesTalkPlayer || AquesTalkPlayerEngine.Host.IsSupported).ToArray();
 
     internal static string? FindApplication(LocalVoiceEngine engine)
     {
+        if (engine.IsAquesTalkPlayer) return AquesTalkPlayerEngine.FindApplication();
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         string platform = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
         string[] roots = platform switch
