@@ -13,13 +13,13 @@ public sealed class WebVoiceAssignmentViewModel
 
     internal WebVoiceAssignmentViewModel(Scene scene, WebVoiceSite site, string voiceId, string voiceName,
         WebVoiceAssignment? current = null, TtsTabViewModel? defaults = null,
-        Func<IEnumerable<ObjectTemplateItem>>? subtitleTemplates = null, string? presetPath = null)
+        Func<IEnumerable<ObjectTemplateItem>>? templates = null, string? presetPath = null)
     {
         _site = site;
         VoiceId = voiceId;
         VoiceName = voiceName;
-        LipSync = new LipSyncSelectionViewModel(scene);
-        Subtitles = new SubtitleSelectionViewModel(scene, subtitleTemplates);
+        LipSync = new LipSyncSelectionViewModel(templates);
+        Subtitles = new SubtitleSelectionViewModel(scene, templates);
         Subtitles.Refresh();
         if (current != null)
         {
@@ -29,7 +29,7 @@ public sealed class WebVoiceAssignmentViewModel
         else if (defaults != null)
         {
             // Start from what the speech tab's Add button would use.
-            if (defaults.LipSync.SelectedId is { } target) LipSync.SelectedId = target;
+            if (defaults.LipSync.SelectedId is { } characterTemplate) LipSync.SelectedId = characterTemplate;
             else LipSync.Preset = defaults.LipSync.Preset;
             if (defaults.Subtitles.SelectedId is { } template) Subtitles.SelectedId = template;
             else Subtitles.Template = defaults.Subtitles.Template;

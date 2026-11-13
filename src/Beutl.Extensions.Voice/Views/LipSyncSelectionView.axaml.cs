@@ -7,7 +7,7 @@ public partial class LipSyncSelectionView : UserControl
 {
     public LipSyncSelectionView() => InitializeComponent();
 
-    private void RefreshTargets(object? sender, EventArgs e)
+    private void RefreshTemplates(object? sender, EventArgs e)
     {
         if (DataContext is LipSyncSelectionViewModel model) model.Refresh();
     }

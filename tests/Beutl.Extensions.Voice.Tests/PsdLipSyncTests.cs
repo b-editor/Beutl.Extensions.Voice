@@ -82,6 +82,8 @@ public partial class PsdLipSyncTests
         return target;
     }
 
+    private ObjectTemplateItem SavedTemplate(ICoreSerializable source, string name) => TestTemplates.Save(_directory, source, name);
+
     private SoundSource Wave(bool silent = false)
     {
         string path = Path.Combine(_directory, Guid.NewGuid() + ".wav");
@@ -349,37 +351,50 @@ public partial class PsdLipSyncTests
         using var editor = Editor();
         var target = Character(editor.Scene);
         var other = Character(editor.Scene, 3);
+        // Templates name a PSD, so the second character shows a file of its own.
+        string otherPath = Path.Combine(_directory, "guest.psd");
+        File.Copy(other.Source.Value!.FullName, otherPath);
+        other.Source.Value = new FileInfo(otherPath);
         var first = Speech(editor.Scene, 1);
         var second = Speech(editor.Scene, 3.5);
         target.LipSyncAudio.Value = Wave();
         target.LipSyncOffset.Value = At(0.3);
         target.LipSyncOffset.Expression = Expression.CreateReference<MediaTime>(first.Sound.Id.Value, nameof(SourceSound.OffsetPosition));
         string originalExpression = target.LipSyncOffset.SerializeExpression()!.ToJsonString();
+        var host = SavedTemplate(target, "案内役");
+        var guest = SavedTemplate(other, "ゲスト");
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
-        using var model = TtsControllerTests.CreateModel(editor, first.Controller);
-        model.SelectedLipSyncTarget.Value = model.LipSyncTargets.Value.Single(x => x.Object == target);
+        using var model = TtsControllerTests.CreateModel(editor, first.Controller, () => [host, guest]);
+        Assert.That(model.LipSyncStatus.Value, Is.EqualTo("立ち絵と連携していません。"));
+        model.SelectedLipSyncTemplate.Value = model.LipSyncTemplates.Value.Single(x => x.Id == host.Id);
         model.ConnectLipSync();
         Assert.That(model.HasLipSync.Value, Is.True, model.Message.Value);
+        Assert.That(PsdLipSync.Targets(editor.Scene).ToArray(), Is.EqualTo(new[] { target, other }), "The scene's character is linked, not added again.");
+        Assert.That(model.LipSyncStatus.Value, Is.EqualTo($"連携中: {PsdLipSync.TargetName(target)}"));
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(model.HasLipSync.Value, Is.False);
         Assert.That(target.LipSyncOffset.SerializeExpression()!.ToJsonString(), Is.EqualTo(originalExpression));
         Assert.That(editor.History.Redo(), Is.True);
         PsdLipSync.Connect(second.Controller, target);
         editor.History.Commit();
-        model.SelectedLipSyncTarget.Value = model.LipSyncTargets.Value.Single(x => x.Object == other);
+        int undoCount = editor.History.UndoCount;
+        model.ConnectLipSync();
+        Assert.That(editor.History.UndoCount, Is.EqualTo(undoCount), "Linking the same character again changes nothing.");
+        model.SelectedLipSyncTemplate.Value = model.LipSyncTemplates.Value.Single(x => x.Id == guest.Id);
         model.ConnectLipSync();
         Assert.That(PsdLipSync.GroupOf(target), Is.EqualTo(second.Controller.LipSyncGroupId.Value));
+        Assert.That(first.Controller.LipSyncGroupId.Value, Is.EqualTo(PsdLipSync.GroupOf(other)).And.Not.EqualTo(Guid.Empty));
         model.DisconnectLipSync();
         Assert.That(other.LipSyncAudio.Expression, Is.Null);
-        using var secondModel = TtsControllerTests.CreateModel(editor, second.Controller);
+        using var secondModel = TtsControllerTests.CreateModel(editor, second.Controller, () => [host, guest]);
         var element = target.FindHierarchicalParent<Element>()!;
         element.IsLocked.Value = true;
         secondModel.DisconnectLipSync();
         Assert.That(secondModel.Message.Value, Does.Contain("ロック"));
         Assert.That(second.Controller.LipSyncGroupId.Value, Is.Not.EqualTo(Guid.Empty));
         element.IsLocked.Value = false;
-        secondModel.SelectedLipSyncTarget.Value = secondModel.LipSyncTargets.Value.Single(x => x.Object == other);
+        secondModel.SelectedLipSyncTemplate.Value = secondModel.LipSyncTemplates.Value.Single(x => x.Id == guest.Id);
         secondModel.ConnectLipSync(); // Moving the last voice also restores the previous character.
         Assert.That(target.LipSyncAudio.Expression, Is.Null);
         Assert.That(target.LipSyncAudio.Value, Is.Not.Null);
@@ -388,9 +403,9 @@ public partial class PsdLipSyncTests
         Assert.That(editor.History.Undo(), Is.True);
         Assert.That(PsdLipSync.GroupOf(target), Is.EqualTo(second.Controller.LipSyncGroupId.Value));
         Assert.That(other.LipSyncAudio.Expression, Is.Null);
-        Assert.That(secondModel.SelectedLipSyncTarget.Value?.Object, Is.SameAs(target));
+        Assert.That(secondModel.LipSyncStatus.Value, Is.EqualTo($"連携中: {PsdLipSync.TargetName(target)}"));
         Assert.That(editor.History.Redo(), Is.True);
-        Assert.That(secondModel.SelectedLipSyncTarget.Value?.Object, Is.SameAs(other));
+        Assert.That(secondModel.LipSyncStatus.Value, Is.EqualTo($"連携中: {PsdLipSync.TargetName(other)}"));
         var manualAudio = Expression.CreateReference<SoundSource?>(first.Sound.Id.Value, nameof(SourceSound.Source));
         other.LipSyncAudio.Expression = manualAudio;
         secondModel.DisconnectLipSync();
@@ -412,8 +427,9 @@ public partial class PsdLipSyncTests
         tab.Text.Value = "読み上げ";
         await tab.Generate();
         var controller = editor.Scene.EnumerateAllChildren<TtsController>().Single();
-        using var model = TtsControllerTests.CreateModel(editor, controller);
-        model.SelectedLipSyncTarget.Value = model.LipSyncTargets.Value.Single();
+        var template = SavedTemplate(target, "会話の立ち絵");
+        using var model = TtsControllerTests.CreateModel(editor, controller, () => [template]);
+        model.SelectedLipSyncTemplate.Value = model.LipSyncTemplates.Value.Single();
         model.ConnectLipSync();
         var time = new EvaluationContext(controller.TimeRange.Value.Start);
         string before = target.LipSyncAudio.Evaluate(time)!.Uri.LocalPath;
@@ -430,11 +446,12 @@ public partial class PsdLipSyncTests
     [AvaloniaTest]
     [TestCase(320, false)]
     [TestCase(460, true)]
-    public async Task Controller_offers_optional_targets_without_clipping(int width, bool light)
+    public async Task Controller_offers_optional_templates_without_clipping(int width, bool light)
     {
         using var editor = Editor();
         var speech = Speech(editor.Scene, 1);
-        using var model = TtsControllerTests.CreateModel(editor, speech.Controller);
+        var templates = new List<ObjectTemplateItem>();
+        using var model = TtsControllerTests.CreateModel(editor, speech.Controller, () => templates);
         Assert.That(typeof(TtsController).Assembly.GetReferencedAssemblies().Select(x => x.Name),
             Does.Not.Contain("Beutl.Extensions.PsdTachie"));
         var view = new TtsControllerView { DataContext = model };
@@ -449,16 +466,24 @@ public partial class PsdLipSyncTests
             await Settle();
             var connect = view.FindControl<Button>("ConnectLipSyncButton")!;
             Assert.That(connect.IsEffectivelyEnabled, Is.False);
-            Character(editor.Scene);
-            model.RefreshLipSyncTargets();
-            view.FindControl<ComboBox>("LipSyncTargetSelector")!.SelectedIndex = 0;
+            // A template saved later appears on the next dropdown open; the scene needs no character of its own.
+            templates.Add(SavedTemplate(Character(new Scene()), "会話の立ち絵"));
+            var selector = view.FindControl<ComboBox>("LipSyncTemplateSelector")!;
+            selector.IsDropDownOpen = true;
+            await Settle();
+            selector.SelectedIndex = 0;
+            selector.IsDropDownOpen = false;
+            await Settle();
             connect.Command!.Execute(null);
             await Settle();
             expander.BringIntoView();
             await Settle();
             Assert.That(model.HasLipSync.Value, Is.True, model.Message.Value);
+            var character = PsdLipSync.Targets(editor.Scene).Single();
+            Assert.That(character.FindHierarchicalParent<Element>()!.Range, Is.EqualTo(speech.Element.Range), "The template's character is added for the line.");
+            Assert.That(view.FindControl<Avalonia.Controls.TextBlock>("LipSyncStatusText")!.Text,
+                Is.EqualTo($"連携中: {PsdLipSync.TargetName(character)}"));
             Assert.That(scroll.Extent.Width, Is.LessThanOrEqualTo(scroll.Viewport.Width));
-            var selector = view.FindControl<ComboBox>("LipSyncTargetSelector")!;
             Assert.That(selector.Bounds.Width, Is.GreaterThan(100));
             Assert.That(connect.TranslatePoint(new Avalonia.Point(0, connect.Bounds.Height), window)!.Value.Y,
                 Is.LessThanOrEqualTo(window.ClientSize.Height));

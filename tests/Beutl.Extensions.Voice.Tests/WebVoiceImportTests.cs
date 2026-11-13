@@ -222,8 +222,10 @@ public class WebVoiceImportTests
     {
         using var editor = Editor();
         var target = Character(editor.Scene);
-        using var tab = new TtsTabViewModel(new(), editor);
-        tab.LipSync.SelectedId = target.Id.Value;
+        var template = TestTemplates.Save(_directory, target, "霊夢の立ち絵");
+        using var tab = new TtsTabViewModel(new(), editor,
+            (_, _, _) => throw new AssertionException("The tab synthesizes nothing here."), () => [template]);
+        tab.LipSync.SelectedId = template.Id;
         tab.Subtitles.SelectedId = Guid.Empty;
         editor.ToolTabs.Add(tab);
         var asked = new List<WebVoiceAssignmentViewModel>();
@@ -231,7 +233,7 @@ public class WebVoiceImportTests
         {
             asked.Add(model);
             return Task.FromResult(model.TryCapture());
-        });
+        }, () => [template]);
 
         foreach (var (voice, name, at) in new[] { ("f1", "女声1 (f1)", 0.0), ("f1", "女声1 (f1)", 3.0), ("f2", "女声2 (f2)", 6.0) })
         {
@@ -246,7 +248,7 @@ public class WebVoiceImportTests
             // The second line of the same voice needs no answer.
             Assert.That(asked.Select(x => x.VoiceLabel), Is.EqualTo(new[] { "女声1 (f1)", "女声2 (f2)" }));
             Assert.That(asked[0].Description, Does.Contain("ゆっくりボイスメーカー").And.Contain("女声1 (f1)"));
-            Assert.That(asked[0].LipSync.SelectedId, Is.EqualTo(target.Id.Value));
+            Assert.That(asked[0].LipSync.SelectedId, Is.EqualTo(template.Id));
             Assert.That(asked[0].Subtitles.SelectedId, Is.EqualTo(Guid.Empty));
             Assert.That(stored.Select(x => (x.SiteId, x.VoiceId)), Is.EquivalentTo(new[] { ("siyukatu", "f1"), ("siyukatu", "f2") }));
             Assert.That(stored.All(x => x.LipSync?.PsdPath == target.Source.Value!.FullName && x.Subtitle?.Name == "標準字幕"), Is.True);
@@ -329,15 +331,17 @@ public class WebVoiceImportTests
     [AvaloniaTest]
     [TestCase(360, false)]
     [TestCase(480, true)]
-    public async Task The_dialog_offers_scene_characters_presets_and_captions_and_keeps_an_invalid_choice_open(int width, bool dark)
+    public async Task The_dialog_offers_character_templates_presets_and_captions_and_keeps_an_invalid_choice_open(int width, bool dark)
     {
         using var editor = Editor();
         var target = Character(editor.Scene);
+        var template = TestTemplates.Save(_directory, target, "霊夢の立ち絵");
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, new VoicePreset
         {
             Name = "魔理沙", LipSync = PsdLipSyncPresets.Capture(target), Subtitle = VoiceSubtitles.Default(editor.Scene)
         });
-        var model = new WebVoiceAssignmentViewModel(editor.Scene, WebVoiceSites.YukkuriVoiceMaker, "f2", "女声2 (f2)");
+        var model = new WebVoiceAssignmentViewModel(editor.Scene, WebVoiceSites.YukkuriVoiceMaker, "f2", "女声2 (f2)",
+            templates: () => [template]);
         var window = new Window
         {
             Width = width, Height = 560, RequestedThemeVariant = dark ? ThemeVariant.Dark : ThemeVariant.Light,
@@ -353,14 +357,15 @@ public class WebVoiceImportTests
             Assert.Multiple(() =>
             {
                 Assert.That(view.FindControl<ComboBox>("AssignmentPresetSelector")!.IsEffectivelyVisible, Is.True);
-                Assert.That(model.LipSync.Targets.Value.Select(x => x.Name), Has.Some.StartsWith("霊夢"));
+                Assert.That(model.LipSync.Choices.Value.Select(x => x.Name), Is.EqualTo(new[] { "連携しない", "霊夢の立ち絵" }),
+                    "The character on the timeline is offered only through its template.");
                 Assert.That(model.Subtitles.Choices.Value.Select(x => x.Name), Does.Contain("標準字幕"));
             });
             model.SelectedPreset.Value = model.Presets.Single();
             await Settle();
             Capture(window, $"web-voice-dialog-{width}");
 
-            // A character that has gone from the scene keeps the dialog open with the reason.
+            // A template that has gone from the library keeps the dialog open with the reason.
             model.LipSync.SelectedId = Guid.NewGuid();
             Primary(dialog);
             await Settle();
@@ -368,7 +373,7 @@ public class WebVoiceImportTests
             Assert.That(view.FindControl<Avalonia.Controls.TextBlock>("AssignmentMessage")!.IsEffectivelyVisible, Is.True);
             Capture(window, $"web-voice-dialog-invalid-{width}");
 
-            model.LipSync.SelectedId = target.Id.Value;
+            model.LipSync.SelectedId = template.Id;
             Primary(dialog);
             var assignment = await shown.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.Multiple(() =>

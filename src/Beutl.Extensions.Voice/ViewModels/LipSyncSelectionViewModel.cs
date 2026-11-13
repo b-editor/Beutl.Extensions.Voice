@@ -1,25 +1,27 @@
-using Beutl.Engine;
+using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
-using Beutl.ProjectSystem;
 using Reactive.Bindings;
 
 namespace Beutl.Extensions.Voice.ViewModels;
 
 public sealed record LipSyncChoice(Guid? Id, string Name, VoiceLipSyncPreset? Preset = null);
 
+// The character comes from a saved template, as a caption does; characters on the timeline are not offered.
+// Placement links the scene's character showing the same PSD, or adds the template's.
 public sealed class LipSyncSelectionViewModel
 {
-    private readonly Scene _scene;
+    private readonly Func<IEnumerable<ObjectTemplateItem>>? _loadTemplates;
 
-    public LipSyncSelectionViewModel(Scene scene)
+    public LipSyncSelectionViewModel(Func<IEnumerable<ObjectTemplateItem>>? loadTemplates = null)
     {
-        _scene = scene;
+        _loadTemplates = loadTemplates;
         Refresh();
     }
 
-    public ReactivePropertySlim<LipSyncChoice[]> Targets { get; } = new([]);
+    public ReactivePropertySlim<LipSyncChoice[]> Choices { get; } = new([]);
     public ReactivePropertySlim<LipSyncChoice?> Selected { get; } = new();
+
     public Guid? SelectedId
     {
         get => Selected.Value?.Id;
@@ -36,29 +38,16 @@ public sealed class LipSyncSelectionViewModel
 
     private void Refresh(Guid? selectedId, VoiceLipSyncPreset? preset)
     {
-        List<LipSyncChoice> targets = [new(null, "連携しない")];
-        if (preset != null) targets.Add(new(null, $"プリセット: {Path.GetFileNameWithoutExtension(preset.PsdPath)}", preset));
-        targets.AddRange(PsdLipSync.Targets(_scene).Select(x => new LipSyncChoice(x.Id.Value, PsdLipSync.TargetName(x))));
-        // Keep saved choices until their scene objects load or are restored by Undo.
-        if (selectedId != null && targets.All(x => x.Id != selectedId))
-            targets.Add(new(selectedId, "立ち絵が見つかりません"));
-        Targets.Value = targets.ToArray();
-        Selected.Value = targets.First(x => x.Id == selectedId && x.Preset == preset);
+        List<LipSyncChoice> choices = [new(null, "連携しない")];
+        if (preset != null) choices.Add(new(null, $"プリセット: {Path.GetFileNameWithoutExtension(preset.PsdPath)}", preset));
+        choices.AddRange(PsdLipSyncPresets.CharacterTemplates(GetTemplates()).Select(x => new LipSyncChoice(x.Id, x.Name.Value)));
+        if (selectedId != null && choices.All(x => x.Id != selectedId)) choices.Add(new(selectedId, "テンプレートを使用できません"));
+        Choices.Value = choices.ToArray();
+        Selected.Value = choices.First(x => x.Id == selectedId && x.Preset == preset);
     }
 
-    internal VoiceLipSyncPreset? CapturePreset() => Preset ?? (FindTarget() is { } target ? PsdLipSyncPresets.Capture(target) : null);
+    internal VoiceLipSyncPreset? CapturePreset() =>
+        Preset ?? (SelectedId is { } id ? PsdLipSyncPresets.Capture(GetTemplates(), id) : null);
 
-    internal EngineObject? CaptureTarget()
-    {
-        var target = FindTarget();
-        if (target != null) PsdLipSync.ValidateTarget(_scene, target);
-        return target;
-    }
-
-    private EngineObject? FindTarget()
-    {
-        if (SelectedId is not { } id) return null;
-        return PsdLipSync.Targets(_scene).FirstOrDefault(x => x.Id.Value == id)
-            ?? throw new InvalidOperationException("連携先のPSD立ち絵が見つかりません。立ち絵を選び直してください。");
-    }
+    private IEnumerable<ObjectTemplateItem> GetTemplates() => (_loadTemplates ?? VoiceTemplates.Load)();
 }

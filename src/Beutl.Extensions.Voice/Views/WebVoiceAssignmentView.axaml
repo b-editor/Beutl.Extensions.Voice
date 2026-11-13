@@ -22,9 +22,10 @@
         </StackPanel>
 
         <TextBlock Margin="0,4,0,0" Text="立ち絵（口パク）" />
-        <ComboBox x:Name="AssignmentLipSyncSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTargets"
+        <ComboBox x:Name="AssignmentLipSyncSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshLipSync"
                   AutomationProperties.Name="口パクで連携する立ち絵"
-                  ItemsSource="{Binding LipSync.Targets.Value}" SelectedItem="{Binding LipSync.Selected.Value, Mode=TwoWay}">
+                  ToolTip.Tip="PSD立ち絵を保存したテンプレートから選択します。"
+                  ItemsSource="{Binding LipSync.Choices.Value}" SelectedItem="{Binding LipSync.Selected.Value, Mode=TwoWay}">
             <ComboBox.ItemTemplate>
                 <DataTemplate x:DataType="vm:LipSyncChoice">
                     <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
@@ -33,7 +34,7 @@
         </ComboBox>
 
         <TextBlock Margin="0,4,0,0" Text="字幕" />
-        <ComboBox x:Name="AssignmentSubtitleSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshTemplates"
+        <ComboBox x:Name="AssignmentSubtitleSelector" HorizontalAlignment="Stretch" DropDownOpened="RefreshSubtitles"
                   AutomationProperties.Name="字幕テンプレート"
                   ItemsSource="{Binding Subtitles.Choices.Value}" SelectedItem="{Binding Subtitles.Selected.Value, Mode=TwoWay}">
             <ComboBox.ItemTemplate>
