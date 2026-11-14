@@ -22,11 +22,13 @@ internal static class LocalVoiceEngines
     internal static LocalVoiceEngine[] Available => Known
         .Where(engine => !engine.IsAquesTalkPlayer || AquesTalkPlayerEngine.Host.IsSupported).ToArray();
 
+    internal static string CurrentPlatform => OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+
     internal static string? FindApplication(LocalVoiceEngine engine)
     {
         if (engine.IsAquesTalkPlayer) return AquesTalkPlayerEngine.FindApplication();
         string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        string platform = OperatingSystem.IsMacOS() ? "macos" : OperatingSystem.IsWindows() ? "windows" : "linux";
+        string platform = CurrentPlatform;
         string[] roots = platform switch
         {
             "macos" => ["/Applications", Path.Combine(home, "Applications")],
@@ -57,6 +59,17 @@ internal static class LocalVoiceEngines
                 ? File.Exists(Path.Combine(path, "Contents", "Info.plist"))
                     && File.Exists(Path.Combine(path, "Contents", "MacOS", name))
                 : File.Exists(path));
+    }
+
+    // What was chosen for an app: the app or its executable, or a folder that holds the app, as the folder of a standalone
+    // engine holds its run executable. A macOS app is chosen as the folder it is. Null when the folder holds neither.
+    internal static string? ResolveChosenApplication(LocalVoiceEngine engine, string path, string platform)
+    {
+        // The macOS folder picker gives a folder with a separator at the end.
+        path = Path.TrimEndingDirectorySeparator(path);
+        if (!Directory.Exists(path) || path.EndsWith(".app", StringComparison.OrdinalIgnoreCase)) return path;
+        string run = Path.Combine(path, platform == "windows" ? "run.exe" : "run");
+        return FindApplication(engine, [path], platform) ?? (File.Exists(run) ? run : null);
     }
 
     [SupportedOSPlatform("windows")]

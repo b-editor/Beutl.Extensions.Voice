@@ -319,6 +319,78 @@ public class LocalEngineSetupTests
     }
 
     [AvaloniaTest]
+    public async Task The_app_an_engine_is_started_from_is_kept_for_the_next_search()
+    {
+        string app = Path.Combine(_directory, "Apps", "voicevox_engine", "run");
+        Directory.CreateDirectory(Path.GetDirectoryName(app)!);
+        File.WriteAllText(app, "");
+        using var server = new HttpVoiceEngineTests.EngineServer { FailDiscovery = true };
+        var engine = LocalVoiceEngines.Known[0] with { Url = server.Url };
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null, _ => server.FailDiscovery = false))
+        {
+            var entry = model.Engines[0];
+            model.SelectApplication(entry, app);
+            Assert.That(await model.Use(entry), Is.True, model.Message.Value);
+        }
+        Assert.That(VoiceEngineStore.Load().Single().ApplicationPath, Is.EqualTo(app));
+
+        // Found nowhere else, the app is still there to start from.
+        server.FailDiscovery = true;
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null))
+        {
+            await model.Refresh();
+            var entry = model.Engines[0];
+            Assert.That(entry.ApplicationPath.Value, Is.EqualTo(app));
+            Assert.That(entry.IsRegistered.Value, Is.True);
+            Assert.That(entry.ActionText.Value, Is.EqualTo("起動して使う"));
+            Assert.That(entry.CanUse.Value, Is.True);
+        }
+
+        File.Delete(app);
+        using (var model = new LocalEngineSetupViewModel([engine], _ => null))
+        {
+            await model.Refresh();
+            Assert.That(model.Engines[0].ApplicationPath.Value, Is.Null, "A removed app is looked for again.");
+        }
+    }
+
+    [Test]
+    public void A_chosen_folder_means_the_app_or_the_standalone_engine_in_it()
+    {
+        var engine = LocalVoiceEngines.Known[0];
+        string chosen = Path.Combine(_directory, "chosen");
+        // A macOS app is chosen as the folder it is.
+        string bundle = Path.Combine(chosen, "VOICEVOX.app");
+        Directory.CreateDirectory(Path.Combine(bundle, "Contents", "MacOS"));
+        File.WriteAllText(Path.Combine(bundle, "Contents", "Info.plist"), "");
+        File.WriteAllText(Path.Combine(bundle, "Contents", "MacOS", "VOICEVOX"), "");
+        string standalone = Path.Combine(_directory, "voicevox_engine");
+        Directory.CreateDirectory(standalone);
+        File.WriteAllText(Path.Combine(standalone, "run"), "");
+        File.WriteAllText(Path.Combine(standalone, "run.exe"), "");
+        string empty = Path.Combine(_directory, "empty");
+        Directory.CreateDirectory(empty);
+        Assert.Multiple(() =>
+        {
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, bundle + Path.DirectorySeparatorChar, "macos"), Is.EqualTo(bundle),
+                "The folder picker gives the app with a separator at the end.");
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, chosen, "macos"), Is.EqualTo(bundle), "A folder holding the app.");
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, standalone, "macos"), Is.EqualTo(Path.Combine(standalone, "run")));
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, standalone, "windows"), Is.EqualTo(Path.Combine(standalone, "run.exe")));
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, Path.Combine(standalone, "run"), "linux"),
+                Is.EqualTo(Path.Combine(standalone, "run")), "An executable is used as it is.");
+            Assert.That(LocalVoiceEngines.ResolveChosenApplication(engine, empty, "macos"), Is.Null);
+        });
+
+        using var model = new LocalEngineSetupViewModel([engine], _ => null, _ => Assert.Fail("Nothing is started."));
+        var entry = model.Engines[0];
+        model.SelectApplication(entry, empty);
+        Assert.That(entry.ApplicationPath.Value, Is.Null);
+        Assert.That(entry.Status.Value, Does.Contain("アプリが見つかりません"));
+        Assert.That(entry.CanUse.Value, Is.False);
+    }
+
+    [AvaloniaTest]
     public async Task Leaving_settings_cancels_search_without_registering_a_late_response()
     {
         using var server = new HttpVoiceEngineTests.EngineServer { PauseAt = "/tts/speakers" };

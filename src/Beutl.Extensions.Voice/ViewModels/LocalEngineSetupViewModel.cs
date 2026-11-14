@@ -57,21 +57,20 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             await Task.WhenAll(Engines.Select(async entry =>
             {
                 entry.Status.Value = "確認中…";
-                // A registered AquesTalkPlayer stays where the user put it, even when another copy is found.
+                var registered = entry.Engine.IsAquesTalkPlayer ? aquesTalkPlayer : FindStoredConnection(entry);
+                // A registered app stays where the user put it, even when another copy is found; a moved or removed
+                // one is looked for again.
                 string? path = entry.IsUserSelected ? entry.ApplicationPath.Value
-                    : entry.Engine.IsAquesTalkPlayer && aquesTalkPlayer?.ApplicationPath is { } stored
-                        && (File.Exists(stored) || Directory.Exists(stored)) ? stored
+                    : registered?.ApplicationPath is { Length: > 0 } stored && (File.Exists(stored) || Directory.Exists(stored)) ? stored
                     : await Task.Run(() => _findApplication(entry.Engine), cancellationToken);
                 cancellationToken.ThrowIfCancellationRequested();
                 entry.ApplicationPath.Value = path;
+                entry.IsRegistered.Value = registered != null;
                 if (entry.Engine.IsAquesTalkPlayer)
                 {
-                    entry.IsRegistered.Value = aquesTalkPlayer != null;
-                    await CheckAquesTalkPlayer(entry, aquesTalkPlayer, cancellationToken);
+                    await CheckAquesTalkPlayer(entry, registered, cancellationToken);
                     return;
                 }
-                var registered = FindStoredConnection(entry);
-                entry.IsRegistered.Value = registered != null;
                 await Check(entry, registered ?? new VoiceEngineConnection { Url = entry.Engine.Url }, cancellationToken);
             }));
         }
@@ -140,7 +139,12 @@ public sealed class LocalEngineSetupViewModel : IDisposable
     public void SelectApplication(LocalEngineCandidateViewModel entry, string path)
     {
         if (_disposed || IsBusy.Value) return;
-        entry.ApplicationPath.Value = path;
+        if (LocalVoiceEngines.ResolveChosenApplication(entry.Engine, path, LocalVoiceEngines.CurrentPlatform) is not { } application)
+        {
+            entry.Status.Value = "選択したフォルダーにアプリが見つかりません。";
+            return;
+        }
+        entry.ApplicationPath.Value = application;
         entry.IsUserSelected = true;
         if (entry.Engine.IsAquesTalkPlayer)
         {
@@ -166,7 +170,11 @@ public sealed class LocalEngineSetupViewModel : IDisposable
             if (entry.Engine.IsAquesTalkPlayer) return await UseAquesTalkPlayer(entry);
             // Keep the original identity and creation permission throughout startup polling.
             var stored = FindStoredConnection(entry);
-            var seed = stored ?? new VoiceEngineConnection { Url = entry.Engine.Url };
+            // The app is kept with the engine, so that the next search starts it from there.
+            var seed = (stored ?? new VoiceEngineConnection { Url = entry.Engine.Url }) with
+            {
+                ApplicationPath = entry.ApplicationPath.Value ?? stored?.ApplicationPath ?? ""
+            };
             using var waiting = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             waiting.CancelAfter(TimeSpan.FromSeconds(60));
             // Recheck before launch: another application may have started the same engine since the search.

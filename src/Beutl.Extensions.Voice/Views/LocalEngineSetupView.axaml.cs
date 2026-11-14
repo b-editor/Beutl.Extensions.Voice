@@ -89,6 +89,24 @@ public partial class LocalEngineSetupView : UserControl
             && await model.Use(entry)) EngineConnected?.Invoke(this, EventArgs.Empty);
     }
 
+    // A macOS app is a folder, which the file picker leaves out of what it returns, so on macOS the app, or the folder of
+    // a standalone engine, is chosen as a folder.
+    private static async Task<string?> PickApplication(IStorageProvider storage, string title)
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            var folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = title, AllowMultiple = false });
+            return folders.FirstOrDefault()?.TryGetLocalPath();
+        }
+        var files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = title,
+            AllowMultiple = false,
+            FileTypeFilter = [new("アプリ・実行ファイル") { Patterns = OperatingSystem.IsWindows() ? ["*.exe"] : ["*"] }]
+        });
+        return files.FirstOrDefault()?.TryGetLocalPath();
+    }
+
     private async void SelectApplicationClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is not LocalEngineSetupViewModel model
@@ -96,17 +114,8 @@ public partial class LocalEngineSetupView : UserControl
             || TopLevel.GetTopLevel(this) is not { } topLevel) return;
         try
         {
-            var files = await topLevel.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-            {
-                Title = entry.Engine.ApplicationName + (entry.Engine.IsAquesTalkPlayer ? "のアプリの場所を指定" : "のアプリ・エンジンの場所を指定"),
-                AllowMultiple = false,
-                FileTypeFilter = [new("アプリ・実行ファイル")
-                {
-                    Patterns = OperatingSystem.IsWindows() ? ["*.exe"] : ["*"],
-                    AppleUniformTypeIdentifiers = ["com.apple.application-bundle", "public.unix-executable"]
-                }]
-            });
-            if (files.FirstOrDefault()?.TryGetLocalPath() is { } path) model.SelectApplication(entry, path);
+            string title = entry.Engine.ApplicationName + (entry.Engine.IsAquesTalkPlayer ? "のアプリの場所を指定" : "のアプリ・エンジンの場所を指定");
+            if (await PickApplication(topLevel.StorageProvider, title) is { } path) model.SelectApplication(entry, path);
         }
         catch (Exception ex) { model.Message.Value = $"アプリの場所を指定できませんでした: {ex.Message}"; }
     }
