@@ -13,6 +13,11 @@ public partial class TtsTabView : UserControl
     public TtsTabView()
     {
         InitializeComponent();
+        // The tab strip would otherwise switch pages on Left/Right once a tab has keyboard focus.
+        PageTabs.AddHandler(KeyDownEvent, (_, e) =>
+        {
+            if (e.Key is Key.Left or Key.Right) e.Handled = true;
+        }, RoutingStrategies.Tunnel);
         DataContextChanged += (_, _) => DictionaryPage.DataContext = (DataContext as TtsTabViewModel)?.Dictionary;
         AttachedToVisualTree += async (_, _) =>
         {
