@@ -26,7 +26,7 @@
                 <TabStripItem Content="設定" />
             </TabStrip>
         </controls:ToolTabBar>
-        <Carousel Grid.Row="1" SelectedIndex="{Binding #PageTabs.SelectedIndex}" PageTransition="{x:Null}">
+        <views:PageCarousel Grid.Row="1" SelectedIndex="{Binding #PageTabs.SelectedIndex}" PageTransition="{x:Null}">
             <Grid RowDefinitions="*,Auto">
                 <ScrollViewer x:Name="EditorScroll" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
@@ -103,6 +103,6 @@
                     <views:WebVoiceAssignmentsView x:Name="WebVoiceAssignments" DataContext="{Binding WebVoices}" />
                 </StackPanel>
             </ScrollViewer>
-        </Carousel>
+        </views:PageCarousel>
     </Grid>
 </UserControl>
