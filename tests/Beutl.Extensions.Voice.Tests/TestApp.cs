@@ -22,6 +22,9 @@ namespace Beutl.Extensions.Voice.Tests;
 
 public class TestApp : Application
 {
+    // The desktop host owns the engine's fonts and hands them to its renderers; scene renders here use these.
+    internal static Beutl.Media.FontManager EngineFonts { get; } = new(new Beutl.Configuration.FontConfig());
+
     public override void Initialize()
     {
         DecoderRegistry.Register(new WaveDecoderInfo());
@@ -30,10 +33,10 @@ public class TestApp : Application
         // The Beutl.Controls package no longer embeds the UI fonts, so this subset holds the glyphs the caption test draws;
         // see TestData/NotoSansJP.LICENSE.
         using (var font = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "TestData", "NotoSansJP-Regular.subset.ttf")))
-            Beutl.Media.FontManager.Instance.AddFont(font);
+            EngineFonts.AddFont(font);
         typeof(Beutl.Media.FontManager).GetMethod("SetFallbackFonts",
                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-            .Invoke(Beutl.Media.FontManager.Instance, [new[] { new Beutl.Media.FontFamily("Noto Sans JP") }, null]);
+            .Invoke(EngineFonts, [new[] { new Beutl.Media.FontFamily("Noto Sans JP") }, null]);
         Styles.Add(new FluentAvaloniaTheme());
         Styles.Add(new StyleInclude(new Uri("avares://Beutl.Controls/"))
         {
@@ -86,12 +89,16 @@ internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelectio
     public void Seek(MediaTime time) => Time.Value = time;
     // The tool tabs open in this editor.
     public List<IToolContext> ToolTabs { get; } = [];
+    // The settings and template library the desktop host's editors give their tool tabs.
+    public Beutl.Configuration.GlobalConfiguration Configuration { get; } = new();
+    public ObjectTemplateService? Templates { get; set; }
     public T? FindToolTab<T>(Func<T, bool> condition) where T : IToolContext => ToolTabs.OfType<T>().FirstOrDefault(condition);
     public T? FindToolTab<T>() where T : IToolContext => ToolTabs.OfType<T>().FirstOrDefault();
     public bool OpenToolTab(IToolContext item) => false;
     public void CloseToolTab(IToolContext item) { }
     public object? GetService(Type type) => _disposed ? null : type == typeof(Scene) ? Scene : type == typeof(HistoryManager) ? History
-        : type == typeof(IEditorClock) || type == typeof(IEditorSelection) ? this : null;
+        : type == typeof(IEditorClock) || type == typeof(IEditorSelection) ? this
+        : type == typeof(Beutl.Configuration.GlobalConfiguration) ? Configuration : type == typeof(ObjectTemplateService) ? Templates : null;
     public void Dispose()
     {
         _disposed = true;

@@ -12,7 +12,7 @@ using VoicevoxCoreSharp.Core.Struct;
 
 namespace Beutl.Extensions.Voice.Services;
 
-public class VoiceVoxLoader(string voicevoxHomePath)
+public class VoiceVoxLoader(string voicevoxHomePath, INotificationService? notifications = null)
 {
     private readonly ILogger _logger = Log.CreateLogger<VoiceVoxLoader>();
     private static bool _setResolver;
@@ -140,7 +140,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to load user dictionary");
-                NotificationService.ShowError("ユーザー辞書を読み込めませんでした", ex.Message);
+                notifications?.ShowError("ユーザー辞書を読み込めませんでした", ex.Message);
             }
 
             var onnxRuntimePath = GetOnnxRuntimeLibraryPath(voicevoxHomePath);
@@ -150,7 +150,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             if (result != ResultCode.RESULT_OK)
             {
                 _logger.LogError("Failed to load ONNX Runtime: {Result}", result.ToMessage());
-                NotificationService.ShowError(Strings.Error, result.ToMessage());
+                notifications?.ShowError(Strings.Error, result.ToMessage());
                 InitializationTcs.TrySetResult(false);
                 return;
             }
@@ -161,7 +161,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             if (result != ResultCode.RESULT_OK)
             {
                 _logger.LogError("Failed to initialize Synthesizer: {Result}", result.ToMessage());
-                NotificationService.ShowError(Strings.Error, result.ToMessage());
+                notifications?.ShowError(Strings.Error, result.ToMessage());
                 InitializationTcs.TrySetResult(false);
                 return;
             }
@@ -231,7 +231,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
             {
                 _logger.LogError("No usable voice model was found in {Path}",
                     Path.Combine(voicevoxHomePath, "models"));
-                NotificationService.ShowError("VoiceVoxLoader", "利用可能な音声モデルが見つかりませんでした。");
+                notifications?.ShowError("VoiceVoxLoader", "利用可能な音声モデルが見つかりませんでした。");
                 Unload();
                 InitializationTcs.TrySetResult(false);
                 return;
@@ -245,7 +245,7 @@ public class VoiceVoxLoader(string voicevoxHomePath)
         {
             InitializationTcs.TrySetResult(false);
             _logger.LogError(ex, "Failed to load TTS models");
-            NotificationService.ShowError("VoiceVoxLoader", ex.Message);
+            notifications?.ShowError("VoiceVoxLoader", ex.Message);
             try
             {
                 Unload();

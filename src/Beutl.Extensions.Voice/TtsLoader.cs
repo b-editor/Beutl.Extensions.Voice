@@ -4,6 +4,7 @@ using Beutl.Extensions.Voice.Views;
 using Beutl.Logging;
 using Beutl.Services;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Reactive.Bindings;
 
@@ -14,6 +15,8 @@ public class TtsLoader : Extension
 {
     private readonly ILogger _logger = Log.CreateLogger<TtsLoader>();
     private CancellationTokenSource? _installNotification;
+    // The Core loader is shared by the whole process, so it reports its errors to the host that loaded this extension.
+    private static INotificationService? s_notifications;
     internal static readonly ReactiveProperty<VoiceVoxLoader?> VoiceVoxLoader = new();
     internal static VoiceExtensionSettings Preferences { get; } = new();
 
@@ -23,9 +26,11 @@ public class TtsLoader : Extension
 
     public override string DisplayName => Name;
 
-    public override void Load()
+    public override void Load(IExtensionContext context)
     {
-        base.Load();
+        base.Load(context);
+        var notifications = context.Services.GetRequiredService<INotificationService>();
+        s_notifications = notifications;
         Preferences.BeginSession();
         _installNotification = new();
         Preferences.PromptChanged += OnPromptChanged;
@@ -44,7 +49,7 @@ public class TtsLoader : Extension
                     {
                         if (_installNotification is { IsCancellationRequested: false } notification
                             && CreateInstallNotification(notification.Token) is { } prompt)
-                            NotificationService.Show(prompt);
+                            notifications.Show(prompt);
                     }
                     catch (Exception ex) { _logger.LogError(ex, "Failed to show Core setup prompt"); }
                 });
@@ -81,20 +86,21 @@ public class TtsLoader : Extension
         if (!Preferences.ShouldPrompt) _installNotification?.Cancel();
     }
 
-    public override void Unload()
+    public override void Unload(IExtensionContext context)
     {
         Preferences.PromptChanged -= OnPromptChanged;
         _installNotification?.Cancel();
         _installNotification?.Dispose();
         _installNotification = null;
-        base.Unload();
+        s_notifications = null;
+        base.Unload(context);
     }
 
     public static Task StaticLoad()
     {
         var home = BeutlEnvironment.GetHomeDirectoryPath();
         var voicevoxHomePath = Path.Combine(home, "voicevox");
-        VoiceVoxLoader.Value = new VoiceVoxLoader(voicevoxHomePath);
+        VoiceVoxLoader.Value = new VoiceVoxLoader(voicevoxHomePath, s_notifications);
         return Task.Run(() => VoiceVoxLoader.Value.Load());
     }
 }

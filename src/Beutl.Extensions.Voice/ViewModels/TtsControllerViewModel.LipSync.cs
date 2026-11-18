@@ -12,6 +12,8 @@ public partial class TtsControllerViewModel
 {
     private readonly SerialDisposable _lipSyncHistory = new();
     private readonly Func<IEnumerable<ObjectTemplateItem>>? _loadTemplates;
+    // The template library of the editor showing this property, known once the editor visits it.
+    private Func<IEnumerable<ObjectTemplateItem>>? _editorTemplates;
 
     public ReactivePropertySlim<LipSyncChoice[]> LipSyncTemplates { get; } = new([]);
     public ReactivePropertySlim<LipSyncChoice?> SelectedLipSyncTemplate { get; } = new();
@@ -23,7 +25,7 @@ public partial class TtsControllerViewModel
     {
         if (_disposed) return;
         var selected = SelectedLipSyncTemplate.Value?.Id;
-        LipSyncTemplates.Value = PsdLipSyncPresets.CharacterTemplates((_loadTemplates ?? VoiceTemplates.Load)())
+        LipSyncTemplates.Value = PsdLipSyncPresets.CharacterTemplates(LoadTemplates())
             .Select(x => new LipSyncChoice(x.Id, x.Name.Value)).ToArray();
         HasLipSyncTemplates.Value = LipSyncTemplates.Value.Length > 0;
         SelectedLipSyncTemplate.Value = LipSyncTemplates.Value.FirstOrDefault(x => x.Id == selected);
@@ -50,8 +52,9 @@ public partial class TtsControllerViewModel
             var (_, scene) = GetEditableTarget();
             if (SelectedLipSyncTemplate.Value?.Id is not { } id)
                 throw new InvalidOperationException("連携する立ち絵のテンプレートを選択してください。");
-            var preset = PsdLipSyncPresets.Capture((_loadTemplates ?? VoiceTemplates.Load)(), id);
-            _history!.ExecuteInTransaction(() => PsdLipSyncPresets.Connect(scene, [(_controller, preset)]));
+            var preset = PsdLipSyncPresets.Capture(LoadTemplates(), id);
+            _history!.ExecuteInTransaction(() => PsdLipSyncPresets.Connect(scene, [(_controller, preset)],
+                VoicePlacement.AutoAdjustsDuration(_editorConfig)));
             RefreshLipSyncStatus();
             Message.Value = "立ち絵を読み上げ音声に連携しました。";
         }
@@ -70,4 +73,6 @@ public partial class TtsControllerViewModel
         }
         catch (Exception ex) { Message.Value = ex.Message; }
     }
+
+    private IEnumerable<ObjectTemplateItem> LoadTemplates() => (_loadTemplates ?? _editorTemplates)?.Invoke() ?? [];
 }

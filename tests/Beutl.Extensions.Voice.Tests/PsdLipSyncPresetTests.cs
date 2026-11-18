@@ -223,7 +223,7 @@ public partial class PsdLipSyncTests
         PsdTachieDrawable second;
         if (split)
         {
-            new ElementStructureService(editor.History).Split(editor.Scene, [firstElement], At(5));
+            new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [firstElement], At(5));
             second = editor.Scene.EnumerateAllChildren<PsdTachieDrawable>().Single(x => x != first);
         }
         else
@@ -484,7 +484,7 @@ public partial class PsdLipSyncTests
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(subtitles ? 6 : 4));
 
         // Extending after splitting must keep the interior cut and adjust only the outside boundary.
-        new ElementStructureService(editor.History).Split(editor.Scene, [character], At(4));
+        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [character], At(4));
         var before = PsdLipSync.Targets(editor.Scene).OrderBy(x => x.TimeRange.Value.Start).First();
         model.StartSeconds.Value = 10;
         await model.Generate();

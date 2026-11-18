@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Beutl.Configuration;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
@@ -18,6 +19,7 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
     private readonly TtsController _controller;
     private readonly ILogger _logger = Log.CreateLogger<TtsControllerViewModel>();
     private HistoryManager? _history;
+    private EditorConfig? _editorConfig;
     private CancellationTokenSource? _regenerationCancellation;
     private bool _writingDraft;
 
@@ -224,6 +226,8 @@ public partial class TtsControllerViewModel : VoiceEditorViewModel, IPropertyEdi
             // The target expressions and the group can replay in either order during Undo/Redo.
             _lipSyncHistory.Disposable = _history?.StateChanged.Subscribe(_ => RefreshLipSyncStatus());
             HasEditor.Value = _history != null;
+            _editorConfig = (services.GetService(typeof(GlobalConfiguration)) as GlobalConfiguration)?.EditorConfig;
+            _editorTemplates = VoiceTemplates.Loader(services);
             RefreshLipSyncStatus();
             RefreshLipSyncTemplates();
         }

@@ -10,9 +10,9 @@ namespace Beutl.Extensions.Voice;
 [Export]
 public class DevToolsAttacher : Extension
 {
-    public override void Load()
+    public override void Load(IExtensionContext context)
     {
-        base.Load();
+        base.Load(context);
         Dispatcher.UIThread.Post(() =>
         {
             Application.Current?.AttachDeveloperTools();

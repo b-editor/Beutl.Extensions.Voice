@@ -608,7 +608,7 @@ public class SubtitleTests
         Assert.That(editor.Scene.EnumerateAllChildren<SubtitleController>().Count(), Is.EqualTo(1), tab.Message.Value);
         RenderThread.Dispatcher.Invoke(() =>
         {
-            using var renderer = new SceneRenderer(editor.Scene, RenderIntent.Delivery);
+            using var renderer = new SceneRenderer(editor.Scene, TestApp.EngineFonts, RenderIntent.Delivery);
             foreach (var seconds in new[] { 1.9, 2.1, 2.3 })
             {
                 renderer.Render(renderer.Compositor.EvaluateGraphics(At(seconds)));
@@ -635,6 +635,38 @@ public class SubtitleTests
                 else Assert.That(count, Is.Zero, $"No subtitle should be visible at {seconds}s.");
             }
         });
+    }
+
+    [AvaloniaTest]
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task Speech_past_the_scene_end_lengthens_the_scene_only_when_the_timeline_adjusts_its_duration(bool adjust)
+    {
+        using var editor = Editor();
+        editor.Configuration.EditorConfig.AutoAdjustSceneDuration.Value = adjust;
+        editor.Scene.Duration.Value = At(1);
+        using var tab = new TtsTabViewModel(new(), editor, (text, settings, _) => Synthesize(text, settings));
+        Configure(tab);
+        tab.Subtitles.SelectedId = Guid.Empty;
+        editor.Time.Value = At(0.9);
+        await tab.Generate();
+        var speech = editor.Scene.EnumerateAllChildren<TtsController>().Single().FindHierarchicalParent<Element>()!;
+        Assert.That(speech.Range.End > At(1), Is.True, tab.Message.Value);
+        Assert.That(Caption(editor.Scene).Range.End, Is.EqualTo(speech.Range.End));
+        Assert.That(editor.Scene.Duration.Value, Is.EqualTo(adjust ? speech.Range.End : At(1)));
+    }
+
+    [AvaloniaTest]
+    public void Speech_tab_offers_the_caption_templates_of_its_editors_library()
+    {
+        using var editor = Editor();
+        string library = Path.Combine(_directory, "templates");
+        Directory.CreateDirectory(library);
+        var saved = TestTemplates.Save(library, Template(editor.Scene), "話者名付き字幕");
+        using var templates = new ObjectTemplateService(TestApp.EngineFonts, library);
+        editor.Templates = templates;
+        using var model = new TtsTabViewModel(new(), editor);
+        Assert.That(model.Subtitles.Choices.Value.Select(x => x.Id), Does.Contain(saved.Id));
     }
 
     private static async Task Settle()

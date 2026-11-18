@@ -14,9 +14,11 @@ namespace Beutl.Extensions.Voice.Services;
 public class SimpleWavePlayer : IDisposable
 {
     private readonly ILogger _logger = Log.CreateLogger<SimpleWavePlayer>();
+    private readonly INotificationService? _notifications;
 
-    public SimpleWavePlayer(byte[] waveData)
+    public SimpleWavePlayer(byte[] waveData, INotificationService? notifications = null)
     {
+        _notifications = notifications;
         WaveData = waveData;
         Stream = new MemoryStream(waveData);
         Reader = new WaveFileReader(Stream);
@@ -108,7 +110,7 @@ public class SimpleWavePlayer : IDisposable
         }
         catch (Exception ex)
         {
-            NotificationService.ShowError(MessageStrings.UnexpectedError,
+            _notifications?.ShowError(MessageStrings.UnexpectedError,
                 MessageStrings.AudioPlaybackException);
             _logger.LogError(ex, "An exception occurred during audio playback.");
         }
@@ -179,7 +181,7 @@ public class SimpleWavePlayer : IDisposable
         }
         catch (Exception ex)
         {
-            NotificationService.ShowError(MessageStrings.UnexpectedError,
+            _notifications?.ShowError(MessageStrings.UnexpectedError,
                 MessageStrings.AudioPlaybackException);
             _logger.LogError(ex, "An exception occurred during audio playback.");
         }

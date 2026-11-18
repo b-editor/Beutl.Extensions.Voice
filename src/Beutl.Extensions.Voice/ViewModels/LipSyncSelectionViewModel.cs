@@ -49,5 +49,5 @@ public sealed class LipSyncSelectionViewModel
     internal VoiceLipSyncPreset? CapturePreset() =>
         Preset ?? (SelectedId is { } id ? PsdLipSyncPresets.Capture(GetTemplates(), id) : null);
 
-    private IEnumerable<ObjectTemplateItem> GetTemplates() => (_loadTemplates ?? VoiceTemplates.Load)();
+    private IEnumerable<ObjectTemplateItem> GetTemplates() => _loadTemplates?.Invoke() ?? [];
 }

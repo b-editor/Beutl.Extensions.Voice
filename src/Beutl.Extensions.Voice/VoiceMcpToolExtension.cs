@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Beutl.Configuration;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
@@ -148,6 +149,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             await File.WriteAllBytesAsync(path, output.Wave, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             var (_, history) = GetEditor(call.EditorContext, scene);
+            bool autoAdjustDuration = AutoAdjustsDuration(call.EditorContext);
             var generation = new VoiceGeneration
             {
                 Text = request.Text, Settings = output.Settings, AudioQueryJson = output.Json,
@@ -157,10 +159,10 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             history.ExecuteInTransaction(() =>
             {
                 element.ZIndex.Value = PsdLipSyncPresets.FreeLayer(scene, element.Range, request.Layer);
-                scene.AddChild(element, ElementOverlapHandling.ThrowException);
+                scene.AddChild(element, ElementOverlapHandling.ThrowException, autoAdjustDuration);
                 if (preset?.LipSync is { } lipSync)
-                    PsdLipSyncPresets.Connect(scene, [(element.Objects.OfType<TtsController>().Single(), lipSync)]);
-                VoiceSubtitles.Place(scene, element, subtitle);
+                    PsdLipSyncPresets.Connect(scene, [(element.Objects.OfType<TtsController>().Single(), lipSync)], autoAdjustDuration);
+                VoiceSubtitles.Place(scene, element, subtitle, autoAdjustDuration);
             }, "Generate speech (MCP)", cancellationToken: cancellationToken);
             committed = true;
             return Json(DescribeSpeech(scene, element));
@@ -183,6 +185,9 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
             throw new InvalidOperationException("Open a scene in Beutl and keep its editor open until speech generation completes.");
         return (scene, history);
     }
+
+    private static bool AutoAdjustsDuration(IEditorContext? editor) =>
+        VoicePlacement.AutoAdjustsDuration(editor?.GetService<GlobalConfiguration>()?.EditorConfig);
 
     private static McpToolResult Json<T>(T value) => McpToolResult.Json(JsonSerializer.SerializeToElement(value, s_json));
 

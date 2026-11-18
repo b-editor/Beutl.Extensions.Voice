@@ -15,7 +15,8 @@ internal static class VoiceScriptService
     public static async Task<Element[]> GenerateAsync(Scene scene, HistoryManager history,
         IReadOnlyList<VoiceScriptLine> lines, double startSeconds, double gapSeconds, int firstLayer, bool separateLayers,
         Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> synthesize,
-        CancellationToken cancellationToken = default, Action<int, string>? progress = null, Action? validateEditor = null)
+        CancellationToken cancellationToken = default, Action<int, string>? progress = null, Action? validateEditor = null,
+        bool autoAdjustDuration = true)
     {
         if (lines.Count == 0) throw new InvalidOperationException("台本を入力してください。");
         if (!double.IsFinite(startSeconds) || startSeconds < 0 || !double.IsFinite(gapSeconds) || gapSeconds < 0 || firstLayer < 0)
@@ -57,7 +58,8 @@ internal static class VoiceScriptService
             history.ExecuteInTransaction(() =>
             {
                 PsdLipSyncPresets.PlaceScript(scene, requests.Select((request, i) =>
-                    (elements[i], request.Line.Preset.LipSync, VoiceSubtitles.Create(scene, elements[i], request.Subtitle))).ToArray(), firstLayer);
+                    (elements[i], request.Line.Preset.LipSync, VoiceSubtitles.Create(scene, elements[i], request.Subtitle))).ToArray(), firstLayer,
+                    autoAdjustDuration);
             }, "台本の音声を一括配置", cancellationToken: cancellationToken);
             committed = true;
             return elements.ToArray();

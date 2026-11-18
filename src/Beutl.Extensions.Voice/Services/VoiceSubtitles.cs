@@ -93,7 +93,7 @@ internal static class VoiceSubtitles
     }
 
     // Single speech placement shares the batch planner's contiguous-layer search.
-    public static void Place(Scene scene, Element speech, Element? template)
+    public static void Place(Scene scene, Element speech, Element? template, bool autoAdjustDuration = true)
     {
         var caption = Create(scene, speech, template);
         if (caption == null) return;
@@ -105,9 +105,9 @@ internal static class VoiceSubtitles
         int preferred = character == null ? speech.ZIndex.Value
             : Math.Max(speech.ZIndex.Value, checked(character.FindHierarchicalParent<Element>()!.ZIndex.Value + 1));
         int layer = PsdLipSyncPresets.FreeLayer(scene, speech.Range, preferred, speech, layerCount: 2);
-        if (layer != speech.ZIndex.Value) scene.MoveChild(layer, speech.Start.Value, speech.Length.Value, speech);
+        if (layer != speech.ZIndex.Value) scene.MoveChild(layer, speech.Start.Value, speech.Length.Value, speech, autoAdjustDuration);
         caption.ZIndex.Value = checked(layer + 1);
-        scene.AddChild(caption, ElementOverlapHandling.ThrowException);
+        scene.AddChild(caption, ElementOverlapHandling.ThrowException, autoAdjustDuration);
     }
 
     internal sealed record TextUpdate(SubtitleController Link, TextBlock Target, string? Previous, string Next);
