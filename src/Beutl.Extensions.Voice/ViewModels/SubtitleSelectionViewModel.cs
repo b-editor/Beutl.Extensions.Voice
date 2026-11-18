@@ -50,7 +50,7 @@ public sealed class SubtitleSelectionViewModel(Scene scene, Func<IEnumerable<Obj
         return VoiceSubtitles.Capture(element);
     }
 
-    private IEnumerable<ObjectTemplateItem> GetTemplates() => (loadTemplates ?? VoiceTemplates.Load)();
+    private IEnumerable<ObjectTemplateItem> GetTemplates() => loadTemplates?.Invoke() ?? [];
 
     private static bool CanUseTemplate(ObjectTemplateItem template)
     {

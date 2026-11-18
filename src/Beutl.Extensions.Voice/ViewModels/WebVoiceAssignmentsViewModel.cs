@@ -1,4 +1,5 @@
 using Avalonia.Threading;
+using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.Views;
@@ -15,13 +16,16 @@ public sealed class WebVoiceAssignmentsViewModel : IDisposable
     private readonly Scene _scene;
     private readonly Func<string> _path;
     private readonly Func<WebVoiceAssignmentViewModel, string, CancellationToken, Task<WebVoiceAssignment?>> _choose;
+    private readonly Func<IEnumerable<ObjectTemplateItem>>? _templates;
 
     internal WebVoiceAssignmentsViewModel(Scene scene, Func<string>? path = null,
-        Func<WebVoiceAssignmentViewModel, string, CancellationToken, Task<WebVoiceAssignment?>>? choose = null)
+        Func<WebVoiceAssignmentViewModel, string, CancellationToken, Task<WebVoiceAssignment?>>? choose = null,
+        Func<IEnumerable<ObjectTemplateItem>>? templates = null)
     {
         _scene = scene;
         _path = path ?? (() => WebVoiceAssignmentStore.GlobalPath);
         _choose = choose ?? WebVoiceAssignmentDialog.ShowAsync;
+        _templates = templates;
         WebVoiceAssignmentStore.Changed += OnStoreChanged;
         Refresh();
     }
@@ -50,7 +54,7 @@ public sealed class WebVoiceAssignmentsViewModel : IDisposable
         var current = item.Assignment;
         // A site this version no longer knows keeps its id as its name.
         var site = WebVoiceSites.Find(current.SiteId) ?? new WebVoiceSite(current.SiteId, current.SiteId, [], "");
-        var model = new WebVoiceAssignmentViewModel(_scene, site, current.VoiceId, current.VoiceName, current);
+        var model = new WebVoiceAssignmentViewModel(_scene, site, current.VoiceId, current.VoiceName, current, templates: _templates);
         if (await _choose(model, "保存", CancellationToken.None) is not { } changed) return;
         try
         {

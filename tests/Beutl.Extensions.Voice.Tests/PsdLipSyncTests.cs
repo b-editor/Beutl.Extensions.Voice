@@ -168,14 +168,14 @@ public partial class PsdLipSyncTests
         PsdLipSync.Connect(first.Controller, target);
         PsdLipSync.Connect(second.Controller, target);
         var group = first.Controller.LipSyncGroupId.Value;
-        var split = new ElementStructureService(editor.History);
+        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig());
         if (splitPortraitFirst) split.Split(scene, [target.FindHierarchicalParent<Element>()!], At(2.5));
         var originals = scene.Children.ToArray();
         using var observer = new CoreObjectOperationObserver(null, scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);
         var sources = clipboard ? originals.Select(x => (Element)CoreSerializer.DeserializeFromJsonObject(
             CoreSerializer.SerializeToJsonObject(x), typeof(Element))).ToArray() : originals;
-        Assert.That(new ElementDuplicateService(editor.History).DuplicateAtPosition(scene, sources, At(0), 3), Is.True);
+        Assert.That(new ElementDuplicateService(editor.History, new Beutl.Configuration.EditorConfig()).DuplicateAtPosition(scene, sources, At(0), 3), Is.True);
         var copies = scene.Children.Except(originals).ToArray();
         var copiedTargets = copies.SelectMany(x => x.Objects).OfType<PsdTachieDrawable>().ToArray();
         var copiedControllers = copies.SelectMany(x => x.Objects).OfType<TtsController>().ToArray();
@@ -252,7 +252,7 @@ public partial class PsdLipSyncTests
         editor.Scene.RemoveChild(portrait);
         PsdLipSync.Connect(speech.Controller, target);
         var group = speech.Controller.LipSyncGroupId.Value;
-        new ElementStructureService(editor.History).Split(editor.Scene, [speech.Element], At(1.75));
+        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [speech.Element], At(1.75));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct(), Is.EqualTo(new[] { group }));
         Assert.That(PsdLipSync.Targets(editor.Scene).Select(PsdLipSync.GroupOf).Distinct(), Is.EqualTo(new[] { group }));
     }
@@ -264,7 +264,7 @@ public partial class PsdLipSyncTests
         var target = Character(editor.Scene);
         var speech = Speech(editor.Scene, 1);
         PsdLipSync.Connect(speech.Controller, target);
-        var split = new ElementStructureService(editor.History);
+        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig());
         split.Split(editor.Scene, [speech.Element], At(1.75));
         split.Split(editor.Scene, [target.FindHierarchicalParent<Element>()!], At(1.5));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct(),
@@ -526,7 +526,7 @@ public partial class PsdLipSyncTests
         {
             if (!RenderThread.Dispatcher.Invoke(() => GraphicsContextFactory.GetOrCreateShared() is not null))
                 Assert.Ignore("No graphics context is available on this host.");
-            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, RenderIntent.Delivery));
+            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, TestApp.EngineFonts, RenderIntent.Delivery));
         }
 
         public void Mouth(double seconds, bool open, string? capture = null, int offsetX = 0) => RenderThread.Dispatcher.Invoke(() =>

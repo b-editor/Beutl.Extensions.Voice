@@ -52,7 +52,8 @@ internal static class PsdLipSyncPresets
     }
 
     // Call inside the same history transaction as audio placement, after adding all speech elements.
-    public static void Connect(Scene scene, IEnumerable<(TtsController Controller, VoiceLipSyncPreset Preset)> bindings)
+    public static void Connect(Scene scene, IEnumerable<(TtsController Controller, VoiceLipSyncPreset Preset)> bindings,
+        bool autoAdjustDuration = true)
     {
         foreach (var group in bindings.GroupBy(x => FilePathComparison.ResolveCanonicalPath(x.Preset.PsdPath), StringComparer.Ordinal))
         {
@@ -62,7 +63,7 @@ internal static class PsdLipSyncPresets
             {
                 var range = TimeRange.FromRange(group.Min(x => x.Controller.TimeRange.Value.Start),
                     group.Max(x => x.Controller.TimeRange.Value.End));
-                targets = [CreateCharacter(scene, group.First().Preset, range, FreeLayer(scene, range, 0))];
+                targets = [CreateCharacter(scene, group.First().Preset, range, FreeLayer(scene, range, 0), autoAdjustDuration)];
             }
             // Select per speech interval before extending any character's range. Speech already linked to one of
             // these characters stays with it, so linking an existing line again changes nothing.
@@ -74,7 +75,7 @@ internal static class PsdLipSyncPresets
                 foreach (var binding in assignment) PsdLipSync.Connect(binding.Controller, assignment.Key, created);
                 var range = TimeRange.FromRange(assignment.Min(x => x.Controller.TimeRange.Value.Start),
                     assignment.Max(x => x.Controller.TimeRange.Value.End));
-                Extend(scene, assignment.Key, range);
+                Extend(scene, assignment.Key, range, autoAdjustDuration: autoAdjustDuration);
             }
         }
     }
@@ -82,7 +83,8 @@ internal static class PsdLipSyncPresets
     // Plan character, speech and optional subtitle layers before adding clips.
     // The caller includes this entire operation in the batch's history transaction.
     public static void PlaceScript(Scene scene,
-        IReadOnlyList<(Element Element, VoiceLipSyncPreset? Preset, Element? Subtitle)> speech, int firstLayer)
+        IReadOnlyList<(Element Element, VoiceLipSyncPreset? Preset, Element? Subtitle)> speech, int firstLayer,
+        bool autoAdjustDuration = true)
     {
         var scriptRange = TimeRange.FromRange(speech.Min(x => x.Element.Range.Start), speech.Max(x => x.Element.Range.End));
         var plain = speech.Where(x => x.Preset == null).GroupBy(x => x.Element.ZIndex.Value).ToArray();
@@ -101,7 +103,8 @@ internal static class PsdLipSyncPresets
             bool created = targets.Length == 0;
             if (created)
                 targets = [CreateCharacter(scene, group.First().Preset!, scriptRange,
-                    FreeLayer(scene, scriptRange, nextLayer, planned: planned, layerCount: group.Any(x => x.Subtitle != null) ? 3 : 2))];
+                    FreeLayer(scene, scriptRange, nextLayer, planned: planned, layerCount: group.Any(x => x.Subtitle != null) ? 3 : 2),
+                    autoAdjustDuration)];
             // Split parts share a group; independently linked characters keep their own speech intervals.
             bool oneGroup = targets.Select(PsdLipSync.GroupOf).Distinct().Count() == 1;
             var assignments = group.GroupBy(x => SelectTarget(targets, x.Element.Range)).ToArray();
@@ -110,7 +113,7 @@ internal static class PsdLipSyncPresets
                 var target = assignment.Key;
                 PsdLipSync.ValidateTarget(scene, target);
                 var range = TimeRange.FromRange(assignment.Min(x => x.Element.Range.Start), assignment.Max(x => x.Element.Range.End));
-                Extend(scene, target, oneGroup ? scriptRange : range, planned);
+                Extend(scene, target, oneGroup ? scriptRange : range, planned, autoAdjustDuration);
                 int layerCount = assignment.Any(x => x.Subtitle != null) ? 2 : 1;
                 int layer = FreeLayer(scene, range, checked(target.FindHierarchicalParent<Element>()!.ZIndex.Value + 1),
                     planned: planned, layerCount: layerCount);
@@ -124,8 +127,8 @@ internal static class PsdLipSyncPresets
         }
         foreach (var item in speech)
         {
-            scene.AddChild(item.Element, ElementOverlapHandling.ThrowException);
-            if (item.Subtitle != null) scene.AddChild(item.Subtitle, ElementOverlapHandling.ThrowException);
+            scene.AddChild(item.Element, ElementOverlapHandling.ThrowException, autoAdjustDuration);
+            if (item.Subtitle != null) scene.AddChild(item.Subtitle, ElementOverlapHandling.ThrowException, autoAdjustDuration);
         }
         foreach (var link in links) PsdLipSync.Connect(link.Controller, link.Target, link.Created);
 
@@ -147,7 +150,8 @@ internal static class PsdLipSyncPresets
         .OrderByDescending(x => x.TimeRange.Value.Intersects(range))
         .ThenBy(x => Math.Abs((x.TimeRange.Value.Start - range.Start).ToSeconds())).First();
 
-    private static EngineObject CreateCharacter(Scene scene, VoiceLipSyncPreset preset, TimeRange range, int layer)
+    private static EngineObject CreateCharacter(Scene scene, VoiceLipSyncPreset preset, TimeRange range, int layer,
+        bool autoAdjustDuration)
     {
         var json = JsonNode.Parse(preset.ObjectJson) as JsonObject
             ?? throw new InvalidOperationException("プリセットの立ち絵を読み込めませんでした。");
@@ -165,11 +169,12 @@ internal static class PsdLipSyncPresets
             AccentColor = { Value = ElementAccentColorGenerator.GenerateColor(target.GetType().FullName!) }
         };
         element.AddObject(target);
-        scene.AddChild(element, ElementOverlapHandling.ThrowException);
+        scene.AddChild(element, ElementOverlapHandling.ThrowException, autoAdjustDuration);
         return target;
     }
 
-    public static void Extend(Scene scene, EngineObject target, TimeRange range, IReadOnlyCollection<Element>? planned = null)
+    public static void Extend(Scene scene, EngineObject target, TimeRange range, IReadOnlyCollection<Element>? planned = null,
+        bool autoAdjustDuration = true)
     {
         Guid group = PsdLipSync.GroupOf(target);
         // Split characters keep their interior boundaries; only extend the outer ends of the group.
@@ -188,7 +193,8 @@ internal static class PsdLipSyncPresets
             if (scene.IsElementLocked(element))
                 throw new InvalidOperationException("表示区間を延長する立ち絵の要素またはレイヤーがロックされています。");
             var expanded = TimeRange.FromRange(start, end);
-            scene.MoveChild(FreeLayer(scene, expanded, element.ZIndex.Value, element, planned), start, expanded.Duration, element);
+            scene.MoveChild(FreeLayer(scene, expanded, element.ZIndex.Value, element, planned), start, expanded.Duration, element,
+                autoAdjustDuration);
         }
     }
 

@@ -1,4 +1,5 @@
 using Beutl.Audio.Effects;
+using Beutl.Configuration;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
@@ -36,7 +37,7 @@ internal sealed class WebVoiceImport(
         if (assignment == null)
         {
             var model = new WebVoiceAssignmentViewModel(scene, site, page.VoiceId, page.VoiceName,
-                defaults: editor.FindToolTab<TtsTabViewModel>(), templates: templates);
+                defaults: editor.FindToolTab<TtsTabViewModel>(), templates: templates ?? VoiceTemplates.Loader(editor));
             assignment = await chooseAssignment(model, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             // Declining keeps the saved file out of the timeline, as when the user cancels a download.
@@ -47,20 +48,22 @@ internal sealed class WebVoiceImport(
         }
 
         var start = (editor.GetService(typeof(IEditorClock)) as IEditorClock)?.CurrentTime.Value ?? MediaTime.Zero;
-        Place(scene, history, context.FileName, page.Text, start, assignment, site.Resampling);
+        var configuration = editor.GetService(typeof(GlobalConfiguration)) as GlobalConfiguration;
+        Place(scene, history, context.FileName, page.Text, start, assignment, site.Resampling,
+            VoicePlacement.AutoAdjustsDuration(configuration?.EditorConfig));
         if (string.IsNullOrWhiteSpace(page.Text))
-            NotificationService.ShowWarning("本文を読み取れませんでした",
+            (editor.GetService(typeof(INotificationService)) as INotificationService)?.ShowWarning("本文を読み取れませんでした",
                 $"{site.Name}のページから本文を読み取れなかったため、字幕を追加していません。TtsControllerに本文を入力してください。");
         return true;
     }
 
     public static Element Place(Scene scene, HistoryManager history, string path, string text, MediaTime start,
-        WebVoiceAssignment assignment, ResamplingMethod? resampling)
+        WebVoiceAssignment assignment, ResamplingMethod? resampling, bool autoAdjustDuration = true)
     {
         var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1, resampling);
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
-        history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, assignment.LipSync, subtitle));
+        history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, assignment.LipSync, subtitle, autoAdjustDuration));
         return element;
     }
 }

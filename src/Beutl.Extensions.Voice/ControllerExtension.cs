@@ -1,6 +1,7 @@
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Services;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Beutl.Extensions.Voice;
 
@@ -11,10 +12,10 @@ public class ControllerExtension : Extension
 
     public override string DisplayName => "テキスト読み上げ";
 
-    public override void Load()
+    public override void Load(IExtensionContext context)
     {
-        base.Load();
-        LibraryService.Current.RegisterGroup("テキスト読み上げ", g => g
+        base.Load(context);
+        context.Services.GetRequiredService<LibraryService>().RegisterGroup("テキスト読み上げ", g => g
             .AddEngineObject<TtsController>("コントローラー"));
     }
 }

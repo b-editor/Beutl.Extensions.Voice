@@ -5,6 +5,7 @@ using System.Text.Json;
 using Avalonia.Threading;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
+using Beutl.Services;
 using Reactive.Bindings;
 using Reactive.Bindings.Extensions;
 
@@ -61,6 +62,7 @@ internal sealed class DictionaryImportItem(DictionaryImportEntry entry)
 internal sealed class VoiceDictionaryViewModel : IDisposable
 {
     private readonly CompositeDisposable _subscriptions = new();
+    private readonly INotificationService? _notifications;
     private VoiceDictionaryWord[] _words = [];
     private CancellationTokenSource? _request;
     private int _requestId;
@@ -102,8 +104,9 @@ internal sealed class VoiceDictionaryViewModel : IDisposable
     public ReactivePropertySlim<string> ImportSummary { get; } = new("");
     public ReactivePropertySlim<bool> OverwriteImport { get; } = new();
 
-    public VoiceDictionaryViewModel()
+    public VoiceDictionaryViewModel(INotificationService? notifications = null)
     {
+        _notifications = notifications;
         RefreshEngines();
         Search.Subscribe(_ => FilterWords()).AddTo(_subscriptions);
         SelectedWordType.Subscribe(_ => UpdateDirty()).AddTo(_subscriptions);
@@ -393,7 +396,7 @@ internal sealed class VoiceDictionaryViewModel : IDisposable
         };
         var result = await VoiceDictionaryService.PreviewAsync(engine, Capture(), settings, token);
         token.ThrowIfCancellationRequested();
-        using var player = new SimpleWavePlayer(result.Wave);
+        using var player = new SimpleWavePlayer(result.Wave, _notifications);
         await player.Play(token);
     });
 

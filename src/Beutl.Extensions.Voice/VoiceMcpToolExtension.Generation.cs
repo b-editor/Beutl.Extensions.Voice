@@ -92,7 +92,8 @@ public sealed partial class VoiceMcpToolExtension
         var elements = await VoiceScriptService.GenerateAsync(scene, history, lines, start, request.GapSeconds,
             request.FirstLayer, request.SeparateLayers,
             (text, settings, token) => VoiceSynthesisService.SynthesizeAsync(text, settings, null, token),
-            cancellationToken, validateEditor: () => { _ = GetEditor(call.EditorContext, scene); });
+            cancellationToken, validateEditor: () => { _ = GetEditor(call.EditorContext, scene); },
+            autoAdjustDuration: AutoAdjustsDuration(call.EditorContext));
         return Json(new { sceneId = scene.Id.Value, elements = elements.Select(element => DescribeSpeech(scene, element)).ToArray() });
     }
 

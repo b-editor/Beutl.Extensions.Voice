@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
 using Beutl.Audio.Effects;
+using Beutl.Configuration;
 using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
@@ -23,6 +24,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private readonly HistoryManager _historyManager;
+    private readonly INotificationService? _notifications;
+    private readonly EditorConfig? _editorConfig;
     private readonly Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> _synthesize;
 
     public TtsTabViewModel(TtsTabExtension extension, IEditorContext editorContext)
@@ -32,15 +35,19 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> synthesize,
         Func<IEnumerable<ObjectTemplateItem>>? templates = null)
     {
+        _notifications = editorContext.GetService<INotificationService>();
+        Dictionary = new VoiceDictionaryViewModel(_notifications);
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
+        _editorConfig = editorContext.GetService<GlobalConfiguration>()?.EditorConfig;
         _synthesize = synthesize;
         Extension = extension;
+        templates ??= VoiceTemplates.Loader(editorContext);
         LipSync = new LipSyncSelectionViewModel(templates);
         Subtitles = new SubtitleSelectionViewModel(_scene, templates);
         Subtitles.Refresh();
-        WebVoices = new WebVoiceAssignmentsViewModel(_scene);
+        WebVoices = new WebVoiceAssignmentsViewModel(_scene, templates: templates);
         InitializePresets();
         Script = new ScriptImportViewModel(editorContext,
             (text, settings) => synthesize(text, settings, null));
@@ -50,14 +57,14 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     public IReactiveProperty<bool> IsSelected { get; } = new ReactiveProperty<bool>();
     public IReadOnlyReactiveProperty<string> Header { get; } = new ReactivePropertySlim<string>("テキスト読み上げ");
     public ReactivePropertySlim<int> SelectedPage { get; } = new();
-    internal VoiceDictionaryViewModel Dictionary { get; } = new();
+    internal VoiceDictionaryViewModel Dictionary { get; }
     public ScriptImportViewModel Script { get; }
     public LipSyncSelectionViewModel LipSync { get; }
     public SubtitleSelectionViewModel Subtitles { get; }
     public WebVoiceAssignmentsViewModel WebVoices { get; }
 
-    private static void ShowError(string title, string message) =>
-        Dispatcher.UIThread.Post(() => NotificationService.ShowError(title, message));
+    private void ShowError(string title, string message) =>
+        Dispatcher.UIThread.Post(() => _notifications?.ShowError(title, message));
 
     public async Task Generate()
     {
@@ -86,7 +93,8 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
             var element = VoiceElementFactory.Create(_scene, path, generation, start, 1, output.Resampling);
-            _historyManager.ExecuteInTransaction(() => VoicePlacement.Place(_scene, element, lipSync, subtitleTemplate));
+            _historyManager.ExecuteInTransaction(() => VoicePlacement.Place(_scene, element, lipSync, subtitleTemplate,
+                VoicePlacement.AutoAdjustsDuration(_editorConfig)));
             committed = true;
             PublishQuery(request.Text, request.Settings, output.Query);
         }
@@ -115,7 +123,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
             var output = await _synthesize(request.Text, request.Settings, query);
             if (_disposed) return;
             PublishQuery(request.Text, request.Settings, output.Query);
-            using var player = new SimpleWavePlayer(PreviewWave(output));
+            using var player = new SimpleWavePlayer(PreviewWave(output), _notifications);
             await player.Play(default);
         }
         catch (Exception ex)

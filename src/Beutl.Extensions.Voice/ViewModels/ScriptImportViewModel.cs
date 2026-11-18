@@ -3,6 +3,7 @@ using System.Reactive.Disposables;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Avalonia.Threading;
+using Beutl.Configuration;
 using Beutl.Editor;
 using Beutl.Editor.Services;
 using Beutl.Extensibility;
@@ -21,6 +22,7 @@ public sealed class ScriptImportViewModel : IDisposable
     private readonly Scene _scene;
     private readonly HistoryManager _history;
     private readonly IEditorClock _clock;
+    private readonly EditorConfig? _editorConfig;
     private readonly Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> _synthesize;
     private readonly ILogger _logger = Log.CreateLogger<ScriptImportViewModel>();
     private readonly IDisposable _loaderSubscription;
@@ -45,6 +47,7 @@ public sealed class ScriptImportViewModel : IDisposable
         _scene = editor.GetRequiredService<Scene>();
         _history = editor.GetRequiredService<HistoryManager>();
         _clock = editor.GetRequiredService<IEditorClock>();
+        _editorConfig = editor.GetService<GlobalConfiguration>()?.EditorConfig;
         _synthesize = synthesize;
         UseCurrentPosition();
         FirstLayer.Value = editor.GetService<IEditorSelection>()?.SelectedLayerNumber.Value ?? 1;
@@ -155,7 +158,7 @@ public sealed class ScriptImportViewModel : IDisposable
                     string displayName = _assignments[speaker].DisplayName;
                     Message.Value = $"音声を生成中… {index + 1} / {requests.Length}（{displayName}）";
                     failureContext = $"{index + 1} 件目（{displayName}）の音声生成を確認してください。";
-                });
+                }, autoAdjustDuration: VoicePlacement.AutoAdjustsDuration(_editorConfig));
             Message.Value = $"{elements.Length} 件の音声を配置しました。";
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
