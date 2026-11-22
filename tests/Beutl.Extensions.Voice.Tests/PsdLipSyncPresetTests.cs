@@ -4,6 +4,7 @@ using Beutl.Editor.Observers;
 using Beutl.Editor.Services;
 using Beutl.Engine;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -111,7 +112,7 @@ public partial class PsdLipSyncTests
         var character = target.FindHierarchicalParent<Element>()!;
         Assert.That(target.Id.Value, Is.Not.EqualTo(original.Id.Value));
         Assert.That(target.Transform.Value!.Id.Value, Is.Not.EqualTo(original.Transform.Value!.Id.Value));
-        Assert.That(target.Source.Value!.FullName, Is.EqualTo(original.Source.Value!.FullName));
+        Assert.That(target.Source.Value!.Uri.LocalPath, Is.EqualTo(original.Source.Value!.Uri.LocalPath));
         Assert.That(target.MouthOpen.Value, Is.EqualTo(original.MouthOpen.Value));
         Assert.That(character.Range.Start, Is.EqualTo(At(2)));
         Assert.That(character.Range.End, Is.EqualTo(At(4)));
@@ -223,7 +224,8 @@ public partial class PsdLipSyncTests
         PsdTachieDrawable second;
         if (split)
         {
-            new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [firstElement], At(5));
+            new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig(), TestApp.Decoders)
+                .Split(editor.Scene, [firstElement], At(5));
             second = editor.Scene.EnumerateAllChildren<PsdTachieDrawable>().Single(x => x != first);
         }
         else
@@ -278,16 +280,16 @@ public partial class PsdLipSyncTests
         string originalPath = Path.Combine(_directory, "Character.psd");
         string caseVariant = Path.Combine(_directory, "CHARACTER.PSD");
         string otherPath = Path.Combine(_directory, "Other.psd");
-        File.Copy(source.Source.Value!.FullName, originalPath);
+        File.Copy(source.Source.Value!.Uri.LocalPath, originalPath);
         bool sameFile = File.Exists(caseVariant);
         if (!sameFile) File.Copy(originalPath, caseVariant);
         File.Copy(originalPath, otherPath);
         var presets = new[] { originalPath, caseVariant, otherPath }.Select(path =>
         {
-            source.Source.Value = new FileInfo(path);
+            source.Source.Value = new TachieFileSource(new Uri(path));
             return GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(source) };
         }).ToArray();
-        source.Source.Value = new FileInfo(originalPath);
+        source.Source.Value = new TachieFileSource(new Uri(originalPath));
         if (!reuse) editor.Scene.RemoveChild(source.FindHierarchicalParent<Element>()!);
         if (script)
         {
@@ -328,8 +330,8 @@ public partial class PsdLipSyncTests
         var first = Character(editor.Scene);
         var second = Character(editor.Scene);
         string guestPath = Path.Combine(_directory, "guest.psd");
-        File.Copy(second.Source.Value!.FullName, guestPath);
-        second.Source.Value = new FileInfo(guestPath);
+        File.Copy(second.Source.Value!.Uri.LocalPath, guestPath);
+        second.Source.Value = new TachieFileSource(new Uri(guestPath));
         first.Transform.Value = new TranslateTransform { X = { Value = -60 } };
         second.Transform.Value = new TranslateTransform { X = { Value = 60 } };
         var subtitle = subtitles ? VoiceSubtitles.Default(editor.Scene) : null;
@@ -484,7 +486,8 @@ public partial class PsdLipSyncTests
         Assert.That(editor.Scene.Children, Has.Count.EqualTo(subtitles ? 6 : 4));
 
         // Extending after splitting must keep the interior cut and adjust only the outside boundary.
-        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [character], At(4));
+        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig(), TestApp.Decoders)
+            .Split(editor.Scene, [character], At(4));
         var before = PsdLipSync.Targets(editor.Scene).OrderBy(x => x.TimeRange.Value.Start).First();
         model.StartSeconds.Value = 10;
         await model.Generate();

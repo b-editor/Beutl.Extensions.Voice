@@ -3,6 +3,7 @@ using Beutl.Audio.Effects;
 using Beutl.Editor.Services;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
+using Beutl.Media.Decoding;
 using Beutl.Media.Source;
 using Beutl.ProjectSystem;
 using Beutl.Utilities;
@@ -12,13 +13,13 @@ namespace Beutl.Extensions.Voice.Services;
 internal static class VoiceElementFactory
 {
     // The resampling is the one the speech came with, from its engine or the site that made it.
-    public static Element Create(Scene scene, string path, VoiceGeneration generation, MediaTime start, int layer,
-        ResamplingMethod? resampling) =>
-        Create(scene, path, generation.Text, generation, start, layer, resampling);
+    public static Element Create(Scene scene, DecoderRegistry decoders, string path, VoiceGeneration generation, MediaTime start,
+        int layer, ResamplingMethod? resampling) =>
+        Create(scene, decoders, path, generation.Text, generation, start, layer, resampling);
 
     // Speech made elsewhere, such as on a text-to-speech site, has no settings to regenerate it with.
-    public static Element Create(Scene scene, string path, string text, VoiceGeneration? generation, MediaTime start, int layer,
-        ResamplingMethod? resampling)
+    public static Element Create(Scene scene, DecoderRegistry decoders, string path, string text, VoiceGeneration? generation,
+        MediaTime start, int layer, ResamplingMethod? resampling)
     {
         var element = new Element
         {
@@ -30,7 +31,7 @@ internal static class VoiceElementFactory
         var sound = new SourceSound { Source = { Value = SoundSource.Open(path) } };
         element.AddObject(sound);
         element.AddObject(new TtsController { Text = { Value = text }, Generation = { Value = generation } });
-        if (!element.TryGetOriginalDuration(out var duration) || duration <= MediaTime.Zero)
+        if (!element.TryGetOriginalDuration(out var duration, decoders) || duration <= MediaTime.Zero)
             throw new InvalidOperationException(generation == null
                 ? "音声の長さを取得できませんでした。" : "生成した音声の長さを取得できませんでした。");
         element.Length.Value = duration;

@@ -4,6 +4,7 @@ using Beutl.Editor.Services;
 using Beutl.Engine;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
+using Beutl.IO;
 using Beutl.Media;
 using Beutl.ProjectSystem;
 using Beutl.Serialization;
@@ -16,9 +17,21 @@ internal static class PsdLipSyncPresets
     // The library replaces a template whose file changes with a new item, so each item is read once.
     private static readonly ConditionalWeakTable<ObjectTemplateItem, StrongBox<VoiceLipSyncPreset?>> s_templates = new();
 
-    private static string? SourcePath(EngineObject target) => target.Properties
-        .OfType<IExpressionProperty<FileInfo?>>()
-        .FirstOrDefault(x => x.Name == "Source")?.Value?.FullName;
+    // PsdTachie 0.1.7 and later hold the character file as a file source, earlier versions as a FileInfo.
+    private static string? SourcePath(EngineObject target)
+    {
+        switch (target.Properties.FirstOrDefault(x => x.Name == "Source")?.Value)
+        {
+            case FileInfo file:
+                return file.FullName;
+            case IFileSource source:
+                // A source without a selected file has no Uri.
+                try { return source.Uri.IsFile ? source.Uri.LocalPath : null; }
+                catch (InvalidOperationException) { return null; }
+            default:
+                return null;
+        }
+    }
 
     // A character comes from a template holding it by itself, or as the only one in a saved element or group.
     public static IEnumerable<ObjectTemplateItem> CharacterTemplates(IEnumerable<ObjectTemplateItem> templates) =>

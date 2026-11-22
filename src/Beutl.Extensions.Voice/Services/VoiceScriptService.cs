@@ -1,6 +1,7 @@
 using Beutl.Editor;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Logging;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Microsoft.Extensions.Logging;
 
@@ -12,7 +13,7 @@ internal static class VoiceScriptService
 {
     private static readonly ILogger s_logger = Log.CreateLogger(typeof(VoiceScriptService));
 
-    public static async Task<Element[]> GenerateAsync(Scene scene, HistoryManager history,
+    public static async Task<Element[]> GenerateAsync(Scene scene, HistoryManager history, DecoderRegistry decoders,
         IReadOnlyList<VoiceScriptLine> lines, double startSeconds, double gapSeconds, int firstLayer, bool separateLayers,
         Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> synthesize,
         CancellationToken cancellationToken = default, Action<int, string>? progress = null, Action? validateEditor = null,
@@ -49,7 +50,7 @@ internal static class VoiceScriptService
                     Text = request.Line.Text, Settings = output.Settings, AudioQueryJson = output.Json,
                     PresetId = request.Line.Preset.Id, PresetName = request.Line.Preset.Name
                 };
-                var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer, output.Resampling);
+                var element = VoiceElementFactory.Create(scene, decoders, path, generation, start, request.Layer, output.Resampling);
                 elements.Add(element);
                 start += element.Length.Value + gap;
             }

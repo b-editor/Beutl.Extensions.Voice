@@ -10,6 +10,7 @@ using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,7 @@ public sealed class ScriptImportViewModel : IDisposable
 {
     private readonly Scene _scene;
     private readonly HistoryManager _history;
+    private readonly DecoderRegistry _decoders;
     private readonly IEditorClock _clock;
     private readonly EditorConfig? _editorConfig;
     private readonly Func<string, VoiceSettings, CancellationToken, Task<VoiceSynthesisResult>> _synthesize;
@@ -46,6 +48,7 @@ public sealed class ScriptImportViewModel : IDisposable
     {
         _scene = editor.GetRequiredService<Scene>();
         _history = editor.GetRequiredService<HistoryManager>();
+        _decoders = editor.GetRequiredService<DecoderRegistry>();
         _clock = editor.GetRequiredService<IEditorClock>();
         _editorConfig = editor.GetService<GlobalConfiguration>()?.EditorConfig;
         _synthesize = synthesize;
@@ -146,7 +149,7 @@ public sealed class ScriptImportViewModel : IDisposable
         {
             var requests = CaptureRequests();
             IsGenerating.Value = true;
-            var elements = await VoiceScriptService.GenerateAsync(_scene, _history, requests,
+            var elements = await VoiceScriptService.GenerateAsync(_scene, _history, _decoders, requests,
                 StartSeconds.Value, GapSeconds.Value, FirstLayer.Value, SeparateLayers.Value, _synthesize, token,
                 (index, speaker) =>
                 {

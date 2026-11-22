@@ -8,6 +8,7 @@ using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Beutl.Editor;
 using Beutl.Editor.Services;
@@ -24,6 +25,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
     private readonly ILogger _logger = Log.CreateLogger<TtsTabViewModel>();
     private readonly IReadOnlyReactiveProperty<MediaTime> _currentTime;
     private readonly HistoryManager _historyManager;
+    private readonly DecoderRegistry _decoders;
     private readonly INotificationService? _notifications;
     private readonly EditorConfig? _editorConfig;
     private readonly Func<string, VoiceSettings, AudioQueryModel?, Task<VoiceSynthesisResult>> _synthesize;
@@ -40,6 +42,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
         _currentTime = editorContext.GetRequiredService<IEditorClock>().CurrentTime;
         _scene = editorContext.GetRequiredService<Scene>();
         _historyManager = editorContext.GetRequiredService<HistoryManager>();
+        _decoders = editorContext.GetRequiredService<DecoderRegistry>();
         _editorConfig = editorContext.GetService<GlobalConfiguration>()?.EditorConfig;
         _synthesize = synthesize;
         Extension = extension;
@@ -92,7 +95,7 @@ public partial class TtsTabViewModel : VoiceEditorViewModel, IToolContext
                 Text = request.Text, Settings = output.Settings, PresetId = preset?.Id,
                 PresetName = preset?.Name, AudioQueryJson = output.Json
             };
-            var element = VoiceElementFactory.Create(_scene, path, generation, start, 1, output.Resampling);
+            var element = VoiceElementFactory.Create(_scene, _decoders, path, generation, start, 1, output.Resampling);
             _historyManager.ExecuteInTransaction(() => VoicePlacement.Place(_scene, element, lipSync, subtitleTemplate,
                 VoicePlacement.AutoAdjustsDuration(_editorConfig)));
             committed = true;

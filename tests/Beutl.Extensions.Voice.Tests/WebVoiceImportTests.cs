@@ -13,6 +13,7 @@ using Beutl.Audio.Effects;
 using Beutl.Editor.Observers;
 using Beutl.Extensibility;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -88,7 +89,7 @@ public class WebVoiceImportTests
         // Fixture from b-editor/Beutl.Extensions.PsdTachie at 8648bf6; see TestData/PsdTachie.LICENSE.
         var target = new PsdTachieDrawable
         {
-            Source = { Value = new FileInfo(Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData", "tachie_rle.psd")) },
+            Source = { Value = new TachieFileSource(new Uri(Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData", "tachie_rle.psd"))) },
             MouthClosed = { Value = "口/*閉じ" }, MouthHalfOpen = { Value = "口/*半開き" }, MouthOpen = { Value = "口/*開き" },
             Layers = { Value = "-非表示" }
         };
@@ -251,7 +252,7 @@ public class WebVoiceImportTests
             Assert.That(asked[0].LipSync.SelectedId, Is.EqualTo(template.Id));
             Assert.That(asked[0].Subtitles.SelectedId, Is.EqualTo(Guid.Empty));
             Assert.That(stored.Select(x => (x.SiteId, x.VoiceId)), Is.EquivalentTo(new[] { ("siyukatu", "f1"), ("siyukatu", "f2") }));
-            Assert.That(stored.All(x => x.LipSync?.PsdPath == target.Source.Value!.FullName && x.Subtitle?.Name == "標準字幕"), Is.True);
+            Assert.That(stored.All(x => x.LipSync?.PsdPath == target.Source.Value!.Uri.LocalPath && x.Subtitle?.Name == "標準字幕"), Is.True);
             Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Count(), Is.EqualTo(3));
             Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct().Single(),
                 Is.EqualTo(PsdLipSync.GroupOf(target)));
@@ -380,7 +381,7 @@ public class WebVoiceImportTests
             {
                 Assert.That(assignment?.SiteId, Is.EqualTo("siyukatu"));
                 Assert.That(assignment?.VoiceId, Is.EqualTo("f2"));
-                Assert.That(assignment?.LipSync?.PsdPath, Is.EqualTo(target.Source.Value!.FullName));
+                Assert.That(assignment?.LipSync?.PsdPath, Is.EqualTo(target.Source.Value!.Uri.LocalPath));
                 Assert.That(assignment?.Subtitle?.Name, Is.EqualTo("標準字幕"));
             });
         }

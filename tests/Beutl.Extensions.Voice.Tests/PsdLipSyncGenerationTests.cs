@@ -12,6 +12,7 @@ using Avalonia.VisualTree;
 using Beutl.Editor.Observers;
 using Beutl.Editor.Services;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -142,7 +143,7 @@ public partial class PsdLipSyncTests
         var target = (PsdTachieDrawable)PsdLipSync.Targets(editor.Scene).Single();
         var speech = editor.Scene.EnumerateAllChildren<TtsController>().Single();
         Assert.That(target.Id.Value, Is.Not.EqualTo(original.Id.Value), model.Message.Value);
-        Assert.That(target.Source.Value!.FullName, Is.EqualTo(original.Source.Value!.FullName));
+        Assert.That(target.Source.Value!.Uri.LocalPath, Is.EqualTo(original.Source.Value!.Uri.LocalPath));
         Assert.That(target.OpenThreshold.Value, Is.EqualTo(-18));
         Assert.That(speech.LipSyncGroupId.Value, Is.EqualTo(PsdLipSync.GroupOf(target)).And.Not.EqualTo(Guid.Empty));
         Assert.That(target.FindHierarchicalParent<Element>()!.Range, Is.EqualTo(speech.FindHierarchicalParent<Element>()!.Range));
@@ -158,8 +159,8 @@ public partial class PsdLipSyncTests
         var first = Character(editor.Scene);
         var second = Character(editor.Scene, 3);
         string otherPath = Path.Combine(_directory, "guest.psd");
-        File.Copy(second.Source.Value!.FullName, otherPath);
-        second.Source.Value = new FileInfo(otherPath);
+        File.Copy(second.Source.Value!.Uri.LocalPath, otherPath);
+        second.Source.Value = new TachieFileSource(new Uri(otherPath));
         var preset = GenerationPreset() with { LipSync = PsdLipSyncPresets.Capture(first) };
         var guest = GenerationPreset() with { Name = "ゲスト", LipSync = PsdLipSyncPresets.Capture(second) };
         VoicePresetStore.Save(VoicePresetStore.GlobalPath, preset);
@@ -248,8 +249,8 @@ public partial class PsdLipSyncTests
         var first = Character(editor.Scene);
         var second = Character(editor.Scene, 3);
         string otherPath = Path.Combine(_directory, "guest.psd");
-        File.Copy(second.Source.Value!.FullName, otherPath);
-        second.Source.Value = new FileInfo(otherPath);
+        File.Copy(second.Source.Value!.Uri.LocalPath, otherPath);
+        second.Source.Value = new TachieFileSource(new Uri(otherPath));
         var secondElement = second.FindHierarchicalParent<Element>()!;
         var obstacle = new Element { Start = { Value = At(3.5) }, Length = { Value = At(1) }, ZIndex = { Value = 1 } };
         int calls = 0;
@@ -319,8 +320,8 @@ public partial class PsdLipSyncTests
             var drawable = SavedTemplate(first, "霊夢");
             var element = SavedTemplate(second.FindHierarchicalParent<Element>()!, "魔理沙");
             var pair = new Element();
-            pair.AddObject(new PsdTachieDrawable { Source = { Value = first.Source.Value } });
-            pair.AddObject(new PsdTachieDrawable { Source = { Value = first.Source.Value } });
+            pair.AddObject(new PsdTachieDrawable { Source = { Value = new TachieFileSource(first.Source.Value!.Uri) } });
+            pair.AddObject(new PsdTachieDrawable { Source = { Value = new TachieFileSource(first.Source.Value!.Uri) } });
             var shape = new Element();
             shape.AddObject(new Beutl.Graphics.Shapes.RectShape());
             templates.AddRange([drawable, element, SavedTemplate(pair, "二人の立ち絵"),
@@ -333,7 +334,7 @@ public partial class PsdLipSyncTests
             combo.IsDropDownOpen = false;
             await Settle();
             Assert.That(model.LipSync.SelectedId, Is.EqualTo(drawable.Id));
-            Assert.That(model.LipSync.CapturePreset()!.PsdPath, Is.EqualTo(first.Source.Value!.FullName));
+            Assert.That(model.LipSync.CapturePreset()!.PsdPath, Is.EqualTo(first.Source.Value!.Uri.LocalPath));
             Capture("reading-template", picker, view.FindControl<Button>("AddSpeechButton")!);
             model.SelectedPreset.Value = preset;
             model.ApplyPreset();

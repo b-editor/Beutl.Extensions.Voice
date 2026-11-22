@@ -25,9 +25,18 @@ public class TestApp : Application
     // The desktop host owns the engine's fonts and hands them to its renderers; scene renders here use these.
     internal static Beutl.Media.FontManager EngineFonts { get; } = new(new Beutl.Configuration.FontConfig());
 
+    // The desktop host owns the decoder registry and its editors serve it; speech is measured and rendered with this one.
+    internal static DecoderRegistry Decoders { get; } = CreateDecoders();
+
+    private static DecoderRegistry CreateDecoders()
+    {
+        var decoders = new DecoderRegistry(new Beutl.Configuration.ExtensionConfig());
+        decoders.Register(new WaveDecoderInfo());
+        return decoders;
+    }
+
     public override void Initialize()
     {
-        DecoderRegistry.Register(new WaveDecoderInfo());
         // The desktop host registers bundled engine fonts and fallbacks during startup.
         // Reproduce the Japanese fallback when rendering captions in this headless host.
         // The Beutl.Controls package no longer embeds the UI fonts, so this subset holds the glyphs the caption test draws;
@@ -98,7 +107,8 @@ internal sealed class TestEditor : IEditorContext, IEditorClock, IEditorSelectio
     public void CloseToolTab(IToolContext item) { }
     public object? GetService(Type type) => _disposed ? null : type == typeof(Scene) ? Scene : type == typeof(HistoryManager) ? History
         : type == typeof(IEditorClock) || type == typeof(IEditorSelection) ? this
-        : type == typeof(Beutl.Configuration.GlobalConfiguration) ? Configuration : type == typeof(ObjectTemplateService) ? Templates : null;
+        : type == typeof(Beutl.Configuration.GlobalConfiguration) ? Configuration : type == typeof(ObjectTemplateService) ? Templates
+        : type == typeof(DecoderRegistry) ? TestApp.Decoders : null;
     public void Dispose()
     {
         _disposed = true;

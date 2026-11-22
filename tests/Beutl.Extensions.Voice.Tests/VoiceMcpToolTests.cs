@@ -6,6 +6,7 @@ using Beutl.Audio;
 using Beutl.Editor.Observers;
 using Beutl.Extensibility;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -179,7 +180,7 @@ public partial class VoiceMcpToolTests
         using var editor = Editor();
         var character = new PsdTachieDrawable
         {
-            Source = { Value = new FileInfo(Path.Combine(AppContext.BaseDirectory, "TestData", "tachie_rle.psd")) }
+            Source = { Value = new TachieFileSource(new Uri(Path.Combine(AppContext.BaseDirectory, "TestData", "tachie_rle.psd"))) }
         };
         var preset = new VoicePreset
         {

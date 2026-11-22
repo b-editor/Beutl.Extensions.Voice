@@ -7,6 +7,7 @@ using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Logging;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -131,6 +132,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
         var query = GetAnalysisQuery(request.Analysis, request.Text, settings);
 
         var (scene, _) = GetEditor(call.EditorContext);
+        var decoders = call.EditorContext!.GetRequiredService<DecoderRegistry>();
         var start = request.StartSeconds is { } startSeconds ? MediaTime.FromSeconds(startSeconds)
             : call.EditorContext!.GetRequiredService<IEditorClock>().CurrentTime.Value;
         // Validate the save location and template before contacting the synthesis engine.
@@ -155,7 +157,7 @@ public sealed partial class VoiceMcpToolExtension : McpToolExtension
                 Text = request.Text, Settings = output.Settings, AudioQueryJson = output.Json,
                 PresetId = preset?.Id, PresetName = preset?.Name
             };
-            var element = VoiceElementFactory.Create(scene, path, generation, start, request.Layer, output.Resampling);
+            var element = VoiceElementFactory.Create(scene, decoders, path, generation, start, request.Layer, output.Resampling);
             history.ExecuteInTransaction(() =>
             {
                 element.ZIndex.Value = PsdLipSyncPresets.FreeLayer(scene, element.Range, request.Layer);
