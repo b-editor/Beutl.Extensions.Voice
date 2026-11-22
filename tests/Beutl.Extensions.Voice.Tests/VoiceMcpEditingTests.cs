@@ -3,6 +3,7 @@ using Avalonia.Headless.NUnit;
 using Beutl.Audio;
 using Beutl.Editor.Observers;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
@@ -32,7 +33,7 @@ public partial class VoiceMcpToolTests
     {
         var target = new PsdTachieDrawable
         {
-            Source = { Value = new FileInfo(Path.Combine(AppContext.BaseDirectory, "TestData", "tachie_rle.psd")) }
+            Source = { Value = new TachieFileSource(new Uri(Path.Combine(AppContext.BaseDirectory, "TestData", "tachie_rle.psd"))) }
         };
         var element = new Element { Name = { Value = "Character" }, ZIndex = { Value = layer }, Length = { Value = MediaTime.FromSeconds(20) } };
         element.AddObject(target);

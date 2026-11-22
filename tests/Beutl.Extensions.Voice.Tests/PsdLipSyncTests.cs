@@ -12,6 +12,7 @@ using Beutl.Editor.Observers;
 using Beutl.Editor.Services;
 using Beutl.Engine.Expressions;
 using Beutl.Extensions.PsdTachie.Graphics;
+using Beutl.Extensions.PsdTachie.Psd;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
 using Beutl.Extensions.Voice.ViewModels;
@@ -71,7 +72,7 @@ public partial class PsdLipSyncTests
         // Fixture from b-editor/Beutl.Extensions.PsdTachie at 8648bf6; see TestData/PsdTachie.LICENSE.
         var target = new PsdTachieDrawable
         {
-            Source = { Value = new FileInfo(Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData", "tachie_rle.psd")) },
+            Source = { Value = new TachieFileSource(new Uri(Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData", "tachie_rle.psd"))) },
             MouthClosed = { Value = "口/*閉じ" }, MouthHalfOpen = { Value = "口/*半開き" }, MouthOpen = { Value = "口/*開き" },
             EyeOpen = { Value = "目/*開き" }, BlinkInterval = { Value = 20f },
             Layers = { Value = "-非表示" }
@@ -168,7 +169,7 @@ public partial class PsdLipSyncTests
         PsdLipSync.Connect(first.Controller, target);
         PsdLipSync.Connect(second.Controller, target);
         var group = first.Controller.LipSyncGroupId.Value;
-        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig());
+        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig(), TestApp.Decoders);
         if (splitPortraitFirst) split.Split(scene, [target.FindHierarchicalParent<Element>()!], At(2.5));
         var originals = scene.Children.ToArray();
         using var observer = new CoreObjectOperationObserver(null, scene, editor.Sequence);
@@ -252,7 +253,8 @@ public partial class PsdLipSyncTests
         editor.Scene.RemoveChild(portrait);
         PsdLipSync.Connect(speech.Controller, target);
         var group = speech.Controller.LipSyncGroupId.Value;
-        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig()).Split(editor.Scene, [speech.Element], At(1.75));
+        new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig(), TestApp.Decoders)
+            .Split(editor.Scene, [speech.Element], At(1.75));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct(), Is.EqualTo(new[] { group }));
         Assert.That(PsdLipSync.Targets(editor.Scene).Select(PsdLipSync.GroupOf).Distinct(), Is.EqualTo(new[] { group }));
     }
@@ -264,7 +266,7 @@ public partial class PsdLipSyncTests
         var target = Character(editor.Scene);
         var speech = Speech(editor.Scene, 1);
         PsdLipSync.Connect(speech.Controller, target);
-        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig());
+        var split = new ElementStructureService(editor.History, new Beutl.Configuration.EditorConfig(), TestApp.Decoders);
         split.Split(editor.Scene, [speech.Element], At(1.75));
         split.Split(editor.Scene, [target.FindHierarchicalParent<Element>()!], At(1.5));
         Assert.That(editor.Scene.EnumerateAllChildren<TtsController>().Select(x => x.LipSyncGroupId.Value).Distinct(),
@@ -353,8 +355,8 @@ public partial class PsdLipSyncTests
         var other = Character(editor.Scene, 3);
         // Templates name a PSD, so the second character shows a file of its own.
         string otherPath = Path.Combine(_directory, "guest.psd");
-        File.Copy(other.Source.Value!.FullName, otherPath);
-        other.Source.Value = new FileInfo(otherPath);
+        File.Copy(other.Source.Value!.Uri.LocalPath, otherPath);
+        other.Source.Value = new TachieFileSource(new Uri(otherPath));
         var first = Speech(editor.Scene, 1);
         var second = Speech(editor.Scene, 3.5);
         target.LipSyncAudio.Value = Wave();
@@ -526,7 +528,8 @@ public partial class PsdLipSyncTests
         {
             if (!RenderThread.Dispatcher.Invoke(() => GraphicsContextFactory.GetOrCreateShared() is not null))
                 Assert.Ignore("No graphics context is available on this host.");
-            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, TestApp.EngineFonts, RenderIntent.Delivery));
+            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, TestApp.EngineFonts, RenderIntent.Delivery,
+                decoders: TestApp.Decoders));
         }
 
         public void Mouth(double seconds, bool open, string? capture = null, int offsetX = 0) => RenderThread.Dispatcher.Invoke(() =>

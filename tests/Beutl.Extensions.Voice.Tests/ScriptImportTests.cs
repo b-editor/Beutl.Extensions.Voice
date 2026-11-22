@@ -247,7 +247,7 @@ public class ScriptImportTests
         Assert.That(File.Exists(path), Is.True);
         Assert.That(editor.History.Redo(), Is.True);
         Assert.That(editor.Scene.Children.Single(), Is.SameAs(element));
-        Assert.That(element.TryGetOriginalDuration(out var duration), Is.True);
+        Assert.That(element.TryGetOriginalDuration(out var duration, TestApp.Decoders), Is.True);
         Assert.That(duration, Is.EqualTo(element.Length.Value));
     }
 
@@ -288,7 +288,7 @@ public class ScriptImportTests
             }));
             Assert.That(element.Start.Value, Is.EqualTo(start));
             Assert.That(element.ZIndex.Value, Is.EqualTo(separateLayers && i == 1 ? 5 : 4));
-            Assert.That(element.TryGetOriginalDuration(out var actualDuration), Is.True);
+            Assert.That(element.TryGetOriginalDuration(out var actualDuration, TestApp.Decoders), Is.True);
             Assert.That(element.Length.Value, Is.EqualTo(actualDuration));
             Assert.That(actualDuration.ToSeconds(), Is.EqualTo(generation.Text.Length * 1001 / 24000d).Within(1e-8));
             start += actualDuration + MediaTime.FromSeconds(0.15);

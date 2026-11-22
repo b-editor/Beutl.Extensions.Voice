@@ -608,7 +608,7 @@ public class SubtitleTests
         Assert.That(editor.Scene.EnumerateAllChildren<SubtitleController>().Count(), Is.EqualTo(1), tab.Message.Value);
         RenderThread.Dispatcher.Invoke(() =>
         {
-            using var renderer = new SceneRenderer(editor.Scene, TestApp.EngineFonts, RenderIntent.Delivery);
+            using var renderer = new SceneRenderer(editor.Scene, TestApp.EngineFonts, RenderIntent.Delivery, decoders: TestApp.Decoders);
             foreach (var seconds in new[] { 1.9, 2.1, 2.3 })
             {
                 renderer.Render(renderer.Compositor.EvaluateGraphics(At(seconds)));

@@ -5,6 +5,7 @@ using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.Operators;
 using Beutl.Extensions.Voice.Services;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -79,6 +80,7 @@ public sealed partial class VoiceMcpToolExtension
     {
         var request = call.Arguments.Deserialize<ScriptRequest>(s_json)!;
         var (scene, history) = GetEditor(call.EditorContext);
+        var decoders = call.EditorContext!.GetRequiredService<DecoderRegistry>();
         double start = request.StartSeconds ?? call.EditorContext!.GetRequiredService<IEditorClock>().CurrentTime.Value.ToSeconds();
         var presets = VoicePresetStore.Load(VoicePresetStore.GlobalPath).ToDictionary(preset => preset.Id);
         var lines = ScriptLine.Parse(request.Script, request.HasSpeakerNames).Select(line =>
@@ -89,7 +91,7 @@ public sealed partial class VoiceMcpToolExtension
                 throw new ArgumentException($"Voice preset '{id}' was not found. Call voice_list_presets.");
             return new VoiceScriptLine(line.Text, line.Speaker, preset);
         }).ToArray();
-        var elements = await VoiceScriptService.GenerateAsync(scene, history, lines, start, request.GapSeconds,
+        var elements = await VoiceScriptService.GenerateAsync(scene, history, decoders, lines, start, request.GapSeconds,
             request.FirstLayer, request.SeparateLayers,
             (text, settings, token) => VoiceSynthesisService.SynthesizeAsync(text, settings, null, token),
             cancellationToken, validateEditor: () => { _ = GetEditor(call.EditorContext, scene); },

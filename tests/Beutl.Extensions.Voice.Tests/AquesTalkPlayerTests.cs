@@ -682,7 +682,8 @@ public class AquesTalkPlayerTests
         string original = Path.Combine(_directory, "original.wav");
         File.WriteAllBytes(original, Wave(24000, 2400, 2400, 2400));
         var http = new VoiceSettings { EngineId = "http-engine", SpeakerUuid = "speaker", StyleId = 1 };
-        var element = VoiceElementFactory.Create(editor.Scene, original, new VoiceGeneration { Text = "元の本文", Settings = http }, MediaTime.Zero, 1, null);
+        var element = VoiceElementFactory.Create(editor.Scene, TestApp.Decoders, original,
+            new VoiceGeneration { Text = "元の本文", Settings = http }, MediaTime.Zero, 1, null);
         editor.Scene.AddChild(element);
         using var observer = new CoreObjectOperationObserver(null, editor.Scene, editor.Sequence);
         using var subscription = editor.History.Subscribe(observer);

@@ -6,6 +6,7 @@ using Beutl.Extensibility;
 using Beutl.Extensions.Voice.Models;
 using Beutl.Extensions.Voice.ViewModels;
 using Beutl.Extensions.Voice.Views;
+using Beutl.Media.Decoding;
 using Beutl.ProjectSystem;
 using Beutl.Services;
 
@@ -28,7 +29,8 @@ internal sealed class WebVoiceImport(
         IEditorContext editor = context.EditorContext;
         if (WebVoiceSites.Find(context.Offer) is not { } site
             || editor.GetService(typeof(Scene)) is not Scene { Uri: not null } scene
-            || editor.GetService(typeof(HistoryManager)) is not HistoryManager history)
+            || editor.GetService(typeof(HistoryManager)) is not HistoryManager history
+            || editor.GetService(typeof(DecoderRegistry)) is not DecoderRegistry decoders)
             return false;
 
         var page = WebVoiceSites.ReadPage(context.PageData);
@@ -49,7 +51,7 @@ internal sealed class WebVoiceImport(
 
         var start = (editor.GetService(typeof(IEditorClock)) as IEditorClock)?.CurrentTime.Value ?? MediaTime.Zero;
         var configuration = editor.GetService(typeof(GlobalConfiguration)) as GlobalConfiguration;
-        Place(scene, history, context.FileName, page.Text, start, assignment, site.Resampling,
+        Place(scene, history, decoders, context.FileName, page.Text, start, assignment, site.Resampling,
             VoicePlacement.AutoAdjustsDuration(configuration?.EditorConfig));
         if (string.IsNullOrWhiteSpace(page.Text))
             (editor.GetService(typeof(INotificationService)) as INotificationService)?.ShowWarning("本文を読み取れませんでした",
@@ -57,10 +59,10 @@ internal sealed class WebVoiceImport(
         return true;
     }
 
-    public static Element Place(Scene scene, HistoryManager history, string path, string text, MediaTime start,
-        WebVoiceAssignment assignment, ResamplingMethod? resampling, bool autoAdjustDuration = true)
+    public static Element Place(Scene scene, HistoryManager history, DecoderRegistry decoders, string path, string text,
+        MediaTime start, WebVoiceAssignment assignment, ResamplingMethod? resampling, bool autoAdjustDuration = true)
     {
-        var element = VoiceElementFactory.Create(scene, path, text, generation: null, start, 1, resampling);
+        var element = VoiceElementFactory.Create(scene, decoders, path, text, generation: null, start, 1, resampling);
         // Without the text there is nothing to caption.
         var subtitle = string.IsNullOrWhiteSpace(text) ? null : VoiceSubtitles.Load(assignment.Subtitle);
         history.ExecuteInTransaction(() => VoicePlacement.Place(scene, element, assignment.LipSync, subtitle, autoAdjustDuration));
