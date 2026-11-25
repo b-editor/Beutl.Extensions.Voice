@@ -28,6 +28,9 @@ public class TestApp : Application
     // The desktop host owns the decoder registry and its editors serve it; speech is measured and rendered with this one.
     internal static DecoderRegistry Decoders { get; } = CreateDecoders();
 
+    // The desktop host hands both to its renderers and template library as one bundle.
+    internal static SceneRenderServices RenderServices { get; } = new(EngineFonts, Decoders);
+
     private static DecoderRegistry CreateDecoders()
     {
         var decoders = new DecoderRegistry(new Beutl.Configuration.ExtensionConfig());

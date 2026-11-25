@@ -528,8 +528,7 @@ public partial class PsdLipSyncTests
         {
             if (!RenderThread.Dispatcher.Invoke(() => GraphicsContextFactory.GetOrCreateShared() is not null))
                 Assert.Ignore("No graphics context is available on this host.");
-            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, TestApp.EngineFonts, RenderIntent.Delivery,
-                decoders: TestApp.Decoders));
+            _renderer = RenderThread.Dispatcher.Invoke(() => new SceneRenderer(scene, TestApp.RenderServices, RenderIntent.Delivery));
         }
 
         public void Mouth(double seconds, bool open, string? capture = null, int offsetX = 0) => RenderThread.Dispatcher.Invoke(() =>
