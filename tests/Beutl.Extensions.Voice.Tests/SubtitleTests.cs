@@ -608,7 +608,7 @@ public class SubtitleTests
         Assert.That(editor.Scene.EnumerateAllChildren<SubtitleController>().Count(), Is.EqualTo(1), tab.Message.Value);
         RenderThread.Dispatcher.Invoke(() =>
         {
-            using var renderer = new SceneRenderer(editor.Scene, TestApp.EngineFonts, RenderIntent.Delivery, decoders: TestApp.Decoders);
+            using var renderer = new SceneRenderer(editor.Scene, TestApp.RenderServices, RenderIntent.Delivery);
             foreach (var seconds in new[] { 1.9, 2.1, 2.3 })
             {
                 renderer.Render(renderer.Compositor.EvaluateGraphics(At(seconds)));
@@ -663,7 +663,7 @@ public class SubtitleTests
         string library = Path.Combine(_directory, "templates");
         Directory.CreateDirectory(library);
         var saved = TestTemplates.Save(library, Template(editor.Scene), "話者名付き字幕");
-        using var templates = new ObjectTemplateService(TestApp.EngineFonts, library);
+        using var templates = new ObjectTemplateService(TestApp.RenderServices, library);
         editor.Templates = templates;
         using var model = new TtsTabViewModel(new(), editor);
         Assert.That(model.Subtitles.Choices.Value.Select(x => x.Id), Does.Contain(saved.Id));

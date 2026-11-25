@@ -40,11 +40,6 @@ public sealed class VoiceLipSyncOffsetExpression : VoiceLipSyncExpression<MediaT
         if (PsdLipSync.FindSound(context, GroupId) is not { } sound
             || context.CurrentProperty.GetOwnerObject() is not EngineObject target) return MediaTime.Zero;
         return context.Time - target.TimeRange.Value.Start - PsdLipSync.SourceTime(sound, context,
-            animation => _integrators.GetValue(animation, value =>
-            {
-                var integrator = new SpeedIntegrator(48000);
-                integrator.EnsureCache(value);
-                return integrator;
-            }));
+            animation => _integrators.GetValue(animation, _ => new SpeedIntegrator()));
     }
 }
